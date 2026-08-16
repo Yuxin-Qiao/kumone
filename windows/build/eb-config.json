@@ -1,0 +1,17 @@
+{
+  "appId": "im.missuo.kumone",
+  "productName": "Kumone",
+  "directories": { "output": "dist-installer" },
+  "files": ["lib/**", "renderer/**", "build/icon.ico", "main.js", "preload.js", "package.json", "node_modules/**"],
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "icon": "build/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "artifactName": "Kumone-Setup-${version}-${arch}.${ext}"
+  }
+}

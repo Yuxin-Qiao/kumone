@@ -1,0 +1,68 @@
+name: Build Windows (Electron port)
+
+# 在真实 Windows runner 上构建并冒烟验证 Electron 移植版。
+# 推送到 GitHub 后自动运行；产物在 Actions Artifacts 下载。
+on:
+  push:
+    branches: [main, master]
+    paths: ["windows/**", ".github/workflows/build-windows.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Smoke test (crypto parity + live API)
+        run: npm test
+
+      - name: Build NSIS installer + portable
+        run: npm run package:win
+
+      - name: Verify exe metadata (real Windows check)
+        shell: pwsh
+        run: |
+          $exe = "dist-installer\win-unpacked\Kumone.exe"
+          if (!(Test-Path $exe)) { throw "Kumone.exe not found" }
+          $v = (Get-Item $exe).VersionInfo
+          Write-Host "ProductName: $($v.ProductName)"
+          Write-Host "FileVersion: $($v.FileVersion)"
+          if ($v.ProductName -ne "Kumone") { throw "exe branding missing" }
+          Add-Type -AssemblyName System.Drawing
+          $ico = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exe))
+          Write-Host "Icon extracted: $($ico.Width)x$($ico.Height)"
+
+      - name: Launch app headless smoke (10s)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist-installer\win-unpacked\Kumone.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "app exited prematurely (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "App launched and stayed alive for 10s — OK"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kumone-Setup-windows
+          path: windows/dist-installer/Kumone-Setup-*-x64.exe
+
+      - name: Upload portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist-installer\win-unpacked -DestinationPath Kumone-win32-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kumone-portable-windows
+          path: windows/Kumone-win32-x64.zip
