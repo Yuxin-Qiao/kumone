@@ -1,7 +1,7 @@
 {
   "name": "kumone",
   "productName": "Kumone",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Kumone — NetEase Cloud Music client for Windows (Electron port of missuo/kumone)",
   "main": "main.js",
   "author": "missuo",
@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node test/smoke.js",
+    "e2e": "node test/e2e.js",
     "package:win": "electron-builder --win nsis --x64 --config build/eb-config.json --publish never"
   },
   "devDependencies": {

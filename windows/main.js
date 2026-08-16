@@ -7,7 +7,7 @@ const fs = require('fs');
 const NeteaseAPI = require('./lib/api');
 const unblock = require('./lib/unblock');
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = require('./package.json').version;
 const UPSTREAM_RELEASES = 'https://github.com/missuo/kumone/releases';
 
 // API channel whitelist: renderer → main.
@@ -46,6 +46,7 @@ const CHANNELS = {
   artistAlbums: ({ id }) => NeteaseAPI.artistAlbums(id),
   similarSongs: ({ id }) => NeteaseAPI.similarSongs(id),
   similarArtists: ({ id }) => NeteaseAPI.similarArtists(id),
+  topArtists: ({ limit }) => NeteaseAPI.topArtists(limit || 100),
   subscribePlaylist: ({ id, subscribe }) => NeteaseAPI.subscribePlaylist(id, subscribe),
   subscribeAlbum: ({ id, subscribe }) => NeteaseAPI.subscribeAlbum(id, subscribe),
   subscribeArtist: ({ id, subscribe }) => NeteaseAPI.subscribeArtist(id, subscribe),
@@ -92,6 +93,12 @@ ipcMain.handle('checkUpdate', async () => {
 });
 
 ipcMain.handle('openReleases', () => { shell.openExternal(UPSTREAM_RELEASES); });
+
+// Clipboard: navigator.clipboard is unavailable on file:// pages.
+ipcMain.handle('copyText', (_event, { text }) => {
+  require('electron').clipboard.writeText(String(text || ''));
+  return true;
+});
 
 function createWindow() {
   const iconPath = path.join(__dirname, 'build', 'icon.ico');

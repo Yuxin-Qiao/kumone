@@ -13,5 +13,11 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "artifactName": "Kumone-Setup-${version}-${arch}.${ext}"
-  }
+  },
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://example.com/kumone/updates/"
+    }
+  ]
 }

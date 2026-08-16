@@ -27,6 +27,9 @@ jobs:
       - name: Smoke test (crypto parity + live API)
         run: npm test
 
+      - name: E2E test (real UI via CDP)
+        run: npm run e2e
+
       - name: Build NSIS installer + portable
         run: npm run package:win
 
