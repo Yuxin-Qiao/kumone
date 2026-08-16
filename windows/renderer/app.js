@@ -806,13 +806,13 @@ async function renderCloud(root) {
   try {
     const resp = await invoke('cloudSongs');
     container.textContent = '';
-    if (resp.size && resp.maxSize) {
-      stats.textContent = `已用 ${resp.size} / ${resp.maxSize}`;
-    }
     const items = resp.data || [];
     if (!items.length) {
       container.append(el('div', { class: 'empty' }, '云盘是空的'));
       return;
+    }
+    if (resp.size && resp.maxSize) {
+      stats.textContent = `已用 ${fmtBytes(Number(resp.size))} / ${fmtBytes(Number(resp.maxSize))}`;
     }
     const table = el('table', { class: 'track-table' });
     table.append(el('thead', {}, el('tr', {},
