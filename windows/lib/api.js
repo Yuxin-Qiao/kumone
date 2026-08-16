@@ -79,7 +79,8 @@ const NeteaseAPI = {
     return (await weapi('/v1/discovery/recommend/resource')).recommend;
   },
   async dailyRecommendSongs() {
-    return (await weapi('/v3/discovery/recommend/songs')).data.dailySongs;
+    // New accounts with no listening history get `"data": null` (upstream commit 6ecb3c9).
+    return ((await weapi('/v3/discovery/recommend/songs')).data || {}).dailySongs || [];
   },
   async playlistDetail(id) {
     return weapi('/v6/playlist/detail', { id, n: 100000, s: 8 });
@@ -127,7 +128,7 @@ const NeteaseAPI = {
   async intelligenceList(songID, playlistID) {
     const resp = await weapi('/playmode/intelligence/list',
       { songId: songID, type: 'fromPlayOne', playlistId: playlistID, startMusicId: songID, count: 1 });
-    return resp.data.map((i) => i.songInfo).filter(Boolean);
+    return (resp.data || []).map((i) => i.songInfo).filter(Boolean);
   },
 
   // MARK: - Tracks
@@ -140,7 +141,7 @@ const NeteaseAPI = {
     return weapi('/song/lyric', { id, lv: -1, kv: -1, tv: -1, rv: -1 });
   },
   async personalFM() {
-    return (await weapi('/v1/radio/get')).data;
+    return (await weapi('/v1/radio/get')).data || [];
   },
   async fmTrash(id) {
     await weapi(`/radio/trash/add?alg=RT&songId=${id}&time=25`, { songId: id });
