@@ -48,10 +48,13 @@ npm run package:win # 构建 NSIS 安装包 + latest.yml（配置在 build/eb-co
 
 ## 与上游的已知差距
 
-- 自动更新未接（上游 Sparkle 为 macOS 专属；Windows 需要发布服务器与签名，设置里提供手动检查更新）
+- **关注歌手（sub）被网易服务端拒绝**：`/artist/sub` 恒返回 code 250「参数错误」——payload 与
+  NeteaseCloudMusicApi 及上游 Swift 完全一致，weapi/eapi 双通道均试；取关（unsub）正常。
+  属服务端限制/接口变更（上游 macOS 版同样受影响），值得关注上游后续动向
+- 歌单收藏/取消有服务端限频（code 405，窗口约数分钟），连续操作会被暂时拦截
+- 自动更新未接线（latest.yml 骨架已生成，需要发布服务器 + electron-updater 接入）
 - 无代码签名（需要证书，未签名时 Windows SmartScreen 会提示「仍要运行」）
-- 登录后的链路（FM 实播/心动模式/收藏/云盘/排行）在 macOS 上只能验证到 UI 与未登录分支，
-  登录态数据流依赖真机扫码——推上 GitHub 后由 Windows CI 或人工实机确认
+- 云盘删除、FM 垃圾桶未做登录态实测（避免不可逆地改动用户数据）
 
 ## 运行（开发）
 

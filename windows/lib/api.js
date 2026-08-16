@@ -172,8 +172,10 @@ const NeteaseAPI = {
     return weapi(`/artist/albums/${id}`, { limit, offset, total: true });
   },
   async subscribeArtist(id, subscribe) {
+    // `t` (1/0) is what the endpoint expects today; artistId/artistIds kept
+    // for compatibility with the upstream Swift payload.
     await weapi(`/artist/${subscribe ? 'sub' : 'unsub'}`,
-      { artistId: id, artistIds: `[${id}]` });
+      { artistId: id, artistIds: `[${id}]`, t: subscribe ? 1 : 0 });
   },
   async topArtists(limit = 100) {
     return (await weapi('/toplist/artist',
