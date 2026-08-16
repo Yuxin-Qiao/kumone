@@ -10,12 +10,14 @@
 
 # Kumone
 
-**雲の音 — Native macOS client for NetEase Cloud Music**
+**雲の音 — NetEase Cloud Music client for macOS & Windows**
 
-Built with SwiftUI · Talks directly to NetEase's real API · Sparkle auto-updates
+Native SwiftUI on macOS · Electron port for Windows · Talks directly to NetEase's real API
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
 <table>
@@ -46,7 +48,40 @@ Built with SwiftUI · Talks directly to NetEase's real API · Sparkle auto-updat
 - 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
 - ⌨️ **System integration** — media keys / Control Center (Now Playing), scrobbling, playback queue restored across launches
 
-## Installation
+## Windows (Electron port)
+
+This fork adds a full Windows port under [`windows/`](windows) — the Swift
+sources ported one-to-one: the weapi/eapi encryption layer is **byte-identical
+to the Swift implementation** (verified against fixed vectors), the API client,
+UnblockNeteaseMusic fallback chain and the whole UI are re-implemented in
+Electron.
+
+**Download** — [Releases → windows-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.4)
+(Windows 10/11 x64): `Kumone-Setup-0.1.4-x64.exe` installer (74 MB) or the
+portable zip. Built on a real Windows runner by
+[CI](.github/workflows/build-windows.yml).
+
+Feature parity with upstream v0.1.4: QR login, discovery / library / search,
+playlist / album / artist pages, Personal FM, cloud disk, play records,
+Heartbeat Mode, play-next queue, lyrics with translation + romanization,
+dedicated now-playing page, track context menu, quality selection with served
+badge, UnblockNeteaseMusic fallback, media keys / SMTC, keyboard shortcuts,
+queue + position restore across launches.
+
+```bash
+cd windows
+npm install
+npm test             # crypto parity + live API smoke
+npm run e2e          # CDP-driven UI tests (16 assertions)
+npm run package:win  # NSIS installer (cross-built from macOS, no wine)
+```
+
+Known limitations: unsigned (SmartScreen prompt on first run), auto-update
+scaffolding only (`latest.yml` is generated; updater not wired), and the
+artist-subscribe endpoint is rejected server-side (code 250 — upstream's
+macOS build is affected equally). Details in [`windows/README.md`](windows/README.md).
+
+## Installation (macOS)
 
 Requires an Apple Silicon Mac running macOS 15+.
 

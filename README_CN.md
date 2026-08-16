@@ -10,12 +10,14 @@
 
 # Kumone
 
-**雲の音 — 原生 macOS 网易云音乐客户端**
+**雲の音 — 网易云音乐客户端（macOS & Windows）**
 
-SwiftUI 编写 · 直连网易云真实 API · Sparkle 自动更新
+macOS 原生 SwiftUI · Windows Electron 移植版 · 直连网易云真实 API
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-移植版)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
 <table>
@@ -46,7 +48,34 @@ SwiftUI 编写 · 直连网易云真实 API · Sparkle 自动更新
 - 🔍 **搜索** — 综合 / 单曲 / 歌手 / 专辑 / 歌单，热搜词占位
 - ⌨️ **系统集成** — 媒体键 / 控制中心（Now Playing）、听歌打卡、退出后恢复播放队列
 
-## 安装
+## Windows（Electron 移植版）
+
+本仓库在 [`windows/`](windows) 目录下新增了完整的 Windows 移植版——Swift 源码逐文件对等移植：
+weapi/eapi 加密层与 Swift 实现**逐字节一致**（固定向量对拍验证），API 客户端、
+UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
+
+**下载** — [Releases → windows-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.4)
+（Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.4-x64.exe`（74 MB）或便携版 zip。
+由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
+
+与上游 v0.1.4 功能对齐：扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、
+云盘音乐、听歌排行、心动模式、下一首播放插播队列、歌词（原文+翻译+罗马音）、
+独立正在播放大页、曲目右键菜单、音质选择与实际音质徽标、灰色歌曲解锁、
+媒体键/系统 SMTC、键盘快捷键、重启恢复播放队列与进度。
+
+```bash
+cd windows
+npm install
+npm test             # 加密对拍 + 真实 API 冒烟
+npm run e2e          # CDP 驱动的 UI 端到端测试（16 项断言）
+npm run package:win  # NSIS 安装包（macOS 上交叉构建，无需 wine）
+```
+
+已知限制：未签名（首次运行 SmartScreen 提示「仍要运行」）、自动更新仅生成骨架
+（latest.yml 已产出，更新器未接线）、关注歌手接口被服务端拒绝（code 250，
+上游 macOS 版同样受影响）。详见 [`windows/README.md`](windows/README.md)。
+
+## 安装（macOS）
 
 要求 Apple Silicon Mac、macOS 15+。
 
