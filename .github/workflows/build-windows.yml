@@ -5,8 +5,12 @@ name: Build Windows (Electron port)
 on:
   push:
     branches: [main, master]
+    tags: ["v*", "windows-v*"]
     paths: ["windows/**", ".github/workflows/build-windows.yml"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -69,3 +73,16 @@ jobs:
         with:
           name: Kumone-portable-windows
           path: windows/Kumone-win32-x64.zip
+
+      - name: Publish to GitHub Releases (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $files = Get-Item "dist-installer\Kumone-Setup-*-x64.exe", "Kumone-win32-x64.zip"
+          gh release upload $tag $files.FullName --clobber
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $files.FullName --title "Kumone $tag" --generate-notes
+          }
