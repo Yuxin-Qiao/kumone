@@ -133,14 +133,6 @@
     el.actionCopyLink = document.getElementById('action-copy-link');
 
     el.loginSheetBackdrop = document.getElementById('login-sheet-backdrop');
-    el.tabBtnQr = document.getElementById('tab-btn-qr');
-    el.tabBtnPhone = document.getElementById('tab-btn-phone');
-    el.paneLoginQr = document.getElementById('pane-login-qr');
-    el.paneLoginPhone = document.getElementById('pane-login-phone');
-    el.inputPhoneNumber = document.getElementById('input-phone-number');
-    el.inputPhoneCaptcha = document.getElementById('input-phone-captcha');
-    el.btnGetCaptcha = document.getElementById('btn-get-captcha');
-    el.btnSubmitCaptchaLogin = document.getElementById('btn-submit-captcha-login');
     el.loginQrBox = document.querySelector('.login-qr-box');
     el.loginQrImg = document.getElementById('login-qr-img');
     el.loginQrSpinner = document.getElementById('login-qr-spinner');
@@ -1464,11 +1456,9 @@
     else if (state.currentView === 'settings') renderSettingsView();
   }
 
-  let captchaCountdownTimer = null;
-
   async function showLoginModal() {
     el.loginSheetBackdrop.classList.add('active');
-    switchLoginTab('qr');
+    startQrLogin();
   }
 
   function hideLoginModal() {
@@ -1477,121 +1467,6 @@
       state.qrPollTimer = null;
     }
     el.loginSheetBackdrop.classList.remove('active');
-  }
-
-  function switchLoginTab(mode) {
-    if (mode === 'qr') {
-      if (el.tabBtnQr) el.tabBtnQr.classList.add('active');
-      if (el.tabBtnPhone) el.tabBtnPhone.classList.remove('active');
-      if (el.paneLoginQr) el.paneLoginQr.style.display = 'flex';
-      if (el.paneLoginPhone) el.paneLoginPhone.style.display = 'none';
-      startQrLogin();
-    } else {
-      if (el.tabBtnPhone) el.tabBtnPhone.classList.add('active');
-      if (el.tabBtnQr) el.tabBtnQr.classList.remove('active');
-      if (el.paneLoginPhone) el.paneLoginPhone.style.display = 'flex';
-      if (el.paneLoginQr) el.paneLoginQr.style.display = 'none';
-      if (state.qrPollTimer) {
-        clearInterval(state.qrPollTimer);
-        state.qrPollTimer = null;
-      }
-      if (el.inputPhoneNumber) el.inputPhoneNumber.focus();
-    }
-  }
-
-  async function handleSendCaptcha() {
-    const phone = el.inputPhoneNumber ? el.inputPhoneNumber.value.trim() : '';
-    if (!phone || !/^\d{11}$/.test(phone)) {
-      showToast('请输入有效的 11 位手机号码');
-      if (el.inputPhoneNumber) el.inputPhoneNumber.focus();
-      return;
-    }
-
-    if (el.btnGetCaptcha) {
-      el.btnGetCaptcha.disabled = true;
-      el.btnGetCaptcha.textContent = '发送中…';
-    }
-
-    try {
-      const res = await NeteaseAPI.sendCaptcha(phone);
-      if (res && (res.code === 200 || res.data === true)) {
-        showToast('验证码已发送至手机');
-        let leftSeconds = 60;
-        if (captchaCountdownTimer) clearInterval(captchaCountdownTimer);
-        if (el.btnGetCaptcha) el.btnGetCaptcha.textContent = `${leftSeconds}s`;
-        captchaCountdownTimer = setInterval(() => {
-          leftSeconds--;
-          if (leftSeconds <= 0) {
-            clearInterval(captchaCountdownTimer);
-            captchaCountdownTimer = null;
-            if (el.btnGetCaptcha) {
-              el.btnGetCaptcha.disabled = false;
-              el.btnGetCaptcha.textContent = '获取验证码';
-            }
-          } else {
-            if (el.btnGetCaptcha) el.btnGetCaptcha.textContent = `${leftSeconds}s`;
-          }
-        }, 1000);
-      } else {
-        throw new Error(res && res.message ? res.message : '发送失败');
-      }
-    } catch (err) {
-      if (el.btnGetCaptcha) {
-        el.btnGetCaptcha.disabled = false;
-        el.btnGetCaptcha.textContent = '获取验证码';
-      }
-      const msg = (err && err.message) ? String(err.message) : '';
-      if (msg.includes('风险') || msg.includes('安全') || msg.includes('460')) {
-        showToast('机房 IP 受网易云风控限制，请切换「扫码登录」');
-      } else {
-        showToast(msg || '发送验证码失败');
-      }
-    }
-  }
-
-  async function handleSubmitCaptchaLogin() {
-    const phone = el.inputPhoneNumber ? el.inputPhoneNumber.value.trim() : '';
-    const captcha = el.inputPhoneCaptcha ? el.inputPhoneCaptcha.value.trim() : '';
-    if (!phone || !/^\d{11}$/.test(phone)) {
-      showToast('请输入有效的 11 位手机号码');
-      if (el.inputPhoneNumber) el.inputPhoneNumber.focus();
-      return;
-    }
-    if (!captcha || captcha.length < 4) {
-      showToast('请输入正确的验证码');
-      if (el.inputPhoneCaptcha) el.inputPhoneCaptcha.focus();
-      return;
-    }
-
-    if (el.btnSubmitCaptchaLogin) {
-      el.btnSubmitCaptchaLogin.disabled = true;
-      el.btnSubmitCaptchaLogin.textContent = '正在登录…';
-    }
-
-    try {
-      const res = await NeteaseAPI.loginCaptcha(phone, captcha);
-      if (res && res.code === 200) {
-        hideLoginModal();
-        await checkAccountStatus();
-        showToast('欢迎回来，' + (state.user ? state.user.nickname : ''));
-        if (state.currentView === 'library') renderLibraryView();
-        else if (state.currentView === 'home') renderHomeView();
-      } else {
-        throw new Error(res && res.message ? res.message : (res && res.msg ? res.msg : '登录失败'));
-      }
-    } catch (err) {
-      const msg = (err && err.message) ? String(err.message) : '';
-      if (msg.includes('风险') || msg.includes('安全') || msg.includes('460')) {
-        showToast('机房 IP 受网易云风控限制，请切换「扫码登录」');
-      } else {
-        showToast(msg || '手机号登录失败');
-      }
-    } finally {
-      if (el.btnSubmitCaptchaLogin) {
-        el.btnSubmitCaptchaLogin.disabled = false;
-        el.btnSubmitCaptchaLogin.textContent = '立即登录';
-      }
-    }
   }
 
   async function startQrLogin() {
@@ -1866,15 +1741,6 @@
       if (e.target === el.loginSheetBackdrop) hideLoginModal();
     };
     if (el.btnCloseLogin) el.btnCloseLogin.onclick = hideLoginModal;
-    if (el.tabBtnQr) el.tabBtnQr.onclick = () => switchLoginTab('qr');
-    if (el.tabBtnPhone) el.tabBtnPhone.onclick = () => switchLoginTab('phone');
-    if (el.btnGetCaptcha) el.btnGetCaptcha.onclick = handleSendCaptcha;
-    if (el.btnSubmitCaptchaLogin) el.btnSubmitCaptchaLogin.onclick = handleSubmitCaptchaLogin;
-    if (el.inputPhoneCaptcha) {
-      el.inputPhoneCaptcha.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleSubmitCaptchaLogin();
-      });
-    }
 
     if (el.accountCardBackdrop) {
       el.accountCardBackdrop.onclick = (e) => {

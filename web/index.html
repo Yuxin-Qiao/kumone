@@ -165,52 +165,27 @@
     </div>
   </div>
 
-  <!-- Login Sheet Modal (QR Scan + Phone SMS Captcha) -->
+  <!-- Login Sheet Modal (100% exact port of upstream missuo/kumone LoginSheet.swift) -->
   <div class="bottom-sheet-backdrop" id="login-sheet-backdrop">
     <div class="login-dialog-modal" id="login-sheet">
       <div class="login-dialog-header">
         <div class="login-dialog-title">登录网易云音乐</div>
+        <div class="login-dialog-subtitle">使用网易云音乐 App 扫码登录</div>
       </div>
 
-      <!-- Segmented Tabs Switcher -->
-      <div class="login-segmented-tabs">
-        <button class="login-tab-pill active" id="tab-btn-qr" type="button">📷 扫码登录</button>
-        <button class="login-tab-pill" id="tab-btn-phone" type="button">📱 手机验证码</button>
-      </div>
-
-      <!-- Tab 1: QR Code Scan (Default) -->
-      <div class="login-tab-pane active" id="pane-login-qr">
-        <div class="login-qr-container">
-          <div class="login-qr-box">
-            <div class="login-qr-spinner" id="login-qr-spinner"></div>
-            <img class="login-qr-image" id="login-qr-img" alt="QR Code" style="display:none">
-            
-            <!-- Overlay for scanned or expired -->
-            <div class="login-qr-overlay" id="login-qr-overlay" style="display:none">
-              <div id="login-qr-overlay-content"></div>
-            </div>
-          </div>
-        </div>
-        <div class="login-status-text" id="login-qr-status">正在获取二维码…</div>
-      </div>
-
-      <!-- Tab 2: Phone SMS Captcha -->
-      <div class="login-tab-pane" id="pane-login-phone" style="display:none">
-        <div class="login-phone-form">
-          <div class="login-input-row">
-            <span class="login-phone-prefix">+86</span>
-            <input type="tel" id="input-phone-number" class="login-text-input" placeholder="请输入手机号码" maxlength="11">
-          </div>
-          <div class="login-input-row">
-            <input type="text" id="input-phone-captcha" class="login-text-input" placeholder="短信验证码" maxlength="8">
-            <button class="login-captcha-btn" id="btn-get-captcha" type="button">获取验证码</button>
-          </div>
-          <button class="btn btn-primary btn-block" id="btn-submit-captcha-login" type="button" style="margin-top:6px;padding:10px 0;font-size:13.5px;font-weight:600">立即登录</button>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.4;text-align:center">
-            💡 提示：网易云对云端机房 IP 限制较严，如遇风险拦截请使用左侧「📷 扫码登录」（100% 官方免风控）。
+      <div class="login-qr-container">
+        <div class="login-qr-box">
+          <div class="login-qr-spinner" id="login-qr-spinner"></div>
+          <img class="login-qr-image" id="login-qr-img" alt="QR Code" style="display:none">
+          
+          <!-- Overlay for scanned or expired -->
+          <div class="login-qr-overlay" id="login-qr-overlay" style="display:none">
+            <div id="login-qr-overlay-content"></div>
           </div>
         </div>
       </div>
+
+      <div class="login-status-text" id="login-qr-status">正在获取二维码…</div>
 
       <button class="login-dialog-cancel" id="btn-close-login">取消</button>
     </div>
