@@ -227,8 +227,9 @@
     },
 
     // MARK: - Tracks
-    async songURL(ids, level) {
-      const payload = { ids: '[' + ids.join(',') + ']', level, encodeType: 'flac' };
+    async songURL(ids, level = 'standard') {
+      const arr = Array.isArray(ids) ? ids : [ids];
+      const payload = { ids: '[' + arr.join(',') + ']', level, encodeType: 'flac' };
       if (level === 'sky') payload.immerseType = 'c51';
       return (await eapi('/song/enhance/player/url/v1', payload)).data;
     },

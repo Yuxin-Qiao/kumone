@@ -27,7 +27,7 @@
     }
   } catch (_) {}
 
-  // Pure JavaScript AES-128 implementation (CBC & ECB with PKCS#7)
+  // Pure JavaScript AES-128 implementation (FIPS-197 compliant)
   const S_BOX = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -39,7 +39,7 @@
     0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
     0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
     0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
-    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5e, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
     0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
     0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
     0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
@@ -48,106 +48,105 @@
   ];
   const RCON = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
-  function keyExpansion(keyBytes) {
-    const w = new Uint32Array(44);
-    for (let i = 0; i < 4; i++) {
-      w[i] = (keyBytes[4 * i] << 24) | (keyBytes[4 * i + 1] << 16) | (keyBytes[4 * i + 2] << 8) | keyBytes[4 * i + 3];
-    }
+  function keyExpansion(key) {
+    const w = new Uint8Array(176);
+    for (let i = 0; i < 16; i++) w[i] = key[i];
     for (let i = 4; i < 44; i++) {
-      let temp = w[i - 1];
+      let t0 = w[(i - 1) * 4];
+      let t1 = w[(i - 1) * 4 + 1];
+      let t2 = w[(i - 1) * 4 + 2];
+      let t3 = w[(i - 1) * 4 + 3];
+
       if (i % 4 === 0) {
-        temp = (temp << 8) | (temp >>> 24);
-        temp = (S_BOX[(temp >>> 24) & 0xff] << 24) |
-               (S_BOX[(temp >>> 16) & 0xff] << 16) |
-               (S_BOX[(temp >>> 8) & 0xff] << 8) |
-               S_BOX[temp & 0xff];
-        temp ^= (RCON[i / 4] << 24);
+        const tmp = t0;
+        t0 = S_BOX[t1] ^ RCON[i / 4];
+        t1 = S_BOX[t2];
+        t2 = S_BOX[t3];
+        t3 = S_BOX[tmp];
       }
-      w[i] = (w[i - 4] ^ temp) >>> 0;
+      w[i * 4] = w[(i - 4) * 4] ^ t0;
+      w[i * 4 + 1] = w[(i - 4) * 4 + 1] ^ t1;
+      w[i * 4 + 2] = w[(i - 4) * 4 + 2] ^ t2;
+      w[i * 4 + 3] = w[(i - 4) * 4 + 3] ^ t3;
     }
     return w;
   }
 
   function xtime(a) {
-    return ((a << 1) ^ (((a >>> 7) & 1) * 0x11b)) & 0xff;
+    return ((a << 1) ^ (((a >>> 7) & 1) * 0x1b)) & 0xff;
   }
 
-  function encryptBlock(state, w) {
-    const s = new Uint8Array(state);
-    // AddRoundKey 0
-    for (let i = 0; i < 4; i++) {
-      const k = w[i];
-      s[4 * i] ^= (k >>> 24) & 0xff;
-      s[4 * i + 1] ^= (k >>> 16) & 0xff;
-      s[4 * i + 2] ^= (k >>> 8) & 0xff;
-      s[4 * i + 3] ^= k & 0xff;
+  function cipherBlock(input, w) {
+    let s0 = input[0] ^ w[0], s4 = input[4] ^ w[4], s8 = input[8] ^ w[8], s12 = input[12] ^ w[12];
+    let s1 = input[1] ^ w[1], s5 = input[5] ^ w[5], s9 = input[9] ^ w[9], s13 = input[13] ^ w[13];
+    let s2 = input[2] ^ w[2], s6 = input[6] ^ w[6], s10 = input[10] ^ w[10], s14 = input[14] ^ w[14];
+    let s3 = input[3] ^ w[3], s7 = input[7] ^ w[7], s11 = input[11] ^ w[11], s15 = input[15] ^ w[15];
+
+    for (let r = 1; r < 10; r++) {
+      const t0 = S_BOX[s0], t4 = S_BOX[s4], t8 = S_BOX[s8], t12 = S_BOX[s12];
+      const t1 = S_BOX[s5], t5 = S_BOX[s9], t9 = S_BOX[s13], t13 = S_BOX[s1];
+      const t2 = S_BOX[s10], t6 = S_BOX[s14], t10 = S_BOX[s2], t14 = S_BOX[s6];
+      const t3 = S_BOX[s15], t7 = S_BOX[s3], t11 = S_BOX[s7], t15 = S_BOX[s11];
+
+      let a = t0 ^ t1 ^ t2 ^ t3;
+      s0 = t0 ^ a ^ xtime(t0 ^ t1) ^ w[r * 16];
+      s1 = t1 ^ a ^ xtime(t1 ^ t2) ^ w[r * 16 + 1];
+      s2 = t2 ^ a ^ xtime(t2 ^ t3) ^ w[r * 16 + 2];
+      s3 = t3 ^ a ^ xtime(t3 ^ t0) ^ w[r * 16 + 3];
+
+      a = t4 ^ t5 ^ t6 ^ t7;
+      s4 = t4 ^ a ^ xtime(t4 ^ t5) ^ w[r * 16 + 4];
+      s5 = t5 ^ a ^ xtime(t5 ^ t6) ^ w[r * 16 + 5];
+      s6 = t6 ^ a ^ xtime(t6 ^ t7) ^ w[r * 16 + 6];
+      s7 = t7 ^ a ^ xtime(t7 ^ t4) ^ w[r * 16 + 7];
+
+      a = t8 ^ t9 ^ t10 ^ t11;
+      s8 = t8 ^ a ^ xtime(t8 ^ t9) ^ w[r * 16 + 8];
+      s9 = t9 ^ a ^ xtime(t9 ^ t10) ^ w[r * 16 + 9];
+      s10 = t10 ^ a ^ xtime(t10 ^ t11) ^ w[r * 16 + 10];
+      s11 = t11 ^ a ^ xtime(t11 ^ t8) ^ w[r * 16 + 11];
+
+      a = t12 ^ t13 ^ t14 ^ t15;
+      s12 = t12 ^ a ^ xtime(t12 ^ t13) ^ w[r * 16 + 12];
+      s13 = t13 ^ a ^ xtime(t13 ^ t14) ^ w[r * 16 + 13];
+      s14 = t14 ^ a ^ xtime(t14 ^ t15) ^ w[r * 16 + 14];
+      s15 = t15 ^ a ^ xtime(t15 ^ t12) ^ w[r * 16 + 15];
     }
-    // 9 Rounds
-    for (let round = 1; round < 10; round++) {
-      // SubBytes & ShiftRows
-      const s0 = S_BOX[s[0]], s4 = S_BOX[s[4]], s8 = S_BOX[s[8]], s12 = S_BOX[s[12]];
-      const s1 = S_BOX[s[5]], s5 = S_BOX[s[9]], s9 = S_BOX[s[13]], s13 = S_BOX[s[1]];
-      const s2 = S_BOX[s[10]], s6 = S_BOX[s[14]], s10 = S_BOX[s[2]], s14 = S_BOX[s[6]];
-      const s3 = S_BOX[s[15]], s7 = S_BOX[s[3]], s11 = S_BOX[s[7]], s15 = S_BOX[s[11]];
-      // MixColumns
-      const c = [
-        [s0, s1, s2, s3],
-        [s4, s5, s6, s7],
-        [s8, s9, s10, s11],
-        [s12, s13, s14, s15]
-      ];
-      for (let i = 0; i < 4; i++) {
-        const a0 = c[i][0], a1 = c[i][1], a2 = c[i][2], a3 = c[i][3];
-        const t = a0 ^ a1 ^ a2 ^ a3;
-        s[4 * i] = a0 ^ t ^ xtime(a0 ^ a1);
-        s[4 * i + 1] = a1 ^ t ^ xtime(a1 ^ a2);
-        s[4 * i + 2] = a2 ^ t ^ xtime(a2 ^ a3);
-        s[4 * i + 3] = a3 ^ t ^ xtime(a3 ^ a0);
-      }
-      // AddRoundKey
-      for (let i = 0; i < 4; i++) {
-        const k = w[round * 4 + i];
-        s[4 * i] ^= (k >>> 24) & 0xff;
-        s[4 * i + 1] ^= (k >>> 16) & 0xff;
-        s[4 * i + 2] ^= (k >>> 8) & 0xff;
-        s[4 * i + 3] ^= k & 0xff;
-      }
-    }
-    // Round 10: SubBytes, ShiftRows, AddRoundKey (No MixColumns)
-    const out0 = S_BOX[s[0]], out4 = S_BOX[s[4]], out8 = S_BOX[s[8]], out12 = S_BOX[s[12]];
-    const out1 = S_BOX[s[5]], out5 = S_BOX[s[9]], out9 = S_BOX[s[13]], out13 = S_BOX[s[1]];
-    const out2 = S_BOX[s[10]], out6 = S_BOX[s[14]], out10 = S_BOX[s[2]], out14 = S_BOX[s[6]];
-    const out3 = S_BOX[s[15]], out7 = S_BOX[s[3]], out11 = S_BOX[s[7]], out15 = S_BOX[s[11]];
-    const res = [
-      out0, out1, out2, out3,
-      out4, out5, out6, out7,
-      out8, out9, out10, out11,
-      out12, out13, out14, out15
-    ];
-    for (let i = 0; i < 4; i++) {
-      const k = w[40 + i];
-      res[4 * i] ^= (k >>> 24) & 0xff;
-      res[4 * i + 1] ^= (k >>> 16) & 0xff;
-      res[4 * i + 2] ^= (k >>> 8) & 0xff;
-      res[4 * i + 3] ^= k & 0xff;
-    }
-    return new Uint8Array(res);
+
+    const out = new Uint8Array(16);
+    out[0] = S_BOX[s0] ^ w[160];
+    out[1] = S_BOX[s5] ^ w[161];
+    out[2] = S_BOX[s10] ^ w[162];
+    out[3] = S_BOX[s15] ^ w[163];
+
+    out[4] = S_BOX[s4] ^ w[164];
+    out[5] = S_BOX[s9] ^ w[165];
+    out[6] = S_BOX[s14] ^ w[166];
+    out[7] = S_BOX[s3] ^ w[167];
+
+    out[8] = S_BOX[s8] ^ w[168];
+    out[9] = S_BOX[s13] ^ w[169];
+    out[10] = S_BOX[s2] ^ w[170];
+    out[11] = S_BOX[s7] ^ w[171];
+
+    out[12] = S_BOX[s12] ^ w[172];
+    out[13] = S_BOX[s1] ^ w[173];
+    out[14] = S_BOX[s6] ^ w[174];
+    out[15] = S_BOX[s11] ^ w[175];
+
+    return out;
   }
 
-  function strToUtf8Bytes(str) {
-    if (typeof TextEncoder !== 'undefined') {
-      return new TextEncoder().encode(str);
-    }
+  function strToUtf8(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
     const utf8 = unescape(encodeURIComponent(str));
-    const arr = new Uint8Array(utf8.length);
-    for (let i = 0; i < utf8.length; i++) arr[i] = utf8.charCodeAt(i);
-    return arr;
+    const res = new Uint8Array(utf8.length);
+    for (let i = 0; i < utf8.length; i++) res[i] = utf8.charCodeAt(i);
+    return res;
   }
 
   function bytesToBase64(bytes) {
-    if (typeof Buffer !== 'undefined') {
-      return Buffer.from(bytes).toString('base64');
-    }
+    if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
@@ -161,30 +160,46 @@
     return hex;
   }
 
-  function aesEncryptJs(dataStr, keyStr, ivStr) {
-    const dataBytes = strToUtf8Bytes(dataStr);
-    const keyBytes = strToUtf8Bytes(keyStr);
-    const ivBytes = ivStr ? strToUtf8Bytes(ivStr) : null;
+  function aesCbcEncryptJs(dataStr, keyStr, ivStr) {
+    const dataBytes = strToUtf8(dataStr);
+    const keyBytes = strToUtf8(keyStr);
+    const ivBytes = strToUtf8(ivStr);
 
-    // PKCS#7 padding
     const padLen = 16 - (dataBytes.length % 16);
     const padded = new Uint8Array(dataBytes.length + padLen);
     padded.set(dataBytes);
     padded.fill(padLen, dataBytes.length);
 
     const w = keyExpansion(keyBytes);
-    const blocksCount = padded.length / 16;
     const output = new Uint8Array(padded.length);
-    let prevBlock = ivBytes ? new Uint8Array(ivBytes) : null;
+    let prev = new Uint8Array(ivBytes);
 
-    for (let b = 0; b < blocksCount; b++) {
-      const block = padded.slice(b * 16, b * 16 + 16);
-      if (prevBlock) {
-        for (let i = 0; i < 16; i++) block[i] ^= prevBlock[i];
-      }
-      const encrypted = encryptBlock(block, w);
-      output.set(encrypted, b * 16);
-      if (prevBlock) prevBlock = encrypted;
+    for (let i = 0; i < padded.length; i += 16) {
+      const block = padded.slice(i, i + 16);
+      for (let k = 0; k < 16; k++) block[k] ^= prev[k];
+      const enc = cipherBlock(block, w);
+      output.set(enc, i);
+      prev = enc;
+    }
+    return output;
+  }
+
+  function aesEcbEncryptJs(dataStr, keyStr) {
+    const dataBytes = strToUtf8(dataStr);
+    const keyBytes = strToUtf8(keyStr);
+
+    const padLen = 16 - (dataBytes.length % 16);
+    const padded = new Uint8Array(dataBytes.length + padLen);
+    padded.set(dataBytes);
+    padded.fill(padLen, dataBytes.length);
+
+    const w = keyExpansion(keyBytes);
+    const output = new Uint8Array(padded.length);
+
+    for (let i = 0; i < padded.length; i += 16) {
+      const block = padded.slice(i, i + 16);
+      const enc = cipherBlock(block, w);
+      output.set(enc, i);
     }
     return output;
   }
@@ -204,9 +219,9 @@
       return { params: second, encSecKey: WEAPI_ENC_SEC_KEY };
     }
 
-    const firstBytes = aesEncryptJs(jsonText, WEAPI_PRESET_KEY, WEAPI_IV);
+    const firstBytes = aesCbcEncryptJs(jsonText, WEAPI_PRESET_KEY, WEAPI_IV);
     const firstBase64 = bytesToBase64(firstBytes);
-    const secondBytes = aesEncryptJs(firstBase64, WEAPI_SECRET_KEY, WEAPI_IV);
+    const secondBytes = aesCbcEncryptJs(firstBase64, WEAPI_SECRET_KEY, WEAPI_IV);
     return { params: bytesToBase64(secondBytes), encSecKey: WEAPI_ENC_SEC_KEY };
   }
 
@@ -227,7 +242,7 @@
     const message = `nobody${apiPath}use${jsonText}md5forencrypt`;
     const digest = md5(message);
     const data = `${apiPath}-36cd479b6b5-${jsonText}-36cd479b6b5-${digest}`;
-    const encryptedBytes = aesEncryptJs(data, EAPI_KEY, null);
+    const encryptedBytes = aesEcbEncryptJs(data, EAPI_KEY);
     return { params: bytesToHex(encryptedBytes).toUpperCase() };
   }
 
