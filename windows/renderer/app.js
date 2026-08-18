@@ -1707,13 +1707,24 @@ function renderSettingsPanel() {
         try {
           const r = await invoke('checkUpdate', {});
           ev.currentTarget.textContent = '检查更新';
-          if (!r.latest) toast('暂时无法获取版本信息');
-          else toast(`当前 v${r.current} · 上游最新 ${r.latest}（Windows 版需手动下载）`);
-        } catch (e) { ev.currentTarget.textContent = '检查更新'; toast(e.message); }
+          if (!r.latest) {
+            toast('暂时无法获取版本信息');
+          } else if (r.latest === `v${r.current}` || r.latest === r.current) {
+            toast(`当前已是最新版本 (v${r.current})`);
+          } else {
+            toast(`发现新版本 ${r.latest}（当前 v${r.current}）`);
+            if (confirm(`发现新版本 ${r.latest}，是否前往 GitHub Releases 页面下载？`)) {
+              invoke('openReleases');
+            }
+          }
+        } catch (e) {
+          ev.currentTarget.textContent = '检查更新';
+          toast(e.message);
+        }
       },
     }, '检查更新')));
 
-  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.1.0 · Electron 移植版'));
+  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.1.9 · Electron 移植版'));
 }
 
 function applyAppearance() {
