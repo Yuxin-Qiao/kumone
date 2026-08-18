@@ -174,10 +174,6 @@
   }
 
   function showToast(msg) {
-    if (window.AndroidBridge && typeof window.AndroidBridge.toast === 'function') {
-      window.AndroidBridge.toast(msg);
-      return;
-    }
     const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
@@ -212,29 +208,26 @@
     state.isPlaying = true;
     updatePlayPauseButtons();
 
-    if (window.AndroidBridge && typeof window.AndroidBridge.playAudio === 'function') {
-      window.AndroidBridge.playAudio(url, JSON.stringify(track), startPosMs);
-    } else {
-      if (!state.audioElem) {
-        state.audioElem = new Audio();
-        state.audioElem.addEventListener('timeupdate', () => {
-          onNativePlaybackProgress(!state.audioElem.paused, Math.floor(state.audioElem.currentTime * 1000), Math.floor(state.audioElem.duration * 1000));
-        });
-        state.audioElem.addEventListener('ended', () => {
-          onNativePlaybackComplete();
-        });
-      }
-      state.audioElem.src = url;
-      state.audioElem.play().catch(() => {});
+    if (!state.audioElem) {
+      state.audioElem = new Audio();
+      state.audioElem.addEventListener('timeupdate', () => {
+        onNativePlaybackProgress(!state.audioElem.paused, Math.floor(state.audioElem.currentTime * 1000), Math.floor(state.audioElem.duration * 1000));
+      });
+      state.audioElem.addEventListener('ended', () => {
+        onNativePlaybackComplete();
+      });
     }
+    state.audioElem.src = url;
+    if (startPosMs > 0) {
+      state.audioElem.currentTime = startPosMs / 1000;
+    }
+    state.audioElem.play().catch(() => {});
   }
 
   function pauseAudio() {
     state.isPlaying = false;
     updatePlayPauseButtons();
-    if (window.AndroidBridge && typeof window.AndroidBridge.pauseAudio === 'function') {
-      window.AndroidBridge.pauseAudio();
-    } else if (state.audioElem) {
+    if (state.audioElem) {
       state.audioElem.pause();
     }
   }
@@ -242,18 +235,14 @@
   function resumeAudio() {
     state.isPlaying = true;
     updatePlayPauseButtons();
-    if (window.AndroidBridge && typeof window.AndroidBridge.resumeAudio === 'function') {
-      window.AndroidBridge.resumeAudio();
-    } else if (state.audioElem) {
+    if (state.audioElem) {
       state.audioElem.play().catch(() => {});
     }
   }
 
   function seekAudio(posMs) {
     state.currentTime = Math.floor(posMs / 1000);
-    if (window.AndroidBridge && typeof window.AndroidBridge.seekAudio === 'function') {
-      window.AndroidBridge.seekAudio(posMs);
-    } else if (state.audioElem) {
+    if (state.audioElem) {
       state.audioElem.currentTime = posMs / 1000;
     }
   }
@@ -1090,11 +1079,7 @@
     };
 
     document.getElementById('btn-open-repo').onclick = () => {
-      if (window.AndroidBridge && typeof window.AndroidBridge.openExternal === 'function') {
-        window.AndroidBridge.openExternal('https://github.com/Yuxin-Qiao/kumone');
-      } else {
-        window.open('https://github.com/Yuxin-Qiao/kumone', '_blank');
-      }
+      window.open('https://github.com/Yuxin-Qiao/kumone', '_blank');
     };
   }
 
@@ -1457,18 +1442,10 @@
   }
 
   function doJumpNetease() {
-    if (window.AndroidBridge && typeof window.AndroidBridge.openNeteaseApp === 'function') {
-      const opened = window.AndroidBridge.openNeteaseApp(state.currentUnikey);
-      if (opened) {
-        el.loginQrStatus.textContent = '已尝试唤起网易云音乐，请在 App 中点击确认登录…';
-        showToast('已唤起网易云音乐，请在 App 中点击确认');
-      }
-    } else {
-      const url = NeteaseAPI.qrLoginURL(state.currentUnikey);
-      window.open(url, '_blank');
-      el.loginQrStatus.textContent = '已打开授权页面，请在网易云中确认登录…';
-      showToast('已打开授权链接');
-    }
+    const url = NeteaseAPI.qrLoginURL(state.currentUnikey);
+    window.open(url, '_blank');
+    el.loginQrStatus.textContent = '已打开授权页面，请在网易云中确认登录…';
+    showToast('已打开授权链接');
   }
 
   function startCaptchaCountdown(seconds) {
@@ -1755,11 +1732,7 @@
     el.actionCopyLink.onclick = () => {
       if (state.actionTrack) {
         const url = `https://music.163.com/#/song?id=${state.actionTrack.id}`;
-        if (window.AndroidBridge && typeof window.AndroidBridge.copyToClipboard === 'function') {
-          window.AndroidBridge.copyToClipboard(url);
-        } else {
-          navigator.clipboard.writeText(url).then(() => showToast('已复制歌曲链接'));
-        }
+        navigator.clipboard.writeText(url).then(() => showToast('已复制歌曲链接'));
       }
       hideActionSheet();
     };

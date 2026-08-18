@@ -11,91 +11,7 @@
   'use strict';
 
   const USER_AGENT =
-    'Mozilla/5.0 (Linux; Android 14; Mobile; rv:125.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
-
-  if (typeof window !== 'undefined') {
-    window.__nativeHttpCallbacks = window.__nativeHttpCallbacks || {};
-    window.__nativeHttpCallback = function (reqId, err, resp) {
-      const cb = window.__nativeHttpCallbacks[reqId];
-      if (cb) {
-        delete window.__nativeHttpCallbacks[reqId];
-        cb(err, resp);
-      }
-    };
-  }
-
-  function nativeHttpRequest(url, method, headers, body) {
-    if (typeof window !== 'undefined' && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kumoneBridge) {
-      return new Promise((resolve, reject) => {
-        const reqId = 'req_' + Math.random().toString(36).slice(2) + '_' + Date.now();
-        window.__nativeHttpCallbacks[reqId] = (err, resp) => {
-          if (err) {
-            reject(new Error(err));
-          } else {
-            resolve(resp);
-          }
-        };
-        try {
-          window.webkit.messageHandlers.kumoneBridge.postMessage({
-            action: 'asyncHttpRequest',
-            reqId: reqId,
-            url: url,
-            method: method,
-            headers: headers || {},
-            body: body || ''
-          });
-        } catch (e) {
-          delete window.__nativeHttpCallbacks[reqId];
-          reject(e);
-        }
-      });
-    }
-
-    if (typeof window !== 'undefined' && window.AndroidBridge) {
-      if (typeof window.AndroidBridge.asyncHttpRequest === 'function') {
-        return new Promise((resolve, reject) => {
-          const reqId = 'req_' + Math.random().toString(36).slice(2) + '_' + Date.now();
-          window.__nativeHttpCallbacks[reqId] = (err, resp) => {
-            if (err) {
-              const error = new Error(err);
-              reject(error);
-            } else {
-              resolve(resp);
-            }
-          };
-          try {
-            window.AndroidBridge.asyncHttpRequest(
-              reqId,
-              url,
-              method,
-              JSON.stringify(headers || {}),
-              body || ''
-            );
-          } catch (e) {
-            delete window.__nativeHttpCallbacks[reqId];
-            reject(e);
-          }
-        });
-      } else if (typeof window.AndroidBridge.httpRequest === 'function') {
-        try {
-          const raw = window.AndroidBridge.httpRequest(
-            url,
-            method,
-            JSON.stringify(headers || {}),
-            body || ''
-          );
-          const parsed = JSON.parse(raw);
-          if (!parsed.ok && parsed.status === 0 && parsed.error) {
-            return Promise.reject(new Error(parsed.error));
-          }
-          return Promise.resolve(parsed);
-        } catch (e) {
-          return Promise.reject(e);
-        }
-      }
-    }
-    return null;
-  }
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
   class NeteaseClient {
     constructor() {
@@ -105,14 +21,9 @@
 
     load() {
       try {
-        if (typeof window !== 'undefined') {
-          if (window.AndroidBridge && typeof window.AndroidBridge.getPreference === 'function') {
-            const raw = window.AndroidBridge.getPreference('kumone_cookies', '{}');
-            this.cookies = JSON.parse(raw);
-          } else if (window.localStorage) {
-            const raw = window.localStorage.getItem('kumone_cookies');
-            if (raw) this.cookies = JSON.parse(raw);
-          }
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const raw = window.localStorage.getItem('kumone_cookies');
+          if (raw) this.cookies = JSON.parse(raw);
         }
       } catch (_) {
         this.cookies = {};
@@ -126,20 +37,8 @@
     persist() {
       try {
         const raw = JSON.stringify(this.cookies);
-        if (typeof window !== 'undefined') {
-          if (window.AndroidBridge && typeof window.AndroidBridge.setPreference === 'function') {
-            window.AndroidBridge.setPreference('kumone_cookies', raw);
-          }
-          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kumoneBridge) {
-            window.webkit.messageHandlers.kumoneBridge.postMessage({
-              action: 'setPreference',
-              key: 'kumone_cookies',
-              value: raw
-            });
-          }
-          if (window.localStorage) {
-            window.localStorage.setItem('kumone_cookies', raw);
-          }
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('kumone_cookies', raw);
         }
       } catch (_) {}
     }
@@ -187,14 +86,9 @@
             : (resOrCookies.headers.get('set-cookie') ? [resOrCookies.headers.get('set-cookie')] : []);
         }
         const parsed = {};
-        // Each raw entry is either "name=value" or a full Set-Cookie line.
-        // iOS bridge may also return comma-joined cookie pairs in one string.
         const expand = [];
         for (const raw of raws) {
           const s = String(raw);
-          // A comma-joined list has entries like "name=value, name2=value2"
-          // but cookie values themselves may contain commas (e.g. dates), so
-          // only split on ", " that is followed by a word-char (next name).
           const parts = s.split(/, (?=[A-Za-z_][\w-]*=)/);
           for (const p of parts) expand.push(p);
         }
@@ -219,26 +113,9 @@
         'User-Agent': USER_AGENT,
         'Referer': 'https://music.163.com',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': this.cookieHeader({ os: 'android', appver: '8.9.70' }),
+        'Cookie': this.cookieHeader({ os: 'web', appver: '2.9.7' }),
       };
 
-      // Try native Android bridge first
-      const nativePromise = nativeHttpRequest(url, 'POST', headers, bodyStr);
-      if (nativePromise) {
-        const resp = await nativePromise;
-        if (resp && resp.cookies) {
-          this.absorbSetCookies(resp.cookies);
-        }
-        if (!resp || !resp.ok) {
-          const status = (resp && resp.status) || 0;
-          const err = new Error(resp && resp.error ? resp.error : `网络错误 (${status})`);
-          err.httpStatus = status;
-          throw err;
-        }
-        return resp.data;
-      }
-
-      // Browser / Node fallback
       const res = await fetch(url, {
         method: 'POST',
         headers,
@@ -271,15 +148,15 @@
         : (typeof require === 'function' ? require('./crypto') : {});
       const apiPath = '/api' + path;
       const header = {
-        os: 'android',
-        appver: '8.9.70',
-        osver: '14',
-        deviceId: 'kumone-android',
+        os: 'web',
+        appver: '2.9.7',
+        osver: 'Mac OS',
+        deviceId: 'kumone-web',
         requestId: String(Math.floor(20000000 + Math.random() * 10000000)),
         clientSign: '',
         versioncode: '140',
         buildver: String(Math.floor(Date.now() / 1000)),
-        resolution: '1080x2400',
+        resolution: '1920x1080',
         channel: '',
       };
       if (this.cookies['MUSIC_U']) header['MUSIC_U'] = this.cookies['MUSIC_U'];
