@@ -1416,7 +1416,6 @@
     el.queueSheetBackdrop.classList.remove('active');
   }
 
-  function switchLoginTab(tabName) {
   async function showLoginModal() {
     el.loginSheetBackdrop.classList.add('active');
     startQrLogin();

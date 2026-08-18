@@ -45,8 +45,12 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
   for (const rel of requiredFiles) {
     const p = path.join(rootDir, rel);
     assert.ok(fs.existsSync(p), `Missing required file: ${rel}`);
+    if (rel.endsWith('.js')) {
+      const { execSync } = require('child_process');
+      execSync(`node -c "${p}"`);
+    }
   }
-  ok(`所有 Web / PWA 核心文件校验通过 (${requiredFiles.length} 项)`);
+  ok(`所有 Web / PWA 核心文件与 JS 语法校验通过 (${requiredFiles.length} 项)`);
 
   console.log(`\n🎉 Web / PWA 模块冒烟测试全部通过 (共 ${passed} 项)！`);
   process.exit(0);
