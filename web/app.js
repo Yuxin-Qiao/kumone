@@ -240,10 +240,20 @@
   // ==========================================================================
   function playAudio(url, track, startPosMs = 0) {
     state.isPlaying = true;
+    if (track && track.duration) {
+      state.duration = track.duration;
+    }
     updatePlayPauseButtons();
+    updateProgressUI();
 
     if (!state.audioElem) {
       state.audioElem = new Audio();
+      state.audioElem.addEventListener('loadedmetadata', () => {
+        if (state.audioElem.duration && !isNaN(state.audioElem.duration) && isFinite(state.audioElem.duration)) {
+          state.duration = Math.floor(state.audioElem.duration);
+          updateProgressUI();
+        }
+      });
       state.audioElem.addEventListener('timeupdate', () => {
         onNativePlaybackProgress(!state.audioElem.paused, Math.floor(state.audioElem.currentTime * 1000), Math.floor(state.audioElem.duration * 1000));
       });
