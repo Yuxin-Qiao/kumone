@@ -12,7 +12,7 @@ struct RecentsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Picker("", selection: $week) {
                         Text("所有时间").tag(false)
@@ -66,7 +66,7 @@ struct RecentsView: View {
                     track: record.song,
                     index: index + 1,
                     style: .compact,
-                    trailingText: "\(record.playCount) 次"
+                    trailingText: String(localized: "\(record.playCount) 次")
                 ) {
                     player.play(tracks: records.map(\.song), source: .none, startAt: record.song)
                 }
@@ -96,7 +96,7 @@ struct CloudView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     if let sizeInfo {
                         Text(sizeInfo)
@@ -150,10 +150,10 @@ struct CloudView: View {
         isLoading = items.isEmpty
         if let response = try? await NeteaseAPI.cloudSongs() {
             items = response.data ?? []
-            if let size = response.size, let max = response.maxSize,
-               let sizeGB = Double(size), let maxGB = Double(max) {
-                sizeInfo = String(format: "已使用 %.1f GB / %.0f GB",
-                                  sizeGB / 1_073_741_824, maxGB / 1_073_741_824)
+            if let size = response.size, let max = response.maxSize, max > 0 {
+                let used = String(format: "%.1f", Double(size) / 1_073_741_824)
+                let total = String(format: "%.0f", Double(max) / 1_073_741_824)
+                sizeInfo = String(localized: "已使用 \(used) GB / \(total) GB")
             }
         }
         isLoading = false

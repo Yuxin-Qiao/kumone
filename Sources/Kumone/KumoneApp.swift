@@ -30,7 +30,7 @@ struct KumoneApp: App {
             }
 
             CommandMenu("播放") {
-                Button(player.isPlaying ? "暂停" : "播放") {
+                Button(player.isPlaying ? String(localized: "暂停") : String(localized: "播放")) {
                     player.togglePlayPause()
                 }
                 .disabled(!player.hasCurrentTrack)
@@ -49,7 +49,7 @@ struct KumoneApp: App {
 
                 Divider()
 
-                Button(player.currentTrack.map { AccountStore.shared.isLiked($0.id) ? "取消喜欢" : "喜欢" } ?? "喜欢") {
+                Button(player.currentTrack.map { AccountStore.shared.isLiked($0.id) ? String(localized: "取消喜欢") : String(localized: "喜欢") } ?? String(localized: "喜欢")) {
                     if let track = player.currentTrack {
                         Task { await account.toggleLike(trackID: track.id) }
                     }

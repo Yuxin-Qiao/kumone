@@ -31,7 +31,7 @@ struct PlayerBar: View {
             artworkButton
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    MarqueeText(text: player.currentTrack?.name ?? "未在播放")
+                    MarqueeText(text: player.currentTrack?.name ?? String(localized: "未在播放"))
                         .frame(height: 17)
                     if player.currentTrack?.fee == 1 {
                         VIPBadge()
@@ -42,7 +42,8 @@ struct PlayerBar: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            if !compact, let track = player.currentTrack {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let track = player.currentTrack {
                 LikeButton(trackID: track.id)
             }
         }
@@ -155,7 +156,7 @@ struct PlayerBar: View {
                 QualityTag(text: quality.badge)
                     .padding(.trailing, 2)
             } else if !compact, player.unblockSource != nil {
-                QualityTag(text: "音源")
+                QualityTag(text: String(localized: "音源"))
                     .padding(.trailing, 2)
                     .help("来自 \(player.unblockSource ?? "")")
             }
@@ -166,6 +167,13 @@ struct PlayerBar: View {
                 player.activePanel = player.activePanel == .lyrics ? nil : .lyrics
             }
             .help("歌词")
+            PlayerIconButton(
+                icon: "inset.filled.bottomthird.square", size: 13,
+                isActive: SettingsManager.shared.showDesktopLyrics
+            ) {
+                SettingsManager.shared.showDesktopLyrics.toggle()
+            }
+            .help("桌面歌词")
             PlayerIconButton(
                 icon: "list.bullet", size: 13,
                 isActive: player.activePanel == .queue,
@@ -247,7 +255,7 @@ struct LikeButton: View {
         ) {
             Task { await account.toggleLike(trackID: trackID) }
         }
-        .help(liked ? "取消喜欢" : "喜欢")
+        .help(liked ? String(localized: "取消喜欢") : String(localized: "喜欢"))
     }
 }
 

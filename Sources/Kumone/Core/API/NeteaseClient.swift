@@ -9,10 +9,10 @@ enum NeteaseAPIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .http(let status): return "网络错误 (\(status))"
-        case .business(let code, let message): return message ?? "接口错误 (\(code))"
-        case .needLogin: return "需要登录"
-        case .decoding: return "数据加载失败，请稍后重试"
+        case .http(let status): return String(localized: "网络错误 (\(status))")
+        case .business(let code, let message): return message ?? String(localized: "接口错误 (\(code))")
+        case .needLogin: return String(localized: "需要登录")
+        case .decoding: return String(localized: "数据加载失败，请稍后重试")
         }
     }
 }

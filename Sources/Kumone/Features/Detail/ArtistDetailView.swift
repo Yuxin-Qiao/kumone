@@ -18,7 +18,7 @@ struct ArtistDetailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: 26) {
                 if let artist {
                     header(artist)
                         .padding(.horizontal, Theme.Layout.contentInset)
@@ -34,7 +34,7 @@ struct ArtistDetailView: View {
                         )
                         .padding(.horizontal, Theme.Layout.contentInset - 10)
                         if hotSongs.count > 10 {
-                            Button(showAllSongs ? "收起" : "查看更多") {
+                            Button(showAllSongs ? String(localized: "收起") : String(localized: "查看更多")) {
                                 withAnimation(AppAnimation.standard) {
                                     showAllSongs.toggle()
                                 }
@@ -94,7 +94,7 @@ struct ArtistDetailView: View {
                 Color.clear.frame(height: 8)
             }
         }
-        .navigationTitle(artist?.name ?? "歌手")
+        .navigationTitle(artist?.name ?? String(localized: "歌手"))
         .task(id: artistID) {
             await load()
         }
@@ -166,7 +166,7 @@ struct ArtistDetailView: View {
                         Button {
                             toggleFollow()
                         } label: {
-                            Label(isFollowed ? "已关注" : "关注",
+                            Label(isFollowed ? String(localized: "已关注") : String(localized: "关注"),
                                   systemImage: isFollowed ? "checkmark" : "plus")
                                 .font(.system(size: 13, weight: .medium))
                                 .padding(.horizontal, 14)
@@ -197,7 +197,7 @@ struct ArtistDetailView: View {
             do {
                 try await NeteaseAPI.subscribeArtist(id: artistID, subscribe: !isFollowed)
                 isFollowed.toggle()
-                ToastCenter.shared.show(isFollowed ? "已关注歌手" : "已取消关注")
+                ToastCenter.shared.show(isFollowed ? String(localized: "已关注歌手") : String(localized: "已取消关注"))
             } catch {
                 ToastCenter.shared.show(error.localizedDescription)
             }

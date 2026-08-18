@@ -97,7 +97,7 @@ extension View {
 // MARK: - Section header
 
 struct SectionHeader: View {
-    let title: String
+    let title: LocalizedStringKey
     var subtitle: String?
     var action: (() -> Void)?
 

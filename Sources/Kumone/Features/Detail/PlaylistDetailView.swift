@@ -87,7 +87,7 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 if let detail = model.detail {
                     header(detail)
                         .padding(.horizontal, Theme.Layout.contentInset)
@@ -121,7 +121,7 @@ struct PlaylistDetailView: View {
                 Color.clear.frame(height: 8)
             }
         }
-        .navigationTitle(model.detail?.name ?? "歌单")
+        .navigationTitle(model.detail?.name ?? String(localized: "歌单"))
         .task(id: playlistID) {
             await model.load()
         }
@@ -137,7 +137,7 @@ struct PlaylistDetailView: View {
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(isLikedList ? "我喜欢的音乐" : "歌单")
+                Text(isLikedList ? String(localized: "我喜欢的音乐") : String(localized: "歌单"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -221,7 +221,7 @@ struct PlaylistDetailView: View {
                 Button {
                     toggleSubscribe(detail)
                 } label: {
-                    Label(detail.subscribed ? "已收藏" : "收藏",
+                    Label(detail.subscribed ? String(localized: "已收藏") : String(localized: "收藏"),
                           systemImage: detail.subscribed ? "checkmark" : "plus")
                         .font(.system(size: 13, weight: .medium))
                         .padding(.horizontal, 14)
@@ -265,11 +265,11 @@ struct PlaylistDetailView: View {
             do {
                 let tracks = try await NeteaseAPI.intelligenceList(songID: seed.id, playlistID: playlistID)
                 guard !tracks.isEmpty else {
-                    ToastCenter.shared.show("心动模式暂时不可用")
+                    ToastCenter.shared.show(String(localized: "心动模式暂时不可用"))
                     return
                 }
                 player.play(tracks: tracks, source: .playlist(playlistID))
-                ToastCenter.shared.show("已开启心动模式")
+                ToastCenter.shared.show(String(localized: "已开启心动模式"))
             } catch {
                 ToastCenter.shared.show(error.localizedDescription)
             }
@@ -282,7 +282,7 @@ struct PlaylistDetailView: View {
                 try await NeteaseAPI.subscribePlaylist(id: playlistID, subscribe: !detail.subscribed)
                 await model.load()
                 await account.refreshLibrary()
-                ToastCenter.shared.show(detail.subscribed ? "已取消收藏" : "已收藏歌单")
+                ToastCenter.shared.show(detail.subscribed ? String(localized: "已取消收藏") : String(localized: "已收藏歌单"))
             } catch {
                 ToastCenter.shared.show(error.localizedDescription)
             }

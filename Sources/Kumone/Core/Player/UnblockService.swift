@@ -23,10 +23,10 @@ enum UnblockService {
             return Resolved(url: url, source: "pyncmd")
         }
         if let url = await kuwo(track) {
-            return Resolved(url: url, source: "酷我音乐")
+            return Resolved(url: url, source: String(localized: "酷我音乐"))
         }
         if let url = await kugou(track) {
-            return Resolved(url: url, source: "酷狗音乐")
+            return Resolved(url: url, source: String(localized: "酷狗音乐"))
         }
         return nil
     }

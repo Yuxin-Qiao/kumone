@@ -18,6 +18,9 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/Kumone",
+            // .lproj tables are copied into Contents/Resources by build-app.sh
+            // so Bundle.main lookups work without Bundle.module plumbing.
+            exclude: ["Resources"],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ],

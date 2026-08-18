@@ -68,7 +68,7 @@ final class AccountStore {
 
     func toggleLike(trackID: Int) async {
         guard isLoggedIn else {
-            ToastCenter.shared.show("登录后即可收藏歌曲")
+            ToastCenter.shared.show(String(localized: "登录后即可收藏歌曲"))
             return
         }
         let like = !likedTrackIDs.contains(trackID)

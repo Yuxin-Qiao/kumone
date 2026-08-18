@@ -142,7 +142,7 @@ struct LoginSheet: View {
                     case 803:
                         phase = .success
                         await account.bootstrap()
-                        ToastCenter.shared.show("欢迎回来，\(account.profile?.nickname ?? "")")
+                        ToastCenter.shared.show(String(localized: "欢迎回来，\(account.profile?.nickname ?? "")"))
                         dismiss()
                         return
                     default:

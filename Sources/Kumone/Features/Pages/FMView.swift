@@ -73,14 +73,14 @@ struct FMView: View {
 
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
-                    Text(track?.name ?? "私人漫游")
+                    Text(track?.name ?? String(localized: "私人漫游"))
                         .font(.system(size: 22, weight: .bold))
                         .lineLimit(1)
                     if track?.fee == 1 {
                         VIPBadge()
                     }
                 }
-                Text(track?.artistNames ?? "根据你的口味漫游好音乐")
+                Text(track?.artistNames ?? String(localized: "根据你的口味漫游好音乐"))
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

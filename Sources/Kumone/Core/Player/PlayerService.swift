@@ -162,7 +162,7 @@ final class PlayerService {
         if playNow || currentTrack == nil {
             advanceToNext(userInitiated: true)
         } else {
-            ToastCenter.shared.show("已添加到下一首播放")
+            ToastCenter.shared.show(String(localized: "已添加到下一首播放"))
         }
     }
 
@@ -296,7 +296,7 @@ final class PlayerService {
                     break
                 }
                 if attempt == 2 {
-                    ToastCenter.shared.show("获取私人漫游数据失败")
+                    ToastCenter.shared.show(String(localized: "获取私人漫游数据失败"))
                     return
                 }
                 try? await Task.sleep(for: .seconds(1))
@@ -329,7 +329,7 @@ final class PlayerService {
         if idx >= activeQueue.count {
             guard repeatMode == .all else {
                 if userInitiated {
-                    ToastCenter.shared.show("已经是最后一首了")
+                    ToastCenter.shared.show(String(localized: "已经是最后一首了"))
                 } else {
                     isPlaying = false
                     NowPlayingManager.shared.updateElapsed(progress, rate: 0)
@@ -401,7 +401,7 @@ final class PlayerService {
                 resolvedURL = unblocked.url
                 unblockSource = unblocked.source
                 data = nil
-                ToastCenter.shared.show("已使用第三方音源：\(unblocked.source)")
+                ToastCenter.shared.show(String(localized: "已使用第三方音源：\(unblocked.source)"))
             }
         }
         guard generation == resolveGeneration else { return }
@@ -411,7 +411,7 @@ final class PlayerService {
             let reason = track.playability(privilege: nil,
                                            isLoggedIn: AccountStore.shared.isLoggedIn,
                                            vipType: AccountStore.shared.vipType).reason
-            ToastCenter.shared.show("《\(track.name)》无法播放\(reason.map { "：\($0)" } ?? "")")
+            ToastCenter.shared.show(String(localized: "《\(track.name)》无法播放\(reason.map { "：\($0)" } ?? "")"))
             if consecutiveFailures < 5 {
                 advanceToNext(userInitiated: false)
             } else {
@@ -424,7 +424,7 @@ final class PlayerService {
         servedQuality = data?.level
         if data?.freeTrialInfo != nil {
             isTrial = true
-            ToastCenter.shared.show("VIP 歌曲，当前为试听片段")
+            ToastCenter.shared.show(String(localized: "VIP 歌曲，当前为试听片段"))
         }
 
         let item = AVPlayerItem(url: url)

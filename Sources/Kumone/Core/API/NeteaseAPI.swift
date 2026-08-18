@@ -93,7 +93,7 @@ enum NeteaseAPI {
         let resp = try await weapi(CodeOnly.self, "/radio/like?alg=itembased&trackId=\(id)&time=3",
                                    ["trackId": id, "like": like])
         guard resp.code == 200 else {
-            throw NeteaseAPIError.business(code: resp.code, message: "操作失败，专辑下架或版权锁定")
+            throw NeteaseAPIError.business(code: resp.code, message: String(localized: "操作失败，专辑下架或版权锁定"))
         }
     }
 
@@ -127,8 +127,23 @@ enum NeteaseAPI {
     struct CloudResponse: Decodable {
         let data: [CloudSongItem]?
         let hasMore: Bool?
-        let size: String?
-        let maxSize: String?
+        /// Bytes; served as a number or a numeric string depending on account age.
+        let size: Int64?
+        let maxSize: Int64?
+
+        private enum CodingKeys: String, CodingKey {
+            case data, hasMore, size, maxSize
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            data = try? c.decode([CloudSongItem].self, forKey: .data)
+            hasMore = try? c.decode(Bool.self, forKey: .hasMore)
+            size = (try? c.decode(Int64.self, forKey: .size))
+                ?? (try? c.decode(String.self, forKey: .size)).flatMap(Int64.init)
+            maxSize = (try? c.decode(Int64.self, forKey: .maxSize))
+                ?? (try? c.decode(String.self, forKey: .maxSize)).flatMap(Int64.init)
+        }
     }
 
     static func cloudSongs(limit: Int = 1000, offset: Int = 0) async throws -> CloudResponse {
@@ -195,6 +210,22 @@ enum NeteaseAPI {
     static func playlistDetail(id: Int) async throws -> PlaylistDetailResponse {
         try await weapi(PlaylistDetailResponse.self, "/v6/playlist/detail",
                         ["id": id, "n": 100_000, "s": 8])
+    }
+
+    struct PlaylistBrief: Decodable {
+        struct Body: Decodable {
+            let id: Int
+            let name: String?
+            let coverImgUrl: String?
+        }
+
+        let playlist: Body
+    }
+
+    /// Lightweight name + cover fetch (used for the personalized radar playlists,
+    /// whose title/artwork are generated per account).
+    static func playlistBrief(id: Int) async throws -> PlaylistBrief.Body {
+        try await weapi(PlaylistBrief.self, "/v6/playlist/detail", ["id": id, "n": 1, "s": 0]).playlist
     }
 
     struct SongDetailResponse: Decodable {

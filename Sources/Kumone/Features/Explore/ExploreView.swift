@@ -137,8 +137,10 @@ struct ExploreView: View {
             HStack(spacing: 8) {
                 Spacer().frame(width: Theme.Layout.contentInset - 8)
                 ForEach(ExploreViewModel.categories, id: \.self) { category in
-                    Button(category) {
+                    Button {
                         model.select(category)
+                    } label: {
+                        Text(LocalizedStringKey(category))
                     }
                     .buttonStyle(.chip(isSelected: model.selectedCategory == category))
                 }

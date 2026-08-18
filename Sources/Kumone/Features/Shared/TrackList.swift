@@ -94,6 +94,9 @@ struct TrackRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+        // Fixed row height keeps lazy-stack height estimation exact,
+        // preventing scroll-offset jumps in long lists (#3).
+        .frame(height: style == .albumTrack ? 46 : 52)
         .opacity(isPlayable ? 1 : 0.45)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
@@ -161,7 +164,7 @@ struct TrackRow: View {
         }
         Divider()
         let liked = account.isLiked(track.id)
-        Button(liked ? "从「我喜欢」中移除" : "添加到「我喜欢」") {
+        Button(liked ? String(localized: "从「我喜欢」中移除") : String(localized: "添加到「我喜欢」")) {
             Task { await account.toggleLike(trackID: track.id) }
         }
         Button("收藏到歌单…") {
@@ -173,7 +176,7 @@ struct TrackRow: View {
                     do {
                         try await NeteaseAPI.playlistTracks(op: "del", playlistID: pid, trackIDs: [track.id])
                         onRemoved?()
-                        ToastCenter.shared.show("已从歌单中删除")
+                        ToastCenter.shared.show(String(localized: "已从歌单中删除"))
                     } catch {
                         ToastCenter.shared.show(error.localizedDescription)
                     }
@@ -197,7 +200,7 @@ struct TrackRow: View {
             NSPasteboard.general.setString(
                 "https://music.163.com/#/song?id=\(track.id)", forType: .string
             )
-            ToastCenter.shared.show("链接已复制")
+            ToastCenter.shared.show(String(localized: "链接已复制"))
         }
     }
 }
@@ -339,7 +342,7 @@ struct AddToPlaylistSheet: View {
         Task {
             do {
                 try await NeteaseAPI.playlistTracks(op: "add", playlistID: playlist.id, trackIDs: [track.id])
-                ToastCenter.shared.show("已收藏到「\(playlist.name)」")
+                ToastCenter.shared.show(String(localized: "已收藏到「\(playlist.name)」"))
                 await account.refreshLibrary()
                 dismiss()
             } catch {
@@ -357,7 +360,7 @@ struct AddToPlaylistSheet: View {
             do {
                 if let id = try await NeteaseAPI.createPlaylist(name: name, isPrivate: false) {
                     try await NeteaseAPI.playlistTracks(op: "add", playlistID: id, trackIDs: [track.id])
-                    ToastCenter.shared.show("已收藏到「\(name)」")
+                    ToastCenter.shared.show(String(localized: "已收藏到「\(name)」"))
                     await account.refreshLibrary()
                     dismiss()
                 }

@@ -87,7 +87,7 @@ struct ArtistCard: View {
 /// A horizontal scroll section whose track reaches the column edges;
 /// the resting inset lives inside the HStack (kaset's slide-under trick).
 struct Shelf<Content: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     var seeAll: (() -> Void)?
     var spacing: CGFloat = 16
     @ViewBuilder var content: () -> Content
@@ -145,8 +145,8 @@ struct ErrorStateView: View {
 
 struct EmptyStateView: View {
     let icon: String
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
 
     var body: some View {
         VStack(spacing: 12) {

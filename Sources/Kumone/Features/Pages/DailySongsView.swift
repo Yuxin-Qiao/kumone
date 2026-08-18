@@ -10,7 +10,7 @@ struct DailySongsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
                     .padding(.horizontal, Theme.Layout.contentInset)
                     .padding(.top, 16)
@@ -91,15 +91,15 @@ struct DailySongsView: View {
 
     private var dateString: String {
         let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "zh_CN")
-        fmt.dateFormat = "M月d日 EEEE"
+        fmt.locale = .current
+        fmt.setLocalizedDateFormatFromTemplate("MMMdEEEE")
         return fmt.string(from: .now)
     }
 
     private func load() async {
         guard account.isLoggedIn else {
             isLoading = false
-            errorMessage = "登录后才能查看每日推荐"
+            errorMessage = String(localized: "登录后才能查看每日推荐")
             return
         }
         isLoading = true

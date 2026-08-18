@@ -43,6 +43,11 @@ fi
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 cp -a "$SPARKLE_FW" "$APP_BUNDLE/Contents/Frameworks/"
 
+# Localization tables → Bundle.main
+for lproj in "$ROOT"/Sources/Kumone/Resources/*.lproj; do
+  [ -d "$lproj" ] && cp -R "$lproj" "$APP_BUNDLE/Contents/Resources/"
+done
+
 # SwiftPM resource bundles (if any)
 find "$BIN_PATH" -maxdepth 1 -name '*.bundle' -not -name '*Tests*' -print0 |
   while IFS= read -r -d '' bundle; do
@@ -80,6 +85,11 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>zh-Hans</string>
+        <string>en</string>
+    </array>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundleIcons</key>

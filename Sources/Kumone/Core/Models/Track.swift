@@ -128,10 +128,10 @@ enum TrackPlayability: Hashable {
     var reason: String? {
         switch self {
         case .playable: return nil
-        case .vipOnly: return "VIP 专属"
-        case .paidAlbum: return "付费专辑"
-        case .noCopyright: return "无版权"
-        case .delisted: return "已下架"
+        case .vipOnly: return String(localized: "VIP 专属")
+        case .paidAlbum: return String(localized: "付费专辑")
+        case .noCopyright: return String(localized: "无版权")
+        case .delisted: return String(localized: "已下架")
         }
     }
 }

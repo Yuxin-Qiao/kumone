@@ -3,12 +3,14 @@ import SwiftUI
 struct MainWindow: View {
     @Environment(PlayerService.self) private var player
     @Environment(AccountStore.self) private var account
+    @Environment(SettingsManager.self) private var settings
     @Environment(ToastCenter.self) private var toasts
 
     @State private var selection: SidebarItem = .home
     @State private var path = NavigationPath()
     @State private var showLogin = false
     @State private var searchText = ""
+    @State private var detailWidth: CGFloat = 0
 
     var body: some View {
         NavigationSplitView {
@@ -16,13 +18,39 @@ struct MainWindow: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: Theme.Layout.sidebarWidth, max: 280)
         } detail: {
             detailStack
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    detailWidth = width
+                }
+        }
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    SearchFieldView { query in
+                        path.append(Destination.search(query))
+                    }
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    SearchFieldView { query in
+                        path.append(Destination.search(query))
+                    }
+                }
+            }
         }
         // Immersive now-playing page: hide the whole window toolbar
         // (sidebar toggle, navigation title, search field).
         .toolbar(player.showNowPlaying ? .hidden : .automatic, for: .windowToolbar)
+        .playerChrome(detailWidth: detailWidth)
         .environment(\.openLogin, { showLogin = true })
         .task {
+            DesktopLyricsController.shared.sync(with: settings.showDesktopLyrics)
             await account.bootstrap()
+        }
+        .onChange(of: settings.showDesktopLyrics) {
+            DesktopLyricsController.shared.sync(with: settings.showDesktopLyrics)
         }
         .sheet(isPresented: $showLogin) {
             LoginSheet()
@@ -47,30 +75,8 @@ struct MainWindow: View {
     private var detailStack: some View {
         NavigationStack(path: $path) {
             rootView
+                .playerContentInset()
                 .appDestinations()
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar()
-        }
-        .overlay(alignment: .trailing) {
-            rightPanel
-        }
-        .animation(AppAnimation.standard, value: player.activePanel)
-        .toolbar {
-            if #available(macOS 26.0, *) {
-                ToolbarItem(placement: .primaryAction) {
-                    SearchFieldView { query in
-                        path.append(Destination.search(query))
-                    }
-                }
-                .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .primaryAction) {
-                    SearchFieldView { query in
-                        path.append(Destination.search(query))
-                    }
-                }
-            }
         }
         .onChange(of: selection) {
             path = NavigationPath()
@@ -121,23 +127,6 @@ struct MainWindow: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private var rightPanel: some View {
-        if let panel = player.activePanel {
-            Group {
-                switch panel {
-                case .lyrics:
-                    LyricsPanel()
-                case .queue:
-                    QueuePanel()
-                }
-            }
-            .padding(.top, 12)
-            .padding(.bottom, Theme.Layout.playerBarHeight + 20)
-            .padding(.trailing, 16)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
-        }
-    }
 }
 
 // MARK: - Search field

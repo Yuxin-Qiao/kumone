@@ -325,28 +325,39 @@ struct FreeTrialInfo: Codable, Hashable {
 
 // MARK: - Cloud disk
 
+/// A cloud-disk entry. The real payload nests metadata under `privateCloud`
+/// and the playable track under `simpleSong`; older docs show flat fields,
+/// so both shapes are tolerated.
 struct CloudSongItem: Decodable, Hashable, Identifiable {
     let songId: Int
     let songName: String?
     let artist: String?
-    let album: String?
     let fileSize: Int
     let simpleSong: Track?
 
     var id: Int { songId }
 
     private enum CodingKeys: String, CodingKey {
-        case songId, songName, artist, album, fileSize, simpleSong
+        case songId, songName, artist, fileSize, simpleSong, privateCloud
+    }
+
+    private struct PrivateCloud: Decodable {
+        let songId: Int?
+        let song: String?
+        let artist: String?
+        let fileSize: Int?
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        songId = try c.decode(Int.self, forKey: .songId)
-        songName = try? c.decode(String.self, forKey: .songName)
-        artist = try? c.decode(String.self, forKey: .artist)
-        album = try? c.decode(String.self, forKey: .album)
-        fileSize = (try? c.decode(Int.self, forKey: .fileSize)) ?? 0
+        let nested = try? c.decode(PrivateCloud.self, forKey: .privateCloud)
         simpleSong = try? c.decode(Track.self, forKey: .simpleSong)
+        songId = (try? c.decode(Int.self, forKey: .songId))
+            ?? nested?.songId ?? simpleSong?.id ?? 0
+        songName = (try? c.decode(String.self, forKey: .songName))
+            ?? nested?.song ?? simpleSong?.name
+        artist = (try? c.decode(String.self, forKey: .artist)) ?? nested?.artist
+        fileSize = (try? c.decode(Int.self, forKey: .fileSize)) ?? nested?.fileSize ?? 0
     }
 }
 
@@ -372,12 +383,28 @@ struct PlayRecordItem: Decodable, Hashable {
 // MARK: - Formatting helpers
 
 enum Formatters {
+    private static var usesChineseUnits: Bool {
+        Locale.current.language.languageCode?.identifier == "zh"
+    }
+
     static func playCount(_ count: Int) -> String {
+        if usesChineseUnits {
+            switch count {
+            case 100_000_000...:
+                return String(format: "%.1f亿", Double(count) / 100_000_000)
+            case 10_000...:
+                return String(format: "%.1f万", Double(count) / 10_000)
+            default:
+                return String(count)
+            }
+        }
         switch count {
-        case 100_000_000...:
-            return String(format: "%.1f亿", Double(count) / 100_000_000)
+        case 1_000_000_000...:
+            return String(format: "%.1fB", Double(count) / 1_000_000_000)
+        case 1_000_000...:
+            return String(format: "%.1fM", Double(count) / 1_000_000)
         case 10_000...:
-            return String(format: "%.1f万", Double(count) / 10_000)
+            return String(format: "%.1fK", Double(count) / 1_000)
         default:
             return String(count)
         }
@@ -391,9 +418,9 @@ enum Formatters {
     static func longDuration(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
         if total >= 3600 {
-            return String(format: "%d 小时 %d 分钟", total / 3600, (total % 3600) / 60)
+            return String(localized: "\(total / 3600) 小时 \((total % 3600) / 60) 分钟")
         }
-        return String(format: "%d 分钟", total / 60)
+        return String(localized: "\(total / 60) 分钟")
     }
 
     static func date(fromMS ms: Int) -> String {

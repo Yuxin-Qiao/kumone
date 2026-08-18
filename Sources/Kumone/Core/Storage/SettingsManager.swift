@@ -11,21 +11,21 @@ enum AudioQuality: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .standard: return "标准"
-        case .higher: return "较高"
-        case .exhigh: return "极高"
-        case .lossless: return "无损"
+        case .standard: return String(localized: "标准")
+        case .higher: return String(localized: "较高")
+        case .exhigh: return String(localized: "极高")
+        case .lossless: return String(localized: "无损")
         case .hires: return "Hi-Res"
         }
     }
 
     var badge: String {
         switch self {
-        case .standard: return "标准"
-        case .higher: return "较高"
-        case .exhigh: return "极高"
-        case .lossless: return "无损"
-        case .hires: return "高解析"
+        case .standard: return String(localized: "标准")
+        case .higher: return String(localized: "较高")
+        case .exhigh: return String(localized: "极高")
+        case .lossless: return String(localized: "无损")
+        case .hires: return String(localized: "高解析")
         }
     }
 }
@@ -37,9 +37,9 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .auto: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
+        case .auto: return String(localized: "跟随系统")
+        case .light: return String(localized: "浅色")
+        case .dark: return String(localized: "深色")
         }
     }
 
@@ -64,6 +64,7 @@ final class SettingsManager {
         static let volume = "settings.volume"
         static let fmMode = "settings.fmMode"
         static let unblock = "settings.enableUnblock"
+        static let desktopLyrics = "settings.showDesktopLyrics"
     }
 
     var audioQuality: AudioQuality {
@@ -83,11 +84,17 @@ final class SettingsManager {
         didSet { UserDefaults.standard.set(enableUnblock, forKey: Keys.unblock) }
     }
 
+    /// Floating desktop lyrics window (LyricsX-style).
+    var showDesktopLyrics: Bool {
+        didSet { UserDefaults.standard.set(showDesktopLyrics, forKey: Keys.desktopLyrics) }
+    }
+
     private init() {
         let defaults = UserDefaults.standard
         audioQuality = defaults.string(forKey: Keys.quality).flatMap(AudioQuality.init) ?? .exhigh
         appearance = defaults.string(forKey: Keys.appearance).flatMap(AppAppearance.init) ?? .auto
         showLyricsTranslation = defaults.object(forKey: Keys.showTranslation) as? Bool ?? true
         enableUnblock = defaults.object(forKey: Keys.unblock) as? Bool ?? true
+        showDesktopLyrics = defaults.object(forKey: Keys.desktopLyrics) as? Bool ?? false
     }
 }

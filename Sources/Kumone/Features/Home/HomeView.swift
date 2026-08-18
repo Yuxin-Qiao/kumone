@@ -11,8 +11,25 @@ final class HomeViewModel {
         case error(String)
     }
 
+    /// The personalized radar family — global playlist IDs whose content is
+    /// generated per logged-in account (same list YesPlayMusic special-cases).
+    static let radarPlaylistIDs = [
+        3_136_952_023, // 私人雷达
+        2_829_883_282, // 华语私人雷达
+        2_829_816_518, // 欧美私人雷达
+        2_829_896_389, // 日系私人雷达
+    ]
+
+    struct RadarPlaylist: Identifiable, Hashable {
+        let id: Int
+        let title: String
+        let subtitle: String?
+        let coverURL: String?
+    }
+
     var state: State = .idle
     var recommendPlaylists: [PlaylistSummary] = []
+    var radarPlaylists: [RadarPlaylist] = []
     var toplists: [ToplistItem] = []
     var newAlbums: [AlbumSummary] = []
     var topArtists: [ArtistSummary] = []
@@ -40,14 +57,38 @@ final class HomeViewModel {
             if let daily = try? await NeteaseAPI.dailyRecommendSongs() {
                 dailyFirstCover = daily.first?.album.picUrl
             }
+            await loadRadarPlaylists()
         }
 
-        state = playlists.isEmpty && newAlbums.isEmpty ? .error("网络连接失败") : .loaded
+        state = playlists.isEmpty && newAlbums.isEmpty ? .error(String(localized: "网络连接失败")) : .loaded
     }
 
     func reload(loggedIn: Bool) async {
         state = .idle
         await load(loggedIn: loggedIn)
+    }
+
+    private func loadRadarPlaylists() async {
+        let briefs = await withTaskGroup(of: (Int, NeteaseAPI.PlaylistBrief.Body?).self) { group in
+            for id in Self.radarPlaylistIDs {
+                group.addTask {
+                    (id, try? await NeteaseAPI.playlistBrief(id: id))
+                }
+            }
+            var byID: [Int: NeteaseAPI.PlaylistBrief.Body] = [:]
+            for await (id, brief) in group {
+                if let brief { byID[id] = brief }
+            }
+            return byID
+        }
+        radarPlaylists = Self.radarPlaylistIDs.compactMap { id in
+            guard let brief = briefs[id] else { return nil }
+            // Names arrive as "今天从《…》听起|私人雷达" — split into title/subtitle.
+            let parts = (brief.name ?? "").components(separatedBy: "|")
+            let title = parts.count > 1 ? parts.last! : (brief.name ?? String(localized: "雷达歌单"))
+            let subtitle = parts.count > 1 ? parts.dropLast().joined(separator: "|") : nil
+            return RadarPlaylist(id: id, title: title, subtitle: subtitle, coverURL: brief.coverImgUrl)
+        }
     }
 
     private func fetchRecommendPlaylists(loggedIn: Bool) async -> [PlaylistSummary] {
@@ -114,6 +155,23 @@ struct HomeView: View {
                     ForEach(Array(model.recommendPlaylists.prefix(12).enumerated()), id: \.element.id) { index, playlist in
                         playlistCard(playlist)
                             .staggeredAppearance(index: index, id: "home-rec-\(playlist.id)")
+                    }
+                }
+            }
+
+            if !model.radarPlaylists.isEmpty {
+                Shelf(title: "雷达歌单") {
+                    ForEach(model.radarPlaylists) { radar in
+                        NavigationLink(value: Destination.playlist(radar.id)) {
+                            CoverCardBody(
+                                coverURL: radar.coverURL?.resizedImageURL(384),
+                                title: radar.title,
+                                subtitle: radar.subtitle
+                            ) {
+                                playPlaylist(radar.id)
+                            }
+                        }
+                        .buttonStyle(.interactiveCard)
                     }
                 }
             }
@@ -216,17 +274,17 @@ struct HomeView: View {
         guard let likedList = account.likedSongsPlaylist else { return }
         Task {
             guard let seed = account.likedTrackIDs.randomElement() else {
-                ToastCenter.shared.show("先收藏一些喜欢的歌曲吧")
+                ToastCenter.shared.show(String(localized: "先收藏一些喜欢的歌曲吧"))
                 return
             }
             do {
                 let tracks = try await NeteaseAPI.intelligenceList(songID: seed, playlistID: likedList.id)
                 guard !tracks.isEmpty else {
-                    ToastCenter.shared.show("心动模式暂时不可用")
+                    ToastCenter.shared.show(String(localized: "心动模式暂时不可用"))
                     return
                 }
                 player.play(tracks: tracks, source: .playlist(likedList.id))
-                ToastCenter.shared.show("已开启心动模式")
+                ToastCenter.shared.show(String(localized: "已开启心动模式"))
             } catch {
                 ToastCenter.shared.show(error.localizedDescription)
             }
@@ -323,8 +381,8 @@ struct HomeView: View {
 // MARK: - Feature card
 
 struct FeatureCard: View {
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     let icon: String
     var coverURL: URL?
     var gradient: [Color] = [Color(red: 0.75, green: 0.16, blue: 0.22),

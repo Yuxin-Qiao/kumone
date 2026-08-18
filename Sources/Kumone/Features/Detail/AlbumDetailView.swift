@@ -16,7 +16,7 @@ struct AlbumDetailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 20) {
                 if let album {
                     header(album)
                         .padding(.horizontal, Theme.Layout.contentInset)
@@ -42,7 +42,7 @@ struct AlbumDetailView: View {
                         .padding(.horizontal, Theme.Layout.contentInset)
 
                     if !otherAlbums.isEmpty {
-                        Shelf(title: "\(album.artist?.name ?? "该歌手")的其他专辑") {
+                        Shelf(title: "\(album.artist?.name ?? String(localized: "该歌手"))的其他专辑") {
                             ForEach(otherAlbums) { other in
                                 NavigationLink(value: Destination.album(other.id)) {
                                     CoverCardBody(
@@ -67,7 +67,7 @@ struct AlbumDetailView: View {
                 Color.clear.frame(height: 8)
             }
         }
-        .navigationTitle(album?.name ?? "专辑")
+        .navigationTitle(album?.name ?? String(localized: "专辑"))
         .task(id: albumID) {
             await load()
         }
@@ -107,7 +107,7 @@ struct AlbumDetailView: View {
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(album.subType?.isEmpty == false ? album.subType! : "专辑")
+                Text(album.subType?.isEmpty == false ? album.subType! : String(localized: "专辑"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -170,7 +170,7 @@ struct AlbumDetailView: View {
                         Button {
                             toggleSubscribe()
                         } label: {
-                            Label(isSubscribed ? "已收藏" : "收藏",
+                            Label(isSubscribed ? String(localized: "已收藏") : String(localized: "收藏"),
                                   systemImage: isSubscribed ? "checkmark" : "plus")
                                 .font(.system(size: 13, weight: .medium))
                                 .padding(.horizontal, 14)
@@ -206,7 +206,7 @@ struct AlbumDetailView: View {
             do {
                 try await NeteaseAPI.subscribeAlbum(id: albumID, subscribe: !isSubscribed)
                 isSubscribed.toggle()
-                ToastCenter.shared.show(isSubscribed ? "已收藏专辑" : "已取消收藏")
+                ToastCenter.shared.show(isSubscribed ? String(localized: "已收藏专辑") : String(localized: "已取消收藏"))
             } catch {
                 ToastCenter.shared.show(error.localizedDescription)
             }
