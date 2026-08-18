@@ -1,13 +1,9 @@
 .build/
 .swiftpm/
 .DS_Store
-# macOS SwiftPM may generate a user Xcode project; keep the committed iOS app project.
 *.xcodeproj
-!ios/Kumone.xcodeproj/
-!ios/Kumone.xcodeproj/**
 xcuserdata/
 DerivedData/
-*.ipa
 
 # Electron (windows/) build artifacts
 windows/node_modules/
@@ -18,12 +14,3 @@ windows/dist-installer/
 *.zip
 *.exe
 *.ico.tmp
-
-# Android build artifacts
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-local.properties
-*.apk
-*.aab

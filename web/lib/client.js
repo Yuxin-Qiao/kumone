@@ -1,4 +1,4 @@
-// NetEase Cloud Music client transport layer for Android & Web.
+// NetEase Cloud Music client transport layer for Web & PWA.
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = factory();

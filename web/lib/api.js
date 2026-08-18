@@ -1,4 +1,4 @@
-// Typed NetEase Cloud Music API surface for Android & Web.
+// Typed NetEase Cloud Music API surface for Web & PWA.
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = factory();
@@ -115,11 +115,16 @@
         str = `MUSIC_U=${str}`;
       }
       getClient().ingestCookieString(str);
-      const profile = await NeteaseAPI.userAccount();
-      if (!profile) {
-        throw new Error('Cookie 无效或已过期');
+      try {
+        const profile = await NeteaseAPI.userAccount();
+        if (!profile) {
+          throw new Error('Cookie 无效或已过期');
+        }
+        return profile;
+      } catch (e) {
+        getClient().clearAuthCookies();
+        throw e;
       }
-      return profile;
     },
     async logout() {
       try { await getClient().weapi('/logout'); } catch (_) {}

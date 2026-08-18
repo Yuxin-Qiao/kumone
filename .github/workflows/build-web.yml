@@ -35,7 +35,7 @@ jobs:
       - name: Generate static latest.json update metadata
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.2.0")
-          VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v)//')
+          VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
           node -e '
             const fs = require("fs");
             const version = process.env.VERSION || "0.2.0";
@@ -46,8 +46,8 @@ jobs:
               releaseUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/tag/${tag}`,
               updatedAt: new Date().toISOString(),
               downloads: {
+                macos: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.zip`,
                 windows: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-Setup-${version}-x64.exe`,
-                android: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.apk`,
                 linuxAppImage: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}-x86_64.AppImage`,
                 linuxDeb: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone_${version}_amd64.deb`
               }

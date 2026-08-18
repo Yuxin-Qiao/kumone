@@ -37,7 +37,7 @@ jobs:
         id: ver
         run: |
           RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
             VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
           fi
@@ -144,7 +144,7 @@ jobs:
         shell: pwsh
         run: |
           $raw = "${{ github.event.inputs.tag || github.ref_name }}"
-          $ver = $raw -replace '^(v|android-v|windows-v|linux-v|ios-v)', ''
+          $ver = $raw -replace '^(v|windows-v|linux-v)', ''
           if ([string]::IsNullOrWhiteSpace($ver) -or $ver -eq "main" -or $ver -eq "master") {
             $ver = (git describe --tags --match="v*" --abbrev=0 2>$null) -replace '^v', ''
             if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "0.2.0" }
@@ -194,7 +194,7 @@ jobs:
       - name: Derive version
         run: |
           RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
             VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
           fi
@@ -222,121 +222,7 @@ jobs:
           path: windows/dist-linux/
 
   # =========================================================================
-  # 4. Android Client Build (Native Kotlin APK)
-  # =========================================================================
-  build-android:
-    name: Build Android (Native Kotlin APK)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Derive version
-        run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
-            VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          node Scripts/sync-docs-version.js "$VERSION"
-
-      - name: Set up JDK 17 & Gradle
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build Android APK
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          sed -i '/org.gradle.java.home/d' gradle.properties 2>/dev/null || true
-          ./gradlew assembleDebug assembleRelease -PversionName="$VERSION" --stacktrace
-
-      - name: Prepare Android deliverables
-        run: |
-          mkdir -p dist-android
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-android/Kumone-${VERSION}.apk"
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk "dist-android/Kumone-${VERSION}-release-unsigned.apk"
-          ls -la dist-android/
-
-      - name: Upload Android Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-android
-          path: dist-android/
-
-  # =========================================================================
-  # 5. iOS Client Build (Native IPA)
-  # =========================================================================
-  build-ios:
-    name: Build iOS (Native IPA)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Run iOS Smoke Test
-        run: node ios/test/smoke.js
-
-      - name: Derive version
-        id: ver
-        run: |
-          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
-            VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.1.9.1")
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          node Scripts/sync-docs-version.js "$VERSION"
-
-      - name: Build iOS Application (Release)
-        run: |
-          xcodebuild -project ios/Kumone.xcodeproj \
-            -scheme Kumone \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath .build/ios \
-            -configuration Release \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            MARKETING_VERSION="$VERSION" \
-            build
-
-      - name: Package iOS IPA Deliverable
-        run: |
-          mkdir -p dist-ios/Payload
-          APP_PATH=$(find .build/ios/Build/Products -name "Kumone.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: Kumone.app not found"
-            exit 1
-          fi
-          cp -R "$APP_PATH" dist-ios/Payload/
-          cd dist-ios
-          zip -qr "Kumone-${VERSION}.ipa" Payload
-          ls -lh "Kumone-${VERSION}.ipa"
-
-      - name: Upload iOS IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-ios
-          path: dist-ios/Kumone-*.ipa
-
-  # =========================================================================
-  # 6. Web Build & Deployment (PWA & Docker)
+  # 4. Web Build & Deployment (PWA & Docker)
   # =========================================================================
   build-web:
     name: Build & Deploy Web (PWA & Docker)
@@ -354,7 +240,7 @@ jobs:
       - name: Derive version & Update latest.json
         run: |
           RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
             VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
           fi
@@ -372,8 +258,6 @@ jobs:
                 macos: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.zip`,
                 windows: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-Setup-${version}-x64.exe`,
                 windowsPortable: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-win32-x64.zip`,
-                ios: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.ipa`,
-                android: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.apk`,
                 linuxAppImage: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}-x86_64.AppImage`,
                 linuxDeb: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone_${version}_amd64.deb`
               }
@@ -432,12 +316,12 @@ jobs:
         continue-on-error: true
 
   # =========================================================================
-  # 7. Publish Unified Multi-Platform Release (All Platforms Together)
+  # 5. Publish Unified Multi-Platform Release (macOS, Windows, Linux, Web)
   # =========================================================================
   publish-unified-release:
     name: Publish Unified Multi-Platform Release
     runs-on: ubuntu-latest
-    needs: [build-macos, build-windows, build-linux, build-android, build-ios, build-web]
+    needs: [build-macos, build-windows, build-linux, build-web]
     if: always() && !cancelled()
     steps:
       - uses: actions/checkout@v4
@@ -447,7 +331,7 @@ jobs:
       - name: Derive target version and release tag
         run: |
           RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
             VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
           fi
@@ -470,8 +354,6 @@ jobs:
             -name "*.AppImage" -o \
             -name "*.deb" -o \
             -name "*.tar.gz" -o \
-            -name "*.ipa" -o \
-            -name "*.apk" -o \
             -name "appcast.xml" \
           \) -exec cp {} release-dist/ \;
           echo "Collected deliverables for $TAG:"
@@ -492,9 +374,7 @@ jobs:
               `| 🪟 **Windows** | 免安装便携版 Zip | \`Kumone-win32-x64.zip\` | 解压即用 |\n` +
               `| 🐧 **Linux** | AppImage 通用包 | \`Kumone-${version}-x86_64.AppImage\` | \`chmod +x\` 即可直接运行 |\n` +
               `| 🐧 **Linux** | Debian / Ubuntu 安装包 | \`Kumone_${version}_amd64.deb\` | \`sudo dpkg -i\` 一键安装 |\n` +
-              `| 📱 **iOS** | 原生应用包 (IPA) | \`Kumone-${version}.ipa\` | 支持 TrollStore / AltStore / Sideloadly 侧载安装 |\n` +
-              `| 📱 **Android** | 原生通用安装包 (推荐) | \`Kumone-${version}.apk\` | 支持 Android 7.0+ (API 24+) |\n` +
-              `| 🌐 **Web & PWA** | 在线网页版 / PWA | [在线体验](https://${owner}.github.io/kumone/) | 支持浏览器打开并一键安装到桌面 |\n\n---\n\n`;
+              `| 🌐 **Web & PWA** | 在线网页版 / PWA (全端/移动端通用) | [在线体验](https://${owner}.github.io/kumone/) | 浏览器即开即用，支持 iOS / Android / 桌面一键安装到主屏幕 |\n\n---\n\n`;
 
             if (fs.existsSync("CHANGELOG.md")) {
               try {

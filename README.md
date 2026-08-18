@@ -10,22 +10,18 @@
 
 # Kumone
 
-**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux, iOS, Android & Web**
+**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux & Web / PWA**
 
-Native SwiftUI on macOS · Native SwiftUI/WebKit on iOS · Electron for Windows & Linux · Native Kotlin on Android · PWA & Docker for Web
+Native SwiftUI on macOS · Electron for Windows & Linux · PWA & Docker for Web (Mobile & Desktop)
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
-[![iOS](https://img.shields.io/badge/iOS-16%2B-000000?logo=apple)](#ios-native-port)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
 [![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-desktop-appimage--deb)
-[![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-native-port)
-[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker)
+[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker-mobile--cross-platform)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
 [![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
 [![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
-[![iOS CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml)
-[![Android CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml)
 [![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
 [![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
 
@@ -60,14 +56,16 @@ Native SwiftUI on macOS · Native SwiftUI/WebKit on iOS · Electron for Windows 
 - 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
 - ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
 - 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center / SMTC / MPRIS / Android MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
+- ⌨️ **System integration** — media keys / Control Center / SMTC / MPRIS / MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
 - 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
 
-## Web / PWA / Docker
+## Web / PWA / Docker (Mobile & Cross-Platform)
 
-Run Kumone in any browser — iOS Safari, iPadOS, Chrome, Edge, smart TVs, in-car infotainment, or self-hosted via Docker.
+Run Kumone instantly in any modern browser without installation — including **iOS Safari, Android Chrome, iPadOS, Chrome, Edge, smart TVs, in-car infotainment**, or self-hosted via Docker:
 
-- 🌐 **Live Demo & PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone) (Tap *Share → Add to Home Screen* on iOS/iPadOS for full-screen native experience)
+- 🌐 **Live Demo & PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone)
+  - 📱 **iOS**: In Safari, tap *Share → Add to Home Screen* for a full-screen, standalone app experience with no URL bars.
+  - 🤖 **Android**: In Chrome / Edge, tap *Menu → Install App / Add to Home screen*.
 - 🐳 **Run with Docker**:
   ```bash
   docker run -d --name kumone-web -p 3000:3000 ghcr.io/yuxin-qiao/kumone-web:latest
@@ -83,61 +81,6 @@ Run Kumone in any browser — iOS Safari, iPadOS, Chrome, Edge, smart TVs, in-ca
         - "3000:3000"
   ```
 
-## Linux Desktop (AppImage & Deb)
-
-Native Linux desktop client with MPRIS media control support and system notifications.
-
-**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.1.9.1-x86_64.AppImage` or `Kumone_0.1.9.1_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
-
-```bash
-# Run AppImage
-chmod +x Kumone-0.1.9-x86_64.AppImage
-./Kumone-0.1.9.1-x86_64.AppImage
-
-# Or install Deb on Ubuntu/Debian
-sudo dpkg -i Kumone_0.1.9.1_amd64.deb
-```
-
-## Android (Native Port)
-
-This fork introduces a dedicated Android version located under [`android/`](android) — featuring a hybrid native architecture:
-- **Foreground Service with MediaSessionCompat**: Full background playback, lock screen controls, system notification media controls, and audio focus management (e.g. pausing on headphone disconnect).
-- **Mobile-Tailored UI**: Bottom 5-tab navigation (`Home`, `Search`, `Personal FM`, `Library`, `Settings`), floating collapsible mini-player, full-screen immersive now-playing view with dynamic blurred artwork backdrop, and interactive 3-line synced lyrics.
-- **Crypto & API Parity**: Byte-identical AES-128-CBC/ECB + MD5 `weapi` and `eapi` implementation in Kotlin + JS.
-- **UnblockNeteaseMusic Fallback**: Automatic multi-source unblocking via pyncmd, Kuwo, and Kugou.
-
-**Download APK** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (Android 7.0+ / API 24+): `Kumone-0.1.9.1.apk`. Built automatically by [CI](.github/workflows/build-android.yml).
-
-```bash
-# Smoke test (crypto parity & structural verification)
-node android/test/smoke.js
-
-# Build Android APK
-cd android
-./gradlew assembleDebug
-./gradlew assembleRelease
-```
-
-## iOS (Native Port)
-
-This fork also ships a dedicated iOS client under [`ios/`](ios) — the same mobile Web UI as Android, wrapped in a native SwiftUI/WebKit shell:
-- **Background audio & lock screen**: `AVAudioSession` playback category, `MPNowPlayingInfoCenter` artwork/title/progress, `MPRemoteCommandCenter` for Control Center / AirPods / headset controls, interruption & headphone-unplug handling.
-- **Native URLSession tunnel**: bypasses WKWebView CORS so NetEase weapi/eapi and gray-track unblock sources load the same way as Android.
-- **Sideload IPA**: unsigned `Kumone-*.ipa` for TrollStore / AltStore / Sideloadly; open `ios/Kumone.xcodeproj` in Xcode for a signed debug install.
-
-**Download IPA** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (iOS 16+): `Kumone-0.1.9.1.ipa`. Built automatically by [CI](.github/workflows/build-ios.yml).
-
-```bash
-# Smoke test (project integrity & native bridge checks)
-node ios/test/smoke.js
-
-# Build unsigned IPA (macOS + Xcode)
-xcodebuild -project ios/Kumone.xcodeproj -scheme Kumone \
-  -destination 'generic/platform=iOS' -configuration Release \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-  -derivedDataPath .build/ios build
-```
-
 ## Windows (Electron port)
 
 This fork adds a full Windows port under [`windows/`](windows) — the Swift
@@ -146,7 +89,7 @@ to the Swift implementation** (verified against fixed vectors), the API client,
 UnblockNeteaseMusic fallback chain and the whole UI are re-implemented in
 Electron.
 
-**Download** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (Windows 10/11 x64): `Kumone-Setup-0.1.9.1-x64.exe` installer or the
+**Download** — [Releases → v0.2.0](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.2.0) (Windows 10/11 x64): `Kumone-Setup-0.2.0-x64.exe` installer or the
 portable zip. Built on a real Windows runner by
 [CI](.github/workflows/build-windows.yml).
 
@@ -156,6 +99,21 @@ npm install
 npm test             # crypto parity + live API smoke
 npm run e2e          # CDP-driven UI tests (16 assertions)
 npm run package:win  # NSIS installer
+```
+
+## Linux Desktop (AppImage & Deb)
+
+Native Linux desktop client with MPRIS media control support and system notifications.
+
+**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.2.0-x86_64.AppImage` or `Kumone_0.2.0_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
+
+```bash
+# Run AppImage
+chmod +x Kumone-0.1.9.1-x86_64.AppImage
+./Kumone-0.2.0-x86_64.AppImage
+
+# Or install Deb on Ubuntu/Debian
+sudo dpkg -i Kumone_0.2.0_amd64.deb
 ```
 
 ## Installation (macOS)
@@ -190,9 +148,7 @@ Scripts/compile_and_run.sh     # kill → repackage → relaunch
 Kumone/
 ├── Sources/Kumone/     # macOS SwiftUI native implementation
 ├── windows/            # Windows & Linux Electron desktop ports
-├── ios/                # iOS SwiftUI + WebKit hybrid native app
-├── android/            # Android Kotlin + Web hybrid native app
-├── web/                # Web / PWA / Docker portable player
+├── web/                # Web / PWA / Docker portable & mobile player
 └── .github/workflows/  # Automated multi-platform CI/CD & Upstream sync
 ```
 
@@ -213,13 +169,10 @@ below, but their design and implementation ideas were referenced extensively:
 ## Maintainers
 
 - **Original Author**: [@missuo](https://github.com/missuo) (macOS Native Client)
-- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux, iOS, Android & Web Ports)
+- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux & Web/PWA Ports)
 
 See [MAINTAINERS.md](MAINTAINERS.md) for more information.
 
 ## License
 
-Licensed under [LGPL-3.0-only](LICENSE) (the [GPL-3.0](COPYING) text is
-included alongside). For learning and personal use only — all music data and
-rights belong to NetEase Cloud Music and the respective source platforms. No
-downloading, no social features.
+Kumone is licensed under [LGPL-3.0-only](LICENSE) (with accompanying [GPL-3.0](COPYING) text). For educational and personal use only. Music data and copyrights belong to NetEase Cloud Music and respective copyright holders. No download support, no social features.

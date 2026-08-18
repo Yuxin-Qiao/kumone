@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: '是否无论是否有新提交，都强制触发 Windows & Android 构建'
+        description: '是否无论是否有新提交，都强制触发多平台发布构建'
         required: false
         type: boolean
         default: false

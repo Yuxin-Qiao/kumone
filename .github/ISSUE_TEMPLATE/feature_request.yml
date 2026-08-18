@@ -14,11 +14,10 @@ body:
       label: 涉及的平台 (Target Platform)
       options:
         - "全平台通用 (All Platforms)"
-        - "Android"
+        - "macOS"
         - "Windows"
         - "Linux"
         - "Web / PWA"
-        - "macOS"
     validations:
       required: true
 

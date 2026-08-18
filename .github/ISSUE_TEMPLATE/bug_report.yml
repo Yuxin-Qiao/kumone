@@ -14,11 +14,10 @@ body:
       label: 发生问题的平台 (Platform)
       description: 请选择您运行 Kumone 的操作系统或客户端类型
       options:
-        - "Android (安卓原生版)"
+        - "macOS (SwiftUI 原生版)"
         - "Windows (Electron 桌面版)"
         - "Linux (AppImage / Deb)"
-        - "Web / PWA / Docker (网页版)"
-        - "macOS (SwiftUI 原生版)"
+        - "Web / PWA / Docker (全端/移动端网页版)"
     validations:
       required: true
 

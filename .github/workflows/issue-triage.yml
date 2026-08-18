@@ -18,8 +18,8 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           LABELS=()
-          if echo "$ISSUE_BODY" | grep -iq "Android"; then
-            LABELS+=("platform:android")
+          if echo "$ISSUE_BODY" | grep -iq "macOS"; then
+            LABELS+=("platform:macos")
           fi
           if echo "$ISSUE_BODY" | grep -iq "Windows"; then
             LABELS+=("platform:windows")
@@ -27,11 +27,8 @@ jobs:
           if echo "$ISSUE_BODY" | grep -iq "Linux"; then
             LABELS+=("platform:linux")
           fi
-          if echo "$ISSUE_BODY" | grep -iq "Web / PWA" || echo "$ISSUE_BODY" | grep -iq "Docker"; then
+          if echo "$ISSUE_BODY" | grep -iq "Web / PWA" || echo "$ISSUE_BODY" | grep -iq "Docker" || echo "$ISSUE_BODY" | grep -iq "网页版"; then
             LABELS+=("platform:web")
-          fi
-          if echo "$ISSUE_BODY" | grep -iq "macOS"; then
-            LABELS+=("platform:macos")
           fi
 
           for label in "${LABELS[@]}"; do
