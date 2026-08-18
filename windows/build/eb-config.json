@@ -19,6 +19,7 @@
     "icon": "build/icons",
     "category": "AudioVideo",
     "synopsis": "NetEase Cloud Music client",
+    "maintainer": "Yuxin Qiao <qiaoyuxin123@gmail.com>",
     "description": "Kumone (雲の音) — Modern, lightweight NetEase Cloud Music client for macOS, Windows and Linux"
   },
   "deb": {

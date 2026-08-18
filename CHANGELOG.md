@@ -6,6 +6,24 @@
 section the English bullets come first, followed by their Simplified Chinese
 counterparts. 段落格式：`## <版本号> - <日期>`，条目必须写成单行。
 
+## 0.2.0 - 2026-08-18
+
+### Added / 新增
+
+- Android version now supports one-tap launch to official NetEase Cloud Music app for instant login confirmation without scanning QR codes
+- Comprehensive multi-mode login options added: Phone SMS Captcha, Phone/Email Password with client-side MD5 hashing, QR Code scan, and Cookie/MUSIC_U direct import
+- Android Native asynchronous parallel HTTP transport bridge, resolving WebView CORS restrictions and managing authenticated cookies automatically
+- Android 版本现已支持一键唤起网易云音乐官方 App 授权确认登录，单机无需扫描二维码
+- 新增多模式登录：支持手机验证码（60s 倒计时）、手机/邮箱密码（客户端 MD5 加密）、二维码扫码以及 Cookie / MUSIC_U 直接导入
+- Android 原生异步协程并发 HTTP 传输桥接层，彻底解决 WebView CORS 跨域拦截并实现 Cookie 自动化管理
+
+### Fixed / 修复
+
+- Fixed `NeteaseAPI is not defined` script scope error in Android WebView environment
+- Fixed home page loading failure on Android by introducing resilient parallel loading with Promise.allSettled and retry fallback
+- 修复 Android WebView 环境下 `NeteaseAPI is not defined` 脚本作用域未定义报错
+- 修复 Android 首页由于 WebView 跨域及网络波动导致加载失败的问题，增加 Promise.allSettled 弹性加载与重试机制
+
 ## 0.1.9 - 2026-08-17
 
 ### Fixed / 修复
