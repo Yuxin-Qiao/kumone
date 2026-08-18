@@ -6,7 +6,6 @@ on:
   push:
     branches: [main, master]
     tags: ["v*", "windows-v*"]
-    paths: ["windows/**", ".github/workflows/build-windows.yml"]
   workflow_dispatch:
 
 permissions:

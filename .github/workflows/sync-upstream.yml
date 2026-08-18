@@ -1,14 +1,15 @@
-name: Sync Upstream
+name: Sync Upstream & Auto Release
 
 on:
   schedule:
-    # 每天定时检查并同步上游更新 (UTC 00:00 / 北京时间 08:00)
-    - cron: '0 0 * * *'
-  # 支持在 GitHub Actions 页面手动一键触发同步
+    # 每 3 小时自动检查并同步上游更新
+    - cron: '0 */3 * * *'
+  # 支持在 GitHub Actions 页面手动随时一键触发
   workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   sync:
@@ -28,27 +29,40 @@ jobs:
       - name: Add Upstream and Fetch
         run: |
           git remote add upstream https://github.com/missuo/kumone.git || true
-          git fetch upstream --tags
+          git fetch upstream --tags --force
 
       - name: Merge upstream/main into main
+        id: merge
         run: |
           git checkout main
-          # 检查是否有上游新提交
           UPSTREAM_HEAD=$(git rev-parse upstream/main)
           LOCAL_HEAD=$(git rev-parse HEAD)
           MERGE_BASE=$(git merge-base HEAD upstream/main)
 
           if [ "$UPSTREAM_HEAD" = "$MERGE_BASE" ]; then
             echo "Already up to date with upstream/main."
+            echo "updated=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           echo "Merging upstream/main into main..."
-          git merge --no-edit upstream/main || {
-            echo "Merge conflict encountered. Please resolve manually."
+          if git merge --no-edit upstream/main; then
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "Merge conflict detected!"
             exit 1
-          }
+          fi
 
-      - name: Push updates and tags to origin
+      - name: Push branch and tags to origin
+        if: steps.merge.outputs.updated == 'true'
         run: |
           git push origin main --tags
+
+      - name: Notify on Conflict
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "⚠️ 上游自动同步冲突提醒" \
+            --body "GitHub Actions 在自动合并上游 \`missuo/kumone\` 时遇到代码冲突，请在本地拉取后手动解决冲突并推送。" || true
