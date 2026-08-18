@@ -2,6 +2,19 @@
 'use strict';
 
 (function () {
+  const NeteaseAPI = (typeof window !== 'undefined' && window.NeteaseAPI)
+    ? window.NeteaseAPI
+    : (typeof require === 'function' ? require('./lib/api') : null);
+  const NeteaseClient = (typeof window !== 'undefined' && window.NeteaseClient)
+    ? window.NeteaseClient
+    : (typeof require === 'function' ? require('./lib/client') : null);
+  const NeteaseCrypto = (typeof window !== 'undefined' && window.NeteaseCrypto)
+    ? window.NeteaseCrypto
+    : (typeof require === 'function' ? require('./lib/crypto') : null);
+  const Unblock = (typeof window !== 'undefined' && window.Unblock)
+    ? window.Unblock
+    : (typeof require === 'function' ? require('./lib/unblock') : null);
+
   const state = {
     user: null,
     likedIds: new Set(),
@@ -24,6 +37,10 @@
     searchType: 1,
     actionTrack: null,
     qrPollTimer: null,
+    currentUnikey: null,
+    captchaCountdown: 0,
+    captchaTimer: null,
+    activeLoginTab: 'phone',
     isLyricsViewActive: false,
     audioElem: null,
   };
@@ -88,6 +105,18 @@
     el.loginQrStatus = document.getElementById('login-qr-status');
     el.btnRefreshQr = document.getElementById('btn-refresh-qr');
     el.btnCloseLogin = document.getElementById('btn-close-login');
+    el.btnJumpNeteaseApp = document.getElementById('btn-jump-netease-app');
+
+    el.loginTabs = document.querySelectorAll('.login-tab-btn');
+    el.inputLoginPhone = document.getElementById('input-login-phone');
+    el.inputLoginCaptcha = document.getElementById('input-login-captcha');
+    el.inputLoginPassword = document.getElementById('input-login-password');
+    el.inputLoginCookie = document.getElementById('input-login-cookie');
+    el.btnSendCaptcha = document.getElementById('btn-send-captcha');
+    el.btnSubmitPhoneLogin = document.getElementById('btn-submit-phone-login');
+    el.btnSubmitCookieLogin = document.getElementById('btn-submit-cookie-login');
+    el.rowLoginCaptcha = document.getElementById('row-login-captcha');
+    el.rowLoginPassword = document.getElementById('row-login-password');
 
     el.bottomNav = document.getElementById('bottom-nav');
     el.toastContainer = document.getElementById('toast-container');
@@ -1307,34 +1336,69 @@
     el.queueSheetBackdrop.classList.remove('active');
   }
 
-  async function showLoginModal() {
+  function switchLoginTab(tabName) {
+    state.activeLoginTab = tabName;
+    if (el.loginTabs) {
+      el.loginTabs.forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.loginTab === tabName);
+      });
+    }
+    document.querySelectorAll('.login-tab-content').forEach((content) => {
+      content.classList.toggle('active', content.id === `tab-login-${tabName}`);
+    });
+
+    if (tabName === 'qr') {
+      startQrLogin();
+    } else {
+      if (state.qrPollTimer) {
+        clearInterval(state.qrPollTimer);
+        state.qrPollTimer = null;
+      }
+    }
+  }
+
+  async function showLoginModal(tabName = 'phone') {
     el.loginSheetBackdrop.classList.add('active');
-    el.loginQrStatus.textContent = '正在获取二维码…';
+    switchLoginTab(tabName);
+  }
+
+  function hideLoginModal() {
+    if (state.qrPollTimer) {
+      clearInterval(state.qrPollTimer);
+      state.qrPollTimer = null;
+    }
+    el.loginSheetBackdrop.classList.remove('active');
+  }
+
+  async function startQrLogin() {
+    el.loginQrStatus.textContent = '正在获取登录密钥…';
     el.btnRefreshQr.style.display = 'none';
 
     try {
       const unikey = await NeteaseAPI.qrKey();
+      state.currentUnikey = unikey;
       const qrUrl = NeteaseAPI.qrLoginURL(unikey);
       const dataUrl = QRCode.toDataURL(qrUrl, { width: 200 });
       el.loginQrImg.src = dataUrl;
-      el.loginQrStatus.textContent = '请使用网易云音乐 App 扫码登录';
+      el.loginQrStatus.textContent = '可直接点击上方按钮唤起网易云 App，或使用另一台手机扫码';
 
       if (state.qrPollTimer) clearInterval(state.qrPollTimer);
       state.qrPollTimer = setInterval(async () => {
         try {
           const res = await NeteaseAPI.qrCheck(unikey);
           if (res.code === 800) {
-            el.loginQrStatus.textContent = '二维码已过期，点击刷新';
+            el.loginQrStatus.textContent = '二维码/登录密钥已过期，点击刷新';
             el.btnRefreshQr.style.display = 'block';
             clearInterval(state.qrPollTimer);
           } else if (res.code === 802) {
-            el.loginQrStatus.textContent = '扫描成功，请在手机上点击确认登录';
+            el.loginQrStatus.textContent = '已在手机端扫码/唤起，请在网易云 App 中点击确认登录';
           } else if (res.code === 803) {
             clearInterval(state.qrPollTimer);
-            el.loginSheetBackdrop.classList.remove('active');
+            hideLoginModal();
             showToast('登录成功！');
             await checkAccountStatus();
             if (state.currentView === 'library') renderLibraryView();
+            else if (state.currentView === 'home') renderHomeView();
           }
         } catch (_) {}
       }, 1500);
@@ -1344,9 +1408,143 @@
     }
   }
 
-  function hideLoginModal() {
-    if (state.qrPollTimer) clearInterval(state.qrPollTimer);
-    el.loginSheetBackdrop.classList.remove('active');
+  function handleJumpNeteaseApp() {
+    if (!state.currentUnikey) {
+      showToast('正在获取登录密钥，请稍候…');
+      startQrLogin().then(() => {
+        if (state.currentUnikey) doJumpNetease();
+      });
+      return;
+    }
+    doJumpNetease();
+  }
+
+  function doJumpNetease() {
+    if (window.AndroidBridge && typeof window.AndroidBridge.openNeteaseApp === 'function') {
+      const opened = window.AndroidBridge.openNeteaseApp(state.currentUnikey);
+      if (opened) {
+        el.loginQrStatus.textContent = '已尝试唤起网易云音乐，请在 App 中点击确认登录…';
+        showToast('已唤起网易云音乐，请在 App 中点击确认');
+      }
+    } else {
+      const url = NeteaseAPI.qrLoginURL(state.currentUnikey);
+      window.open(url, '_blank');
+      el.loginQrStatus.textContent = '已打开授权页面，请在网易云中确认登录…';
+      showToast('已打开授权链接');
+    }
+  }
+
+  async function handleSendCaptcha() {
+    const phone = (el.inputLoginPhone.value || '').trim();
+    if (!/^1\d{10}$/.test(phone)) {
+      showToast('请输入有效的 11 位手机号码');
+      el.inputLoginPhone.focus();
+      return;
+    }
+
+    if (state.captchaCountdown > 0) return;
+
+    el.btnSendCaptcha.disabled = true;
+    el.btnSendCaptcha.textContent = '发送中…';
+
+    try {
+      await NeteaseAPI.sendCaptcha(phone);
+      showToast('验证码已发送，请注意查收');
+      state.captchaCountdown = 60;
+      el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
+
+      if (state.captchaTimer) clearInterval(state.captchaTimer);
+      state.captchaTimer = setInterval(() => {
+        state.captchaCountdown--;
+        if (state.captchaCountdown <= 0) {
+          clearInterval(state.captchaTimer);
+          el.btnSendCaptcha.disabled = false;
+          el.btnSendCaptcha.textContent = '获取验证码';
+        } else {
+          el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
+        }
+      }, 1000);
+    } catch (e) {
+      el.btnSendCaptcha.disabled = false;
+      el.btnSendCaptcha.textContent = '获取验证码';
+      showToast(e.message || '发送验证码失败');
+    }
+  }
+
+  async function handleSubmitPhoneLogin() {
+    const phone = (el.inputLoginPhone.value || '').trim();
+    if (!/^1\d{10}$/.test(phone)) {
+      showToast('请输入有效的 11 位手机号码');
+      el.inputLoginPhone.focus();
+      return;
+    }
+
+    const authTypeElem = document.querySelector('input[name="phone-auth-type"]:checked');
+    const authType = authTypeElem ? authTypeElem.value : 'captcha';
+
+    el.btnSubmitPhoneLogin.disabled = true;
+    el.btnSubmitPhoneLogin.textContent = '正在登录…';
+
+    try {
+      if (authType === 'captcha') {
+        const captcha = (el.inputLoginCaptcha.value || '').trim();
+        if (!captcha) {
+          showToast('请输入收到的短信验证码');
+          el.inputLoginCaptcha.focus();
+          el.btnSubmitPhoneLogin.disabled = false;
+          el.btnSubmitPhoneLogin.textContent = '立即登录';
+          return;
+        }
+        await NeteaseAPI.loginCaptcha(phone, captcha);
+      } else {
+        const password = el.inputLoginPassword.value || '';
+        if (!password) {
+          showToast('请输入账号密码');
+          el.inputLoginPassword.focus();
+          el.btnSubmitPhoneLogin.disabled = false;
+          el.btnSubmitPhoneLogin.textContent = '立即登录';
+          return;
+        }
+        await NeteaseAPI.loginCellphone(phone, password);
+      }
+
+      showToast('登录成功！');
+      hideLoginModal();
+      await checkAccountStatus();
+      if (state.currentView === 'library') renderLibraryView();
+      else if (state.currentView === 'home') renderHomeView();
+    } catch (e) {
+      showToast(e.message || '登录失败，请检查手机号或密码/验证码');
+    } finally {
+      el.btnSubmitPhoneLogin.disabled = false;
+      el.btnSubmitPhoneLogin.textContent = '立即登录';
+    }
+  }
+
+  async function handleSubmitCookieLogin() {
+    const cookieVal = (el.inputLoginCookie.value || '').trim();
+    if (!cookieVal) {
+      showToast('请粘贴 MUSIC_U 或完整 Cookie 字符串');
+      el.inputLoginCookie.focus();
+      return;
+    }
+
+    el.btnSubmitCookieLogin.disabled = true;
+    el.btnSubmitCookieLogin.textContent = '正在验证…';
+
+    try {
+      await NeteaseAPI.loginCookie(cookieVal);
+      showToast('登录成功！');
+      hideLoginModal();
+      await checkAccountStatus();
+      if (state.currentView === 'library') renderLibraryView();
+      else if (state.currentView === 'home') renderHomeView();
+    } catch (e) {
+      showToast(e.message || 'Cookie 无效或已过期');
+    } finally {
+      el.btnSubmitCookieLogin.disabled = false;
+      el.btnSubmitCookieLogin.textContent = '导入并登录';
+    }
   }
 
   async function checkAccountStatus() {
@@ -1525,7 +1723,26 @@
       if (e.target === el.loginSheetBackdrop) hideLoginModal();
     };
     el.btnCloseLogin.onclick = hideLoginModal;
-    el.btnRefreshQr.onclick = showLoginModal;
+    el.btnRefreshQr.onclick = () => startQrLogin();
+
+    if (el.loginTabs) {
+      el.loginTabs.forEach((tab) => {
+        tab.onclick = () => switchLoginTab(tab.dataset.loginTab);
+      });
+    }
+
+    document.querySelectorAll('input[name="phone-auth-type"]').forEach((radio) => {
+      radio.onchange = (e) => {
+        const isCaptcha = e.target.value === 'captcha';
+        if (el.rowLoginCaptcha) el.rowLoginCaptcha.style.display = isCaptcha ? 'flex' : 'none';
+        if (el.rowLoginPassword) el.rowLoginPassword.style.display = isCaptcha ? 'none' : 'flex';
+      };
+    });
+
+    if (el.btnSendCaptcha) el.btnSendCaptcha.onclick = handleSendCaptcha;
+    if (el.btnSubmitPhoneLogin) el.btnSubmitPhoneLogin.onclick = handleSubmitPhoneLogin;
+    if (el.btnSubmitCookieLogin) el.btnSubmitCookieLogin.onclick = handleSubmitCookieLogin;
+    if (el.btnJumpNeteaseApp) el.btnJumpNeteaseApp.onclick = handleJumpNeteaseApp;
   }
 
   async function init() {

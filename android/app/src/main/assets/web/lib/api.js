@@ -17,7 +17,7 @@ const call = async (kind, path, payload) =>
 const weapi = (path, payload) => call('weapi', path, payload);
 const eapi = (path, payload) => call('eapi', path, payload);
 
-const NeteaseAPI = {
+var NeteaseAPI = {
   getClient,
 
   // MARK: - Auth
@@ -30,7 +30,9 @@ const NeteaseAPI = {
   async qrCheck(unikey) {
     const rawBuf = await getClient().weapi('/login/qrcode/client/login', { key: unikey, type: 1 });
     let text = '';
-    if (typeof TextDecoder !== 'undefined') {
+    if (typeof rawBuf === 'string') {
+      text = rawBuf;
+    } else if (typeof TextDecoder !== 'undefined') {
       text = new TextDecoder('utf-8').decode(rawBuf);
     } else {
       text = Buffer.from(rawBuf).toString('utf8');
@@ -40,6 +42,75 @@ const NeteaseAPI = {
       getClient().ingestCookieString(obj.cookie);
     }
     return obj;
+  },
+  async sendCaptcha(phone, ctcode = '86') {
+    const cleanPhone = String(phone).replace(/\s+/g, '');
+    const cleanCt = String(ctcode).replace('+', '').trim() || '86';
+    return weapi('/sms/captcha/sent', { cell: cleanPhone, ctcode: cleanCt });
+  },
+  async loginCaptcha(phone, captcha, ctcode = '86') {
+    const cleanPhone = String(phone).replace(/\s+/g, '');
+    const cleanCt = String(ctcode).replace('+', '').trim() || '86';
+    const cleanCap = String(captcha).trim();
+    const res = await weapi('/login/cellphone', {
+      phone: cleanPhone,
+      captcha: cleanCap,
+      countrycode: cleanCt,
+      rememberLogin: 'true',
+    });
+    if (res && res.cookie) {
+      getClient().ingestCookieString(res.cookie);
+    }
+    return res;
+  },
+  async loginCellphone(phone, password, countrycode = '86') {
+    const cryptoMod = (typeof window !== 'undefined' && window.NeteaseCrypto)
+      ? window.NeteaseCrypto
+      : (typeof require === 'function' ? require('./crypto') : {});
+    const md5Pass = /^[a-fA-F0-9]{32}$/.test(password)
+      ? password
+      : (typeof cryptoMod.md5 === 'function' ? cryptoMod.md5(password) : password);
+    const cleanPhone = String(phone).replace(/\s+/g, '');
+    const cleanCt = String(countrycode).replace('+', '').trim() || '86';
+    const res = await weapi('/login/cellphone', {
+      phone: cleanPhone,
+      password: md5Pass,
+      countrycode: cleanCt,
+      rememberLogin: 'true',
+    });
+    if (res && res.cookie) {
+      getClient().ingestCookieString(res.cookie);
+    }
+    return res;
+  },
+  async loginEmail(email, password) {
+    const cryptoMod = (typeof window !== 'undefined' && window.NeteaseCrypto)
+      ? window.NeteaseCrypto
+      : (typeof require === 'function' ? require('./crypto') : {});
+    const md5Pass = /^[a-fA-F0-9]{32}$/.test(password)
+      ? password
+      : (typeof cryptoMod.md5 === 'function' ? cryptoMod.md5(password) : password);
+    const res = await weapi('/login', {
+      username: String(email).trim(),
+      password: md5Pass,
+      rememberLogin: 'true',
+    });
+    if (res && res.cookie) {
+      getClient().ingestCookieString(res.cookie);
+    }
+    return res;
+  },
+  async loginCookie(cookieString) {
+    let str = String(cookieString).trim();
+    if (!str.includes('=')) {
+      str = `MUSIC_U=${str}`;
+    }
+    getClient().ingestCookieString(str);
+    const profile = await NeteaseAPI.userAccount();
+    if (!profile) {
+      throw new Error('Cookie 无效或已过期');
+    }
+    return profile;
   },
   async logout() {
     try { await getClient().weapi('/logout'); } catch (_) {}
@@ -236,3 +307,7 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window.NeteaseAPI = NeteaseAPI;
 }
+if (typeof globalThis !== 'undefined') {
+  globalThis.NeteaseAPI = NeteaseAPI;
+}
+

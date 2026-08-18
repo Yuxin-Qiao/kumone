@@ -277,10 +277,38 @@ class KumoneAndroidBridge(
     fun openExternal(url: String) {
         activity.runOnUiThread {
             try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
                 activity.startActivity(intent)
             } catch (e: Exception) {
                 Toast.makeText(activity, "无法打开链接", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun openNeteaseApp(unikey: String): Boolean {
+        return try {
+            val orpheusUri = Uri.parse("orpheus://login?codekey=$unikey")
+            val intent = Intent(Intent.ACTION_VIEW, orpheusUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            try {
+                val fallbackUri = Uri.parse("https://music.163.com/login?codekey=$unikey")
+                val fallbackIntent = Intent(Intent.ACTION_VIEW, fallbackUri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                activity.startActivity(fallbackIntent)
+                true
+            } catch (err: Exception) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "未检测到网易云音乐 App 或无法唤起", Toast.LENGTH_SHORT).show()
+                }
+                false
             }
         }
     }

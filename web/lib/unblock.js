@@ -292,7 +292,7 @@ async function resolve(track) {
   return null;
 }
 
-const Unblock = { resolve, pyncmd, kuwo, kugou };
+var Unblock = { resolve, pyncmd, kuwo, kugou };
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Unblock;
@@ -300,3 +300,7 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window.Unblock = Unblock;
 }
+if (typeof globalThis !== 'undefined') {
+  globalThis.Unblock = Unblock;
+}
+
