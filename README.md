@@ -62,13 +62,13 @@ to the Swift implementation** (verified against fixed vectors), the API client,
 UnblockNeteaseMusic fallback chain and the whole UI are re-implemented in
 Electron.
 
-**Download** — [Releases → windows-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.4)
-(Windows 10/11 x64): `Kumone-Setup-0.1.4-x64.exe` installer (74 MB) or the
+**Download** — [Releases → windows-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.9)
+(Windows 10/11 x64): `Kumone-Setup-0.1.9-x64.exe` installer or the
 portable zip. Built on a real Windows runner by
 [CI](.github/workflows/build-windows.yml).
 
-Feature parity with upstream v0.1.4: QR login, discovery / library / search,
-playlist / album / artist pages, Personal FM, cloud disk, play records,
+Feature parity with upstream v0.1.9: QR login, discovery / library / search,
+playlist / album / artist pages, Personal FM, radar playlists, cloud disk, play records,
 Heartbeat Mode, play-next queue, lyrics with translation + romanization,
 dedicated now-playing page, track context menu, quality selection with served
 badge, UnblockNeteaseMusic fallback, media keys / SMTC, keyboard shortcuts,

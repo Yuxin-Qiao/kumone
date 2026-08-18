@@ -60,11 +60,11 @@ macOS 原生 SwiftUI · Windows Electron 移植版 · 直连网易云真实 API
 weapi/eapi 加密层与 Swift 实现**逐字节一致**（固定向量对拍验证），API 客户端、
 UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
 
-**下载** — [Releases → windows-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.4)
-（Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.4-x64.exe`（74 MB）或便携版 zip。
+**下载** — [Releases → windows-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.9)
+（Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.9-x64.exe` 或便携版 zip。
 由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
 
-与上游 v0.1.4 功能对齐：扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、
+与上游 v0.1.9 功能对齐：扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、雷达歌单、
 云盘音乐、听歌排行、心动模式、下一首播放插播队列、歌词（原文+翻译+罗马音）、
 独立正在播放大页、曲目右键菜单、音质选择与实际音质徽标、灰色歌曲解锁、
 媒体键/系统 SMTC、键盘快捷键、重启恢复播放队列与进度。
