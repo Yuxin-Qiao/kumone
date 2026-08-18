@@ -1,10 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kumone",
-  "main": "web/_worker.js",
+  "main": "worker.js",
   "compatibility_date": "2024-09-23",
   "assets": {
     "directory": "./web",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
   }
 }
