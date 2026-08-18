@@ -1,5 +1,5 @@
 // Kumone PWA Service Worker
-const CACHE_NAME = 'kumone-cache-v0.2.0';
+const CACHE_NAME = 'kumone-cache-v0.1.9.1';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

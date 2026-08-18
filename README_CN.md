@@ -178,6 +178,13 @@ Kumone 是从零编写的 Swift 实现，未复制以下项目的代码，但深
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server)（LGPL-3.0-only）— 灰色歌曲第三方音源的接口与匹配策略参考（`UnblockService.swift` 为独立的 Swift 重新实现）
 - [LyricsX](https://github.com/ddddxxx/LyricsX)（MPL-2.0，© ddddxxx）— 桌面歌词窗口的设计参考（窗口配置、屏幕比例定位；`DesktopLyrics.swift` 为独立的 SwiftUI 实现）
 
+## 维护者 (Maintainers)
+
+- **原作者 (Original Author)**: [@missuo](https://github.com/missuo) (macOS 原生版)
+- **多平台维护者 (Maintainer)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao) (Windows / Linux / Android / Web 版本移植与维护)
+
+更多详情请参阅 [MAINTAINERS.md](MAINTAINERS.md)。
+
 ## 协议与说明
 
 本项目以 [LGPL-3.0-only](LICENSE) 协议开源（随附 [GPL-3.0](COPYING) 文本）。仅供学习交流，音乐数据与版权归网易云音乐及各音源平台所有。不支持下载、无社交功能。

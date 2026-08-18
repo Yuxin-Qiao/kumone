@@ -185,6 +185,13 @@ below, but their design and implementation ideas were referenced extensively:
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server) (LGPL-3.0-only) — third-party source endpoints and matching strategy for gray tracks (`UnblockService.swift` is an independent Swift reimplementation)
 - [LyricsX](https://github.com/ddddxxx/LyricsX) (MPL-2.0, © ddddxxx) — desktop lyrics window design reference (window configuration, screen-factor positioning; `DesktopLyrics.swift` is an independent SwiftUI implementation)
 
+## Maintainers
+
+- **Original Author**: [@missuo](https://github.com/missuo) (macOS Native Client)
+- **Maintainer**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao) (Windows, Linux, Android & Web Ports)
+
+See [MAINTAINERS.md](MAINTAINERS.md) for more information.
+
 ## License
 
 Licensed under [LGPL-3.0-only](LICENSE) (the [GPL-3.0](COPYING) text is

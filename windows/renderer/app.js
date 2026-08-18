@@ -1724,7 +1724,8 @@ function renderSettingsPanel() {
       },
     }, '检查更新')));
 
-  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.2.0 · Electron 移植版'));
+  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.1.9.1 · Electron 移植版'));
+  root.append(el('div', { style: 'text-align:center;color:var(--text-dim);font-size:11px;padding:2px 0 8px;' }, 'Maintainer: Yuxin Qiao · Original Author: missuo'));
 }
 
 function applyAppearance() {
