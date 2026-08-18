@@ -6,6 +6,10 @@ on:
     tags: ["v*", "web-v*"]
   workflow_dispatch:
 
+concurrency:
+  group: build-web-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pages: write
@@ -17,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,6 +31,33 @@ jobs:
 
       - name: Smoke test Web / PWA
         run: node web/test/smoke.js
+
+      - name: Generate static latest.json update metadata
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.2.0")
+          VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v)//')
+          node -e '
+            const fs = require("fs");
+            const version = process.env.VERSION || "0.2.0";
+            const tag = process.env.LATEST_TAG || "v0.2.0";
+            const meta = {
+              version: version,
+              tag: tag,
+              releaseUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/tag/${tag}`,
+              updatedAt: new Date().toISOString(),
+              downloads: {
+                windows: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-Setup-${version}-x64.exe`,
+                android: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.apk`,
+                linuxAppImage: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}-x86_64.AppImage`,
+                linuxDeb: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone_${version}_amd64.deb`
+              }
+            };
+            fs.writeFileSync("web/latest.json", JSON.stringify(meta, null, 2), "utf-8");
+            console.log("Generated web/latest.json:", meta);
+          '
+        env:
+          VERSION: ${{ env.VERSION }}
+          LATEST_TAG: ${{ env.LATEST_TAG }}
 
       - name: Upload Web Artifact
         uses: actions/upload-artifact@v4

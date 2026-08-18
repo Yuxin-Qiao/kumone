@@ -1,0 +1,60 @@
+name: 🐛 Bug 报告 (Bug Report)
+description: 提交程序错误、闪退或功能异常反馈
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提交 Bug 报告！请尽可能详尽地描述问题，以便快速定位与修复。
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 发生问题的平台 (Platform)
+      description: 请选择您运行 Kumone 的操作系统或客户端类型
+      options:
+        - "Android (安卓原生版)"
+        - "Windows (Electron 桌面版)"
+        - "Linux (AppImage / Deb)"
+        - "Web / PWA / Docker (网页版)"
+        - "macOS (SwiftUI 原生版)"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 客户端版本号 (App Version)
+      placeholder: 例如 v0.2.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 (Bug Description)
+      description: 请清晰描述发生的具体异常或预期外的行为
+      placeholder: 在点击……时，播放器出现……
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 重现步骤 (Steps to Reproduce)
+      description: 请列出能稳定重现该问题的步骤
+      placeholder: |
+        1. 打开发现页
+        2. 点击每日推荐
+        3. 播放第一首歌曲
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志或报错截图 (Logs & Screenshots)
+      description: 可粘贴控制台输出、错误提示或拖入截图
+    validations:
+      required: false

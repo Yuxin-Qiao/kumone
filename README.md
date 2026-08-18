@@ -19,10 +19,13 @@ Native SwiftUI on macOS · Electron for Windows & Linux · Native Kotlin on Andr
 [![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-desktop-appimage--deb)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-native-port)
 [![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker)
-[![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.10-7F52FF?logo=kotlin&logoColor=white)](android)
-[![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
+
+[![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
+[![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
+[![Android CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml)
+[![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
+[![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
 
 <table>
   <tr>

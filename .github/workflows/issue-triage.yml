@@ -1,0 +1,40 @@
+name: Issue Triage & Auto Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Triage issue platform labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          LABELS=()
+          if echo "$ISSUE_BODY" | grep -iq "Android"; then
+            LABELS+=("platform:android")
+          fi
+          if echo "$ISSUE_BODY" | grep -iq "Windows"; then
+            LABELS+=("platform:windows")
+          fi
+          if echo "$ISSUE_BODY" | grep -iq "Linux"; then
+            LABELS+=("platform:linux")
+          fi
+          if echo "$ISSUE_BODY" | grep -iq "Web / PWA" || echo "$ISSUE_BODY" | grep -iq "Docker"; then
+            LABELS+=("platform:web")
+          fi
+          if echo "$ISSUE_BODY" | grep -iq "macOS"; then
+            LABELS+=("platform:macos")
+          fi
+
+          for label in "${LABELS[@]}"; do
+            echo "Adding label: $label"
+            gh issue edit "$ISSUE_NUMBER" --add-label "$label" || true
+          done

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 项目使用与构建文档 (Documentation)
+    url: https://github.com/Yuxin-Qiao/kumone#readme
+    about: 查阅各端编译、打包与运行指南
+  - name: 🌐 网页版在线体验 (Web Player)
+    url: https://yuxin-qiao.github.io/kumone
+    about: 在线免安装体验 Kumone 播放器

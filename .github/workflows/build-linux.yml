@@ -7,10 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '发布到的 GitHub Release Tag (例如 v0.1.9 或 linux-v0.1.9，为空则不发布到 Release)'
+        description: '发布到的 GitHub Release Tag (例如 v0.2.0 或 linux-v0.2.0，为空则不发布到 Release)'
         required: false
         type: string
         default: ''
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
