@@ -1724,7 +1724,7 @@ function renderSettingsPanel() {
       },
     }, '检查更新')));
 
-  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.1.9 · Electron 移植版'));
+  root.append(el('div', { class: 'set-version' }, 'Kumone for Windows · v0.2.0 · Electron 移植版'));
 }
 
 function applyAppearance() {
