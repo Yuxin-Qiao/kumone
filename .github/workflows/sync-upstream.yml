@@ -1,0 +1,54 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # 每天定时检查并同步上游更新 (UTC 00:00 / 北京时间 08:00)
+    - cron: '0 0 * * *'
+  # 支持在 GitHub Actions 页面手动一键触发同步
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream and Fetch
+        run: |
+          git remote add upstream https://github.com/missuo/kumone.git || true
+          git fetch upstream --tags
+
+      - name: Merge upstream/main into main
+        run: |
+          git checkout main
+          # 检查是否有上游新提交
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          LOCAL_HEAD=$(git rev-parse HEAD)
+          MERGE_BASE=$(git merge-base HEAD upstream/main)
+
+          if [ "$UPSTREAM_HEAD" = "$MERGE_BASE" ]; then
+            echo "Already up to date with upstream/main."
+            exit 0
+          fi
+
+          echo "Merging upstream/main into main..."
+          git merge --no-edit upstream/main || {
+            echo "Merge conflict encountered. Please resolve manually."
+            exit 1
+          }
+
+      - name: Push updates and tags to origin
+        run: |
+          git push origin main --tags
