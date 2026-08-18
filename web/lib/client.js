@@ -81,9 +81,14 @@
         if (Array.isArray(resOrCookies)) {
           raws = resOrCookies;
         } else if (resOrCookies && typeof resOrCookies.headers === 'object') {
-          raws = typeof resOrCookies.headers.getSetCookie === 'function'
-            ? resOrCookies.headers.getSetCookie()
-            : (resOrCookies.headers.get('set-cookie') ? [resOrCookies.headers.get('set-cookie')] : []);
+          const xSetCookie = resOrCookies.headers.get('x-set-cookie');
+          if (xSetCookie) {
+            raws = xSetCookie.split(';;');
+          } else if (typeof resOrCookies.headers.getSetCookie === 'function') {
+            raws = resOrCookies.headers.getSetCookie();
+          } else if (resOrCookies.headers.get('set-cookie')) {
+            raws = [resOrCookies.headers.get('set-cookie')];
+          }
         }
         const parsed = {};
         const expand = [];
@@ -104,23 +109,59 @@
       } catch (_) {}
     }
 
+    getProxyUrl(targetUrl) {
+      if (typeof window === 'undefined') return targetUrl;
+      const customProxy = (window.localStorage && window.localStorage.getItem('kumone_proxy_url')) || '';
+      if (customProxy && customProxy.trim().length > 0) {
+        let base = customProxy.trim();
+        if (base.includes('?')) return base + '&target=' + encodeURIComponent(targetUrl);
+        return base.replace(/\/+$/, '') + (base.endsWith('/api/netease') ? '?target=' : '/api/netease?target=') + encodeURIComponent(targetUrl);
+      }
+      if (window.location && !window.location.hostname.endsWith('github.io')) {
+        return '/api/netease?target=' + encodeURIComponent(targetUrl);
+      }
+      return targetUrl;
+    }
+
     async perform(url, form) {
       const bodyStr = Object.entries(form)
         .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
         .join('&');
 
-      const headers = {
-        'User-Agent': USER_AGENT,
-        'Referer': 'https://music.163.com',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': this.cookieHeader({ os: 'web', appver: '2.9.7' }),
-      };
+      const cookieStr = this.cookieHeader({ os: 'web', appver: '2.9.7' });
+      const finalUrl = this.getProxyUrl(url);
+      const isProxied = finalUrl !== url;
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr,
-      });
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      if (isProxied) {
+        headers['X-Netease-Cookie'] = cookieStr;
+      } else {
+        headers['User-Agent'] = USER_AGENT;
+        headers['Referer'] = 'https://music.163.com';
+        headers['Cookie'] = cookieStr;
+      }
+
+      let res;
+      try {
+        res = await fetch(finalUrl, {
+          method: 'POST',
+          headers,
+          body: bodyStr,
+        });
+      } catch (err) {
+        if (typeof window !== 'undefined' && window.location && window.location.hostname.endsWith('github.io')) {
+          const customProxy = window.localStorage ? window.localStorage.getItem('kumone_proxy_url') : null;
+          if (!customProxy) {
+            const e = new Error('由于浏览器跨域 (CORS) 限制，请在「设置 → 网络代理」中配置代理，或使用 Docker / 自建部署。');
+            e.kind = 'cors';
+            throw e;
+          }
+        }
+        throw err;
+      }
+
       this.absorbSetCookies(res);
       if (!res.ok) {
         const err = new Error(`网络错误 (${res.status})`);

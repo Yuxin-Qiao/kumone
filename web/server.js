@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Kumone Web Server (Zero-dependency Node.js HTTP server)
+// Kumone Web Server (Zero-dependency Node.js HTTP server + NetEase CORS Reverse Proxy)
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
@@ -28,8 +29,9 @@ const MIME_TYPES = {
 const server = http.createServer((req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cookie, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Netease-Cookie, Cookie, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Set-Cookie, Set-Cookie');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -37,7 +39,63 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let reqUrl = req.url.split('?')[0];
+  const hostHeader = req.headers.host || `localhost:${PORT}`;
+  const parsedUrl = new URL(req.url, `http://${hostHeader}`);
+  const pathname = parsedUrl.pathname;
+
+  // 1. NetEase Reverse Proxy Endpoint: /api/netease?target=https://...
+  if (pathname.startsWith('/api/netease')) {
+    const targetUrlStr = parsedUrl.searchParams.get('target');
+    if (!targetUrlStr) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Missing target query parameter' }));
+      return;
+    }
+
+    let bodyChunks = [];
+    req.on('data', (chunk) => bodyChunks.push(chunk));
+    req.on('end', async () => {
+      const rawBody = Buffer.concat(bodyChunks);
+      const customCookie = req.headers['x-netease-cookie'] || req.headers['cookie'] || '';
+
+      try {
+        const neteaseRes = await fetch(targetUrlStr, {
+          method: req.method,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            'Referer': 'https://music.163.com',
+            'Content-Type': req.headers['content-type'] || 'application/x-www-form-urlencoded',
+            'Cookie': customCookie,
+          },
+          body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? rawBody : undefined,
+        });
+
+        const resHeaders = {
+          'Content-Type': neteaseRes.headers.get('content-type') || 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'X-Set-Cookie, Set-Cookie',
+        };
+
+        const setCookies = typeof neteaseRes.headers.getSetCookie === 'function'
+          ? neteaseRes.headers.getSetCookie()
+          : (neteaseRes.headers.get('set-cookie') ? [neteaseRes.headers.get('set-cookie')] : []);
+        if (setCookies.length) {
+          resHeaders['X-Set-Cookie'] = setCookies.join(';;');
+        }
+
+        res.writeHead(neteaseRes.status, resHeaders);
+        const arrayBuf = await neteaseRes.arrayBuffer();
+        res.end(Buffer.from(arrayBuf));
+      } catch (err) {
+        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 2. Static File Serving
+  let reqUrl = pathname;
   if (reqUrl === '/' || reqUrl === '') reqUrl = '/index.html';
 
   const safePath = path.normalize(path.join(STATIC_DIR, reqUrl));
@@ -68,6 +126,10 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`Kumone Web Player running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/`);
-});
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`Kumone Web Player running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/`);
+  });
+}
+
+module.exports = server;

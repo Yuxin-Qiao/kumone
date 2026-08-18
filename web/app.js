@@ -621,12 +621,17 @@
           <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
             <div style="font-size:32px;margin-bottom:12px">📡</div>
             <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:8px">加载发现内容失败</div>
-            <div style="font-size:13px;margin-bottom:20px">${escapeHtml(errorMsg)}</div>
-            <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 24px;border-radius:20px">重新加载</button>
+            <div style="font-size:13px;margin-bottom:20px;line-height:1.5">${escapeHtml(errorMsg)}</div>
+            <div style="display:flex;gap:10px;justify-content:center">
+              <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 20px;border-radius:20px">重新加载</button>
+              <button class="btn btn-secondary" id="btn-goto-proxy-settings" style="padding:8px 20px;border-radius:20px">配置网络代理</button>
+            </div>
           </div>
         `;
         const retryBtn = document.getElementById('btn-retry-home');
         if (retryBtn) retryBtn.onclick = renderHomeView;
+        const proxyBtn = document.getElementById('btn-goto-proxy-settings');
+        if (proxyBtn) proxyBtn.onclick = () => navigateTo('settings');
         return;
       }
 
@@ -1029,6 +1034,26 @@
       </div>
 
       <div class="section-header">
+        <div class="section-title">网络与 API 代理</div>
+      </div>
+      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5">
+          在纯静态托管（如 GitHub Pages）环境下，受浏览器跨域 (CORS) 安全策略限制，建议配置 API 代理或使用 Docker / Cloudflare 部署。
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">API 代理端点 (Proxy URL)</label>
+          <input type="text" id="settings-proxy-input" class="login-input" placeholder="留空默认直连，或如: https://worker.example.workers.dev" value="${escapeHtml(localStorage.getItem('kumone_proxy_url') || '')}" style="width:100%">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-secondary" id="btn-set-proxy-local" style="font-size:11.5px;padding:4px 10px;border-radius:14px">填入同源反代 (/api/netease)</button>
+          <button class="btn btn-secondary" id="btn-clear-proxy" style="font-size:11.5px;padding:4px 10px;border-radius:14px">清除代理 (直连)</button>
+          <button class="btn btn-secondary" id="btn-test-proxy" style="font-size:11.5px;padding:4px 10px;border-radius:14px">⚡ 测试延迟</button>
+        </div>
+        <div id="proxy-test-result" style="font-size:12px;margin-bottom:8px;display:none"></div>
+        <button class="btn btn-primary btn-block" id="btn-save-proxy" style="padding:8px 0;font-size:13px;font-weight:600">保存代理配置</button>
+      </div>
+
+      <div class="section-header">
         <div class="section-title">账号与数据</div>
       </div>
       <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
@@ -1062,6 +1087,51 @@
     document.getElementById('settings-unblock-toggle').onchange = (e) => {
       state.unblockEnabled = e.target.checked;
       showToast(state.unblockEnabled ? '已开启第三方音源解锁' : '已关闭第三方音源解锁');
+    };
+
+    document.getElementById('btn-set-proxy-local').onclick = () => {
+      document.getElementById('settings-proxy-input').value = '/api/netease';
+    };
+
+    document.getElementById('btn-clear-proxy').onclick = () => {
+      document.getElementById('settings-proxy-input').value = '';
+    };
+
+    document.getElementById('btn-save-proxy').onclick = () => {
+      const val = document.getElementById('settings-proxy-input').value.trim();
+      if (val) {
+        localStorage.setItem('kumone_proxy_url', val);
+        showToast('代理配置已保存');
+      } else {
+        localStorage.removeItem('kumone_proxy_url');
+        showToast('已恢复直连模式');
+      }
+    };
+
+    document.getElementById('btn-test-proxy').onclick = async () => {
+      const resultEl = document.getElementById('proxy-test-result');
+      resultEl.style.display = 'block';
+      resultEl.style.color = 'var(--text-muted)';
+      resultEl.textContent = '正在测试 API 延迟…';
+
+      const tempVal = document.getElementById('settings-proxy-input').value.trim();
+      const oldVal = localStorage.getItem('kumone_proxy_url');
+      if (tempVal) localStorage.setItem('kumone_proxy_url', tempVal);
+      else localStorage.removeItem('kumone_proxy_url');
+
+      const start = Date.now();
+      try {
+        await NeteaseAPI.toplists();
+        const duration = Date.now() - start;
+        resultEl.style.color = 'var(--success, #10b981)';
+        resultEl.textContent = `✓ 连通正常！响应延迟: ${duration} ms`;
+      } catch (err) {
+        resultEl.style.color = 'var(--danger, #ef4444)';
+        resultEl.textContent = `✗ 测试失败: ${err.message}`;
+      } finally {
+        if (oldVal) localStorage.setItem('kumone_proxy_url', oldVal);
+        else localStorage.removeItem('kumone_proxy_url');
+      }
     };
 
     document.getElementById('btn-settings-auth').onclick = () => {

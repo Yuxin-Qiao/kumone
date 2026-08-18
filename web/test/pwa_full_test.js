@@ -134,6 +134,39 @@ function pass(title) {
   assert.ok(qrUrl.includes(unikey), '二维码登录链接生成正确');
   pass(`扫码登录密钥与授权链接生成正常 (Unikey: ${unikey.slice(0, 8)}...)`);
 
+  console.log('\n=== [6] 内置 Node.js / Docker 反向代理端点验证 ===');
+  const server = require('../server');
+  const TEST_PORT = 3128;
+  await new Promise((resolve, reject) => {
+    server.listen(TEST_PORT, '127.0.0.1', async () => {
+      try {
+        const cryptoMod = require('../lib/crypto');
+        const payload = JSON.stringify({ limit: 3, total: true, n: 1000, csrf_token: '' });
+        const form = cryptoMod.weapi(payload);
+        const bodyStr = Object.entries(form).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+        const targetUrl = 'https://music.163.com/weapi/personalized/playlist';
+        const proxyUrl = `http://127.0.0.1:${TEST_PORT}/api/netease?target=${encodeURIComponent(targetUrl)}`;
+
+        const res = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Netease-Cookie': 'os=web; appver=2.9.7',
+          },
+          body: bodyStr,
+        });
+        assert.strictEqual(res.status, 200, '代理状态码必须为 200');
+        const json = await res.json();
+        assert.strictEqual(json.code, 200, '代理返回 code 必须为 200');
+        assert.ok(json.result && json.result.length > 0, '代理应正常返回歌单数据');
+        pass('Node.js / Docker /api/netease 反向代理与 Cookie 透传完全正常');
+        server.close(resolve);
+      } catch (e) {
+        server.close(() => reject(e));
+      }
+    });
+  });
+
   console.log(`\n🎉 全部 Web & PWA 测试顺利通过 (共 ${totalPassed} 项测试全部 PASS)！\n`);
   process.exit(0);
 })().catch((err) => {
