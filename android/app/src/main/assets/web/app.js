@@ -1409,6 +1409,7 @@
 
     try {
       const unikey = await NeteaseAPI.qrKey();
+      if (!unikey) throw new Error('登录密钥为空');
       state.currentUnikey = unikey;
       const qrUrl = NeteaseAPI.qrLoginURL(unikey);
       const dataUrl = QRCode.toDataURL(qrUrl, { width: 200 });
@@ -1436,7 +1437,10 @@
         } catch (_) {}
       }, 1500);
     } catch (e) {
-      el.loginQrStatus.textContent = '获取二维码失败，请重试';
+      const detail = e && e.message ? String(e.message) : '';
+      el.loginQrStatus.textContent = detail
+        ? ('获取二维码失败：' + detail)
+        : '获取二维码失败，请重试';
       el.btnRefreshQr.style.display = 'block';
     }
   }

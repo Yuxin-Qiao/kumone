@@ -55,7 +55,7 @@
     async sendCaptcha(phone, ctcode = '86') {
       const cleanPhone = String(phone).replace(/\s+/g, '');
       const cleanCt = String(ctcode).replace('+', '').trim() || '86';
-      return weapi('/sms/captcha/sent', { cell: cleanPhone, ctcode: cleanCt });
+      return weapi('/sms/captcha/sent', { cellphone: cleanPhone, ctcode: cleanCt });
     },
     async loginCaptcha(phone, captcha, ctcode = '86') {
       const cleanPhone = String(phone).replace(/\s+/g, '');

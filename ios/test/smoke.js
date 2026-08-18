@@ -92,6 +92,9 @@ const clientJs = fs.readFileSync(path.join(ROOT_DIR, 'Kumone/Resources/web/lib/c
 assert(clientJs.includes('window.webkit.messageHandlers.kumoneBridge'), 'client.js must route HTTP through the iOS native bridge');
 assert(clientJs.includes("action: 'asyncHttpRequest'"), 'client.js must post asyncHttpRequest to iOS');
 assert(clientJs.includes("action: 'setPreference'"), 'client.js must persist cookies through the iOS bridge');
+
+const apiJs = fs.readFileSync(path.join(ROOT_DIR, 'Kumone/Resources/web/lib/api.js'), 'utf-8');
+assert(apiJs.includes("cellphone: cleanPhone"), 'api.js sendCaptcha must use cellphone param for /sms/captcha/sent');
 console.log('  ✓ Web UI & Bridge integration validated.');
 
 console.log('\n🎉 [iOS Smoke Test] ALL CHECKS PASSED!\n');

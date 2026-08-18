@@ -73,6 +73,12 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
   );
   ok(`所有核心 Android 源码、资源及构建配置文件存在 (${requiredFiles.length} 项)`);
 
+  const apiJs = fs.readFileSync(path.join(rootDir, 'app/src/main/assets/web/lib/api.js'), 'utf-8');
+  assert(apiJs.includes("cellphone: cleanPhone"), 'api.js sendCaptcha must use cellphone param for /sms/captcha/sent');
+  const qrJs = fs.readFileSync(path.join(rootDir, 'app/src/main/assets/web/lib/qrcode.min.js'), 'utf-8');
+  assert(qrJs.includes('new QRCodeModel(0, QRErrorCorrectLevel.M)'), 'qrcode.min.js must auto-select QR version for long login URLs');
+  ok('登录 API 参数与 QR 编码修复已写入 Android web 资源');
+
   console.log('[3] 图标资源完整性检查 (mipmap 分辨率覆盖)');
   const mipmaps = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
   for (const mm of mipmaps) {
@@ -80,6 +86,10 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     assert.ok(fs.existsSync(iconPath), `Missing icon: ${mm}/ic_launcher.png`);
   }
   ok('所有 mipmap 图标分辨率完整覆盖 (48x48 -> 192x192)');
+
+  console.log('[4] QR 登录 URL 编码回归');
+  assert(qrJs.includes('if (this.typeNumber < 1)'), 'qrcode.min.js must support auto typeNumber selection');
+  ok('QR 库支持长 URL 自动选版本');
 
   console.log(`\n🎉 Android 模块冒烟测试全部通过 (共 ${passed} 项)！`);
   process.exit(0);

@@ -1859,6 +1859,13 @@
           if (loginTab) loginTab.click();
           break;
         }
+        case 'setPhone': {
+          if (el.inputLoginPhone) el.inputLoginPhone.value = value;
+          break;
+        }
+        case 'sendCaptcha':
+          handleSendCaptcha();
+          break;
         case 'clickId': {
           const node = document.getElementById(value);
           if (node) node.click();
