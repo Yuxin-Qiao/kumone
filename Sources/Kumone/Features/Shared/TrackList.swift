@@ -106,9 +106,15 @@ struct TrackRow: View {
         .onHover { hovering in
             withAnimation(AppAnimation.quick) { isHovering = hovering }
         }
+        #if os(macOS)
         .onTapGesture(count: 2) {
             if isPlayable { onPlay() }
         }
+        #else
+        .onTapGesture {
+            if isPlayable { onPlay() }
+        }
+        #endif
         .contextMenu { contextMenuItems }
         .sheet(isPresented: $showAddToPlaylist) {
             AddToPlaylistSheet(track: track)
@@ -147,7 +153,11 @@ struct TrackRow: View {
                     .foregroundStyle(liked ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
             }
             .buttonStyle(.pressable)
+            #if os(macOS)
             .opacity(liked || isHovering ? 1 : 0)
+            #else
+            .opacity(1)
+            #endif
 
             Text(Formatters.duration(track.duration))
                 .font(.system(size: 11.5).monospacedDigit())
@@ -196,10 +206,14 @@ struct TrackRow: View {
         }
         Divider()
         Button("复制链接") {
+            #if os(macOS)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(
                 "https://music.163.com/#/song?id=\(track.id)", forType: .string
             )
+            #elseif canImport(UIKit)
+            UIPasteboard.general.string = "https://music.163.com/#/song?id=\(track.id)"
+            #endif
             ToastCenter.shared.show(String(localized: "链接已复制"))
         }
     }

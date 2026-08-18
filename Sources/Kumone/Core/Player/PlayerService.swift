@@ -97,6 +97,16 @@ final class PlayerService {
     private var scrobbled = false
 
     private init() {
+        #if os(iOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            print("Failed to configure audio session: \(error)")
+        }
+        #endif
+
         engine.actionAtItemEnd = .pause
         volume = UserDefaults.standard.object(forKey: "player.volume") as? Float ?? 0.8
         engine.volume = volume

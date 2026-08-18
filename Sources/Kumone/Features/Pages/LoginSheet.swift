@@ -11,23 +11,75 @@ struct LoginSheet: View {
         case failed(String)
     }
 
+    private enum Mode {
+        case qr
+        case cookie
+    }
+
+    @State private var mode: Mode = .qr
     @State private var phase: Phase = .loading
-    @State private var qrImage: NSImage?
+    @State private var qrImage: PlatformImage?
     @State private var pollTask: Task<Void, Never>?
+    @State private var cookieText = ""
+    @State private var cookieError: String?
+    @State private var isLoggingInWithCookie = false
 
     @Environment(AccountStore.self) private var account
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 6) {
-                Text("登录网易云音乐")
-                    .font(.title3.weight(.semibold))
-                Text("使用网易云音乐 App 扫码登录")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
+        NavigationStack {
+            VStack(spacing: 20) {
+                Picker("登录方式", selection: $mode) {
+                    Text("扫码登录").tag(Mode.qr)
+                    Text("Cookie 登录").tag(Mode.cookie)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 260)
+                .padding(.top, 12)
+
+                if mode == .qr {
+                    qrSection
+                } else {
+                    cookieSection
+                }
+
+                Spacer()
             }
-            .padding(.top, 28)
+            .padding(.horizontal, 24)
+            .navigationTitle("登录网易云音乐")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                if mode == .qr { startLogin() }
+            }
+            .onDisappear { pollTask?.cancel() }
+            .onChange(of: mode) { _, newMode in
+                if newMode == .qr {
+                    startLogin()
+                } else {
+                    pollTask?.cancel()
+                }
+            }
+        }
+        .frame(minWidth: 320, minHeight: 460)
+    }
+
+    // MARK: - QR Section
+
+    private var qrSection: some View {
+        VStack(spacing: 16) {
+            Text("使用网易云音乐 App 扫码登录")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
 
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -36,7 +88,7 @@ struct LoginSheet: View {
                     .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
 
                 if let qrImage {
-                    Image(nsImage: qrImage)
+                    Image(platformImage: qrImage)
                         .resizable()
                         .interpolation(.none)
                         .frame(width: 180, height: 180)
@@ -96,18 +148,45 @@ struct LoginSheet: View {
             }
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
-
-            Button("取消") {
-                dismiss()
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 12.5))
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 20)
         }
-        .frame(width: 320)
-        .onAppear { startLogin() }
-        .onDisappear { pollTask?.cancel() }
+        .padding(.top, 10)
+    }
+
+    // MARK: - Cookie Section
+
+    private var cookieSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("直接粘贴你的 MUSIC_U 或完整 Cookie 字符串：")
+                .font(.system(size: 12.5))
+                .foregroundStyle(.secondary)
+
+            TextField("MUSIC_U=...", text: $cookieText, axis: .vertical)
+                .lineLimit(4...6)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+
+            if let cookieError {
+                Text(cookieError)
+                    .font(.caption)
+                    .foregroundStyle(Theme.accent)
+            }
+
+            Button {
+                loginWithCookie()
+            } label: {
+                if isLoggingInWithCookie {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("确认登录")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+            .disabled(cookieText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoggingInWithCookie)
+        }
+        .padding(.top, 16)
     }
 
     private var overlayVisible: Bool {
@@ -157,7 +236,27 @@ struct LoginSheet: View {
         }
     }
 
-    private static func generateQR(from string: String) -> NSImage? {
+    private func loginWithCookie() {
+        let trimmed = cookieText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isLoggingInWithCookie = true
+        cookieError = nil
+
+        Task {
+            defer { isLoggingInWithCookie = false }
+            NeteaseClient.shared.ingestCookieString(trimmed)
+            await account.bootstrap()
+            if account.isLoggedIn {
+                ToastCenter.shared.show(String(localized: "欢迎回来，\(account.profile?.nickname ?? "")"))
+                dismiss()
+            } else {
+                cookieError = String(localized: "Cookie 无效或已过期，请重新获取")
+                NeteaseClient.shared.clearAuthCookies()
+            }
+        }
+    }
+
+    private static func generateQR(from string: String) -> PlatformImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(string.utf8)
         filter.correctionLevel = "M"
@@ -165,6 +264,10 @@ struct LoginSheet: View {
         let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
         let context = CIContext()
         guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        #if os(macOS)
         return NSImage(cgImage: cgImage, size: NSSize(width: 180, height: 180))
+        #else
+        return UIImage(cgImage: cgImage)
+        #endif
     }
 }

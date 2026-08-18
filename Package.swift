@@ -4,7 +4,10 @@ import PackageDescription
 let package = Package(
     name: "Kumone",
     defaultLocalization: "zh-Hans",
-    platforms: [.macOS("15.0")],
+    platforms: [
+        .macOS("15.0"),
+        .iOS("16.0"),
+    ],
     products: [
         .executable(name: "Kumone", targets: ["Kumone"]),
     ],
@@ -15,7 +18,7 @@ let package = Package(
         .executableTarget(
             name: "Kumone",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
             path: "Sources/Kumone",
             // .lproj tables are copied into Contents/Resources by build-app.sh
@@ -26,7 +29,7 @@ let package = Package(
             ],
             linkerSettings: [
                 // Sparkle.framework is embedded in Contents/Frameworks by Scripts/build-app.sh.
-                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"], .when(platforms: [.macOS])),
             ]
         ),
     ]

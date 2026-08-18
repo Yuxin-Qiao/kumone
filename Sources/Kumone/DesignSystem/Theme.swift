@@ -1,8 +1,15 @@
+#if os(macOS)
+import AppKit
+public typealias PlatformColor = NSColor
+#elseif canImport(UIKit)
+import UIKit
+public typealias PlatformColor = UIColor
+#endif
 import SwiftUI
 
 /// Design tokens: color, radius, spacing, layout metrics.
 enum Theme {
-    /// NetEase red, tuned slightly warmer for macOS.
+    /// NetEase red, tuned slightly warmer.
     static let accent = Color(red: 0.925, green: 0.286, blue: 0.286) // #EC4949
     static let accentDeep = Color(red: 0.788, green: 0.161, blue: 0.161) // #C92929
 
@@ -16,14 +23,16 @@ enum Theme {
         static let small: CGFloat = 6
         static let standard: CGFloat = 8
         static let large: CGFloat = 12
+        static let card: CGFloat = 14
         static let panel: CGFloat = 20
     }
 
     enum Layout {
-        static let contentInset: CGFloat = 24
-        static let cardSize: CGFloat = 160
+        static let contentInset: CGFloat = 20
+        static let cardSize: CGFloat = 150
         static let sidebarWidth: CGFloat = 220
         static let playerBarHeight: CGFloat = 56
+        static let miniPlayerHeight: CGFloat = 62
         static let minWindowWidth: CGFloat = 1020
         static let minWindowHeight: CGFloat = 640
         static let defaultWindowWidth: CGFloat = 1200
@@ -31,7 +40,25 @@ enum Theme {
     }
 }
 
-/// Motion tokens (mirrors kaset's `AppAnimation`).
+extension Color {
+    static var windowBackground: Color {
+        #if os(macOS)
+        Color(nsColor: .windowBackgroundColor)
+        #else
+        Color(uiColor: .systemBackground)
+        #endif
+    }
+
+    static var secondaryWindowBackground: Color {
+        #if os(macOS)
+        Color(nsColor: .controlBackgroundColor)
+        #else
+        Color(uiColor: .secondarySystemBackground)
+        #endif
+    }
+}
+
+/// Motion tokens.
 enum AppAnimation {
     static let quick = Animation.easeOut(duration: 0.15)
     static let standard = Animation.easeInOut(duration: 0.25)
@@ -49,13 +76,17 @@ enum AppAnimation {
 }
 
 extension View {
-    /// Glass background with a graceful material fallback on macOS 15.
+    /// Glass background with a graceful material fallback.
     @ViewBuilder
     func compatGlass(interactive: Bool = false, in shape: some Shape) -> some View {
+        #if os(macOS)
         if #available(macOS 26.0, *) {
             self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
         } else {
             self.background(.ultraThinMaterial, in: shape)
         }
+        #else
+        self.background(.ultraThinMaterial, in: shape)
+        #endif
     }
 }

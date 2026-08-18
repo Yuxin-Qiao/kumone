@@ -1,3 +1,4 @@
+#if os(macOS)
 import Combine
 import Sparkle
 import SwiftUI
@@ -37,3 +38,4 @@ struct CheckForUpdatesButton: View {
         .disabled(!updater.canCheckForUpdates)
     }
 }
+#endif

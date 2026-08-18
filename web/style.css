@@ -1539,16 +1539,39 @@ body {
     font-size: 13px;
   }
 
-  .user-chip {
-    display: flex;
+  .nav-arrow-btn {
+    display: none;
+  }
+
+  .top-nav-left {
+    flex: 1;
+    min-width: 0;
   }
 
   .top-search-field {
-    width: 160px;
+    flex: 1;
+    width: 100%;
+    max-width: 100%;
   }
 
   .top-search-field:focus-within {
-    width: 200px;
+    width: 100%;
+  }
+
+  .user-chip {
+    display: flex;
+    padding: 3px;
+    background: transparent;
+    border: none;
+  }
+
+  .user-chip .user-name {
+    display: none;
+  }
+
+  .user-avatar {
+    width: 28px;
+    height: 28px;
   }
 
   #main-scroll-view {

@@ -1,4 +1,19 @@
+#if os(macOS)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 import SwiftUI
+
+enum AccessibilityHelper {
+    static var isReduceMotionEnabled: Bool {
+        #if os(macOS)
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        return UIAccessibility.isReduceMotionEnabled
+        #endif
+    }
+}
 
 // MARK: - Skeletons
 
@@ -75,7 +90,7 @@ struct StaggeredAppearanceModifier: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : 16)
             .onAppear {
-                if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                if AccessibilityHelper.isReduceMotionEnabled
                     || AnimationCache.hasAnimated(itemID) {
                     isVisible = true
                     return
@@ -283,7 +298,7 @@ struct MarqueeText: View {
             offset = 0
             animating = false
         }
-        guard needsMarquee, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard needsMarquee, !AccessibilityHelper.isReduceMotionEnabled else { return }
         let distance = textWidth + 32
         let duration = Double(distance) / 24
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
