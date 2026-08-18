@@ -10,11 +10,12 @@
 
 # Kumone
 
-**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux, Android & Web**
+**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux, iOS, Android & Web**
 
-Native SwiftUI on macOS · Electron for Windows & Linux · Native Kotlin on Android · PWA & Docker for Web
+Native SwiftUI on macOS · Native SwiftUI/WebKit on iOS · Electron for Windows & Linux · Native Kotlin on Android · PWA & Docker for Web
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
+[![iOS](https://img.shields.io/badge/iOS-16%2B-000000?logo=apple)](#ios-native-port)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
 [![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-desktop-appimage--deb)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-native-port)
@@ -23,6 +24,7 @@ Native SwiftUI on macOS · Electron for Windows & Linux · Native Kotlin on Andr
 
 [![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
 [![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
+[![iOS CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml)
 [![Android CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml)
 [![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
 [![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
@@ -104,7 +106,7 @@ This fork introduces a dedicated Android version located under [`android/`](andr
 - **Crypto & API Parity**: Byte-identical AES-128-CBC/ECB + MD5 `weapi` and `eapi` implementation in Kotlin + JS.
 - **UnblockNeteaseMusic Fallback**: Automatic multi-source unblocking via pyncmd, Kuwo, and Kugou.
 
-**Download APK** — [Releases → android-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.9) (Android 7.0+ / API 24+): `Kumone-v0.1.9.apk`. Built automatically by [CI](.github/workflows/build-android.yml).
+**Download APK** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (Android 7.0+ / API 24+): `Kumone-0.1.9.1.apk`. Built automatically by [CI](.github/workflows/build-android.yml).
 
 ```bash
 # Smoke test (crypto parity & structural verification)
@@ -114,6 +116,26 @@ node android/test/smoke.js
 cd android
 ./gradlew assembleDebug
 ./gradlew assembleRelease
+```
+
+## iOS (Native Port)
+
+This fork also ships a dedicated iOS client under [`ios/`](ios) — the same mobile Web UI as Android, wrapped in a native SwiftUI/WebKit shell:
+- **Background audio & lock screen**: `AVAudioSession` playback category, `MPNowPlayingInfoCenter` artwork/title/progress, `MPRemoteCommandCenter` for Control Center / AirPods / headset controls, interruption & headphone-unplug handling.
+- **Native URLSession tunnel**: bypasses WKWebView CORS so NetEase weapi/eapi and gray-track unblock sources load the same way as Android.
+- **Sideload IPA**: unsigned `Kumone-*.ipa` for TrollStore / AltStore / Sideloadly; open `ios/Kumone.xcodeproj` in Xcode for a signed debug install.
+
+**Download IPA** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (iOS 16+): `Kumone-0.1.9.1.ipa`. Built automatically by [CI](.github/workflows/build-ios.yml).
+
+```bash
+# Smoke test (project integrity & native bridge checks)
+node ios/test/smoke.js
+
+# Build unsigned IPA (macOS + Xcode)
+xcodebuild -project ios/Kumone.xcodeproj -scheme Kumone \
+  -destination 'generic/platform=iOS' -configuration Release \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+  -derivedDataPath .build/ios build
 ```
 
 ## Windows (Electron port)
@@ -168,6 +190,7 @@ Scripts/compile_and_run.sh     # kill → repackage → relaunch
 Kumone/
 ├── Sources/Kumone/     # macOS SwiftUI native implementation
 ├── windows/            # Windows & Linux Electron desktop ports
+├── ios/                # iOS SwiftUI + WebKit hybrid native app
 ├── android/            # Android Kotlin + Web hybrid native app
 ├── web/                # Web / PWA / Docker portable player
 └── .github/workflows/  # Automated multi-platform CI/CD & Upstream sync
@@ -190,7 +213,7 @@ below, but their design and implementation ideas were referenced extensively:
 ## Maintainers
 
 - **Original Author**: [@missuo](https://github.com/missuo) (macOS Native Client)
-- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux, Android & Web Ports)
+- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux, iOS, Android & Web Ports)
 
 See [MAINTAINERS.md](MAINTAINERS.md) for more information.
 

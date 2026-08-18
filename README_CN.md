@@ -10,11 +10,12 @@
 
 # Kumone
 
-**雲の音 — 网易云音乐客户端（macOS、Windows、Linux、Android & Web）**
+**雲の音 — 网易云音乐客户端（macOS、Windows、Linux、iOS、Android & Web）**
 
-macOS 原生 SwiftUI · Windows/Linux Electron 版 · Android 原生后台与移动端 · Web/PWA/Docker 全端通用
+macOS 原生 SwiftUI · iOS 原生后台与锁屏 · Windows/Linux Electron 版 · Android 原生后台与移动端 · Web/PWA/Docker 全端通用
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
+[![iOS](https://img.shields.io/badge/iOS-16%2B-000000?logo=apple)](#ios-ios-原生移植版)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-移植版)
 [![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-桌面版-appimage--deb)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-安卓原生移植版)
@@ -23,6 +24,7 @@ macOS 原生 SwiftUI · Windows/Linux Electron 版 · Android 原生后台与移
 
 [![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
 [![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
+[![iOS CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-ios.yml)
 [![Android CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-android.yml)
 [![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
 [![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
@@ -104,7 +106,7 @@ sudo dpkg -i Kumone_0.1.9.1_amd64.deb
 - **算法与接口一致性**：weapi / eapi 加密算法与 macOS 原版逐字节一致。
 - **灰色无版权歌曲解锁**：自动回落 pyncmd / 酷我 / 酷狗音源。
 
-**APK 下载** — [Releases → android-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.9)（Android 7.0+ / API 24+）：可以直接下载安装包 `Kumone-v0.1.9.apk` 并安装。由 [CI](.github/workflows/build-android.yml) 自动构建。
+**APK 下载** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1)（Android 7.0+ / API 24+）：可以直接下载安装包 `Kumone-0.1.9.1.apk` 并安装。由 [CI](.github/workflows/build-android.yml) 自动构建。
 
 ```bash
 # 运行冒烟测试（加密算法对拍与完整性检查）
@@ -114,6 +116,26 @@ node android/test/smoke.js
 cd android
 ./gradlew assembleDebug
 ./gradlew assembleRelease
+```
+
+## iOS (iOS 原生移植版)
+
+本仓库同时提供 iOS 原生客户端（位于 [`ios/`](ios)），与 Android 共用同一套移动端 Web UI，外层为 SwiftUI + WKWebView：
+- **后台播放与锁屏控制**：`AVAudioSession` 播放会话、`MPNowPlayingInfoCenter` 封面/歌名/进度、`MPRemoteCommandCenter` 支持控制中心 / AirPods / 耳机线控，电话打断与耳机拔出自动处理。
+- **原生 URLSession 隧道**：绕过 WKWebView CORS，网易云 weapi/eapi 与灰色歌曲解锁音源与 Android 一致。
+- **侧载 IPA**：CI 产出未签名 `Kumone-*.ipa`，可用 TrollStore / AltStore / Sideloadly 安装；本地用 Xcode 打开 `ios/Kumone.xcodeproj` 即可真机调试。
+
+**IPA 下载** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1)（iOS 16+）：可以直接下载安装包 `Kumone-0.1.9.1.ipa`。由 [CI](.github/workflows/build-ios.yml) 自动构建。
+
+```bash
+# 运行冒烟测试（工程完整性与原生桥接检查）
+node ios/test/smoke.js
+
+# 构建未签名 IPA（需要 macOS + Xcode）
+xcodebuild -project ios/Kumone.xcodeproj -scheme Kumone \
+  -destination 'generic/platform=iOS' -configuration Release \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+  -derivedDataPath .build/ios build
 ```
 
 ## Windows（Electron 移植版）
@@ -164,9 +186,10 @@ Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
 Kumone/
 ├── Sources/Kumone/     # macOS SwiftUI 原生实现
 ├── windows/            # Windows & Linux Electron 桌面端实现
+├── ios/                # iOS SwiftUI + WebKit 混合原生应用
 ├── android/            # Android Kotlin + Web 混合原生应用
 ├── web/                # Web / PWA / Docker 免安装与自建播放器
-└── .github/workflows/  # macOS, Windows, Linux, Android & Web 全平台自动化 CI/CD
+└── .github/workflows/  # macOS, Windows, Linux, iOS, Android & Web 全平台自动化 CI/CD
 ```
 
 不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生实现，请求直达 `music.163.com` / `interface.music.163.com`。
@@ -183,7 +206,7 @@ Kumone 是从零编写的 Swift 实现，未复制以下项目的代码，但深
 ## 维护者 (Maintainers)
 
 - **原作者 (Original Author)**: [@missuo](https://github.com/missuo) (macOS 原生版)
-- **多平台维护者 (Maintainers)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows / Linux / Android / Web 版本移植与维护)
+- **多平台维护者 (Maintainers)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows / Linux / iOS / Android / Web 版本移植与维护)
 
 更多详情请参阅 [MAINTAINERS.md](MAINTAINERS.md)。
 

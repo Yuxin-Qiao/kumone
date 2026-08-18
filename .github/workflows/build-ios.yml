@@ -1,0 +1,90 @@
+name: Build iOS (Native IPA & Archive)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布到的 GitHub Release Tag (例如 v0.1.9.1 或 v0.2.0，为空则仅打包不发布)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build iOS Native IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run iOS Smoke Test
+        run: node ios/test/smoke.js
+
+      - name: Derive version
+        id: ver
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(v|android-v|windows-v|linux-v|ios-v)//')
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
+            VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.1.9.1")
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          node Scripts/sync-docs-version.js "$VERSION"
+
+      - name: Build iOS Application (Release)
+        run: |
+          xcodebuild -project ios/Kumone.xcodeproj \
+            -scheme Kumone \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath .build/ios \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$VERSION" \
+            build
+
+      - name: Package iOS IPA Deliverable
+        run: |
+          mkdir -p dist-ios/Payload
+          APP_PATH=$(find .build/ios/Build/Products -name "Kumone.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Kumone.app not found"
+            exit 1
+          fi
+          cp -R "$APP_PATH" dist-ios/Payload/
+          cd dist-ios
+          zip -qr "Kumone-${VERSION}.ipa" Payload
+          ls -lh "Kumone-${VERSION}.ipa"
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kumone-iOS-IPA
+          path: dist-ios/Kumone-*.ipa
+
+      - name: Publish to GitHub Releases (if tag specified)
+        if: github.event.inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          echo "Uploading iOS IPA to release $TAG..."
+          gh release upload "$TAG" dist-ios/Kumone-*.ipa --clobber || true

@@ -3,7 +3,7 @@
  * Kumone Automated Version & Documentation Synchronizer
  * 
  * Synchronizes versions, download links, about screens, and maintainer metadata
- * across all targets (macOS, Windows, Linux, Android, Web) and documentation (README.md, README_CN.md).
+ * across all targets (macOS, Windows, Linux, iOS, Android, Web) and documentation (README.md, README_CN.md).
  */
 'use strict';
 
@@ -16,13 +16,13 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 // 1. Resolve Target Version
 function getTargetVersion() {
   if (process.argv[2]) {
-    return process.argv[2].replace(/^(v|android-v|windows-v|linux-v)/, '');
+    return process.argv[2].replace(/^(v|android-v|windows-v|linux-v|ios-v)/, '');
   }
 
   try {
     const gitTag = execSync('git describe --tags --match="v*" --abbrev=0', { cwd: ROOT_DIR, encoding: 'utf-8' }).trim();
     if (gitTag) {
-      return gitTag.replace(/^(v|android-v|windows-v|linux-v)/, '');
+      return gitTag.replace(/^(v|android-v|windows-v|linux-v|ios-v)/, '');
     }
   } catch (_) {}
 
@@ -96,6 +96,18 @@ const syncAppJs = (content) => {
 };
 updateFile('android/app/src/main/assets/web/app.js', syncAppJs);
 updateFile('web/app.js', syncAppJs);
+updateFile('ios/Kumone/Resources/web/app.js', syncAppJs);
+
+updateFile('ios/Kumone/Resources/Info.plist', (content) => {
+  return content.replace(
+    /<key>CFBundleShortVersionString<\/key>\s*<string>[^<]+<\/string>/,
+    `<key>CFBundleShortVersionString</key>\n    <string>${targetVersion}</string>`
+  );
+});
+
+updateFile('ios/Kumone.xcodeproj/project.pbxproj', (content) => {
+  return content.replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${targetVersion};`);
+});
 
 // 5. Synchronize README.md & README_CN.md Download Links
 updateFile('README.md', (content) => {
@@ -106,6 +118,9 @@ updateFile('README.md', (content) => {
     // Android download links
     .replace(/\[Releases\s*→\s*(?:android-)?v[0-9.]+\]\(https:\/\/github\.com\/Yuxin-Qiao\/kumone\/releases\/tag\/[^)]+\)\s*\(Android [^)]+\):\s*`Kumone-[0-9.]+\.apk`/g,
              `[Releases → v${targetVersion}](https://github.com/Yuxin-Qiao/kumone/releases/tag/v${targetVersion}) (Android 7.0+ / API 24+): \`Kumone-${targetVersion}.apk\``)
+    // iOS download links
+    .replace(/\[Releases\s*→\s*(?:ios-)?v[0-9.]+\]\(https:\/\/github\.com\/Yuxin-Qiao\/kumone\/releases\/tag\/[^)]+\)\s*\(iOS [^)]+\):\s*`Kumone-[0-9.]+\.ipa`/g,
+             `[Releases → v${targetVersion}](https://github.com/Yuxin-Qiao/kumone/releases/tag/v${targetVersion}) (iOS 16+): \`Kumone-${targetVersion}.ipa\``)
     // Linux download links
     .replace(/`Kumone-[0-9.]+-x86_64\.AppImage`/g, `\`Kumone-${targetVersion}-x86_64.AppImage\``)
     .replace(/`Kumone_[0-9.]+_amd64\.deb`/g, `\`Kumone_${targetVersion}_amd64.deb\``)
@@ -121,6 +136,9 @@ updateFile('README_CN.md', (content) => {
     // Android download links
     .replace(/\[Releases\s*→\s*(?:android-)?v[0-9.]+\]\(https:\/\/github\.com\/Yuxin-Qiao\/kumone\/releases\/tag\/[^)]+\)（Android [^）]+）：可以直接下载安装包\s*`Kumone-[0-9.]+\.apk`/g,
              `[Releases → v${targetVersion}](https://github.com/Yuxin-Qiao/kumone/releases/tag/v${targetVersion})（Android 7.0+ / API 24+）：可以直接下载安装包 \`Kumone-${targetVersion}.apk\``)
+    // iOS download links
+    .replace(/\[Releases\s*→\s*(?:ios-)?v[0-9.]+\]\(https:\/\/github\.com\/Yuxin-Qiao\/kumone\/releases\/tag\/[^)]+\)（iOS [^）]+）：可以直接下载安装包\s*`Kumone-[0-9.]+\.ipa`/g,
+             `[Releases → v${targetVersion}](https://github.com/Yuxin-Qiao/kumone/releases/tag/v${targetVersion})（iOS 16+）：可以直接下载安装包 \`Kumone-${targetVersion}.ipa\``)
     // Linux download links
     .replace(/`Kumone-[0-9.]+-x86_64\.AppImage`/g, `\`Kumone-${targetVersion}-x86_64.AppImage\``)
     .replace(/`Kumone_[0-9.]+_amd64\.deb`/g, `\`Kumone_${targetVersion}_amd64.deb\``)
