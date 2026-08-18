@@ -45,8 +45,6 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     'app/src/main/assets/web/lib/api.js',
     'app/src/main/assets/web/lib/unblock.js',
     'app/src/main/assets/web/lib/qrcode.min.js',
-    'build.gradle.kts',
-    'settings.gradle.kts',
     'gradle.properties',
     'gradlew',
     'gradle/wrapper/gradle-wrapper.properties',
@@ -59,6 +57,20 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     const p = path.join(rootDir, rel);
     assert.ok(fs.existsSync(p), `Missing required file: ${rel}`);
   }
+
+  // Check gradle build & settings files (supporting either .gradle or .gradle.kts)
+  assert.ok(
+    fs.existsSync(path.join(rootDir, 'build.gradle')) || fs.existsSync(path.join(rootDir, 'build.gradle.kts')),
+    'Missing build.gradle / build.gradle.kts'
+  );
+  assert.ok(
+    fs.existsSync(path.join(rootDir, 'settings.gradle')) || fs.existsSync(path.join(rootDir, 'settings.gradle.kts')),
+    'Missing settings.gradle / settings.gradle.kts'
+  );
+  assert.ok(
+    fs.existsSync(path.join(rootDir, 'app/build.gradle')) || fs.existsSync(path.join(rootDir, 'app/build.gradle.kts')),
+    'Missing app/build.gradle / app/build.gradle.kts'
+  );
   ok(`所有核心 Android 源码、资源及构建配置文件存在 (${requiredFiles.length} 项)`);
 
   console.log('[3] 图标资源完整性检查 (mipmap 分辨率覆盖)');
