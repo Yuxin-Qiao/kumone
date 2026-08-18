@@ -1,6 +1,18 @@
 // Cloudflare Pages / Worker Edge handler for Kumone Web & PWA
 export default {
   async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, X-Netease-Cookie, Cookie, Authorization',
+          'Access-Control-Expose-Headers': 'X-Set-Cookie, Set-Cookie',
+        },
+      });
+    }
+
     const url = new URL(request.url);
 
     // 1. NetEase Reverse Proxy Endpoint
