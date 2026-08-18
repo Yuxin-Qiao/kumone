@@ -283,12 +283,12 @@
   async function resolve(track) {
     if (!track || !track.id || !track.name) return null;
     try {
-      const pyn = await pyncmd(track);
-      if (pyn) return { url: pyn, source: 'pyncmd' };
-    } catch (_) {}
-    try {
       const kw = await kuwo(track);
       if (kw) return { url: kw, source: '酷我音乐' };
+    } catch (_) {}
+    try {
+      const pyn = await pyncmd(track);
+      if (pyn) return { url: pyn, source: 'pyncmd' };
     } catch (_) {}
     try {
       const kg = await kugou(track);
