@@ -1540,7 +1540,12 @@
         el.btnGetCaptcha.disabled = false;
         el.btnGetCaptcha.textContent = '获取验证码';
       }
-      showToast(err && err.message ? err.message : '发送验证码失败');
+      const msg = (err && err.message) ? String(err.message) : '';
+      if (msg.includes('风险') || msg.includes('安全') || msg.includes('460')) {
+        showToast('机房 IP 受网易云风控限制，请切换「扫码登录」');
+      } else {
+        showToast(msg || '发送验证码失败');
+      }
     }
   }
 
@@ -1575,7 +1580,12 @@
         throw new Error(res && res.message ? res.message : (res && res.msg ? res.msg : '登录失败'));
       }
     } catch (err) {
-      showToast(err && err.message ? err.message : '手机号登录失败');
+      const msg = (err && err.message) ? String(err.message) : '';
+      if (msg.includes('风险') || msg.includes('安全') || msg.includes('460')) {
+        showToast('机房 IP 受网易云风控限制，请切换「扫码登录」');
+      } else {
+        showToast(msg || '手机号登录失败');
+      }
     } finally {
       if (el.btnSubmitCaptchaLogin) {
         el.btnSubmitCaptchaLogin.disabled = false;
