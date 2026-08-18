@@ -33,11 +33,11 @@ struct FMView: View {
                 CachedAsyncImage(url: cover)
                     .scaledToFill()
                     .blur(radius: 80)
-                    .opacity(colorScheme == .dark ? 0.45 : 0.3)
+                    .opacity(colorScheme == .dark ? 0.45 : 0.28)
                     .saturation(1.4)
             }
             LinearGradient(
-                colors: [.clear, Color.windowBackground.opacity(0.6)],
+                colors: [.clear, Color.windowBackground.opacity(0.65)],
                 startPoint: .top, endPoint: .bottom
             )
         }
@@ -48,19 +48,20 @@ struct FMView: View {
     // MARK: - Content
 
     private var content: some View {
-        VStack(spacing: 28) {
-            Spacer()
+        VStack(spacing: 24) {
+            Spacer(minLength: 12)
 
             ZStack {
                 if let cover = track?.album.picUrl?.resizedImageURL(768) {
                     CachedAsyncImage(url: cover)
-                        .frame(width: 300, height: 300)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.35), radius: 28, y: 14)
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: 280, maxHeight: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.32), radius: 24, y: 12)
                 } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(.quaternary.opacity(0.4))
-                        .frame(width: 300, height: 300)
+                        .frame(width: 260, height: 260)
                         .overlay(
                             Image(systemName: "wave.3.right.circle")
                                 .font(.system(size: 56, weight: .light))
@@ -71,10 +72,10 @@ struct FMView: View {
             .scaleEffect(player.isPlaying && player.isFMMode ? 1 : 0.94)
             .animation(AppAnimation.bouncy, value: player.isPlaying && player.isFMMode)
 
-            VStack(spacing: 6) {
-                HStack(spacing: 8) {
+            VStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Text(track?.name ?? String(localized: "私人漫游"))
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .lineLimit(1)
                     if track?.fee == 1 {
                         VIPBadge()
@@ -85,10 +86,11 @@ struct FMView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: 420)
+            .padding(.horizontal, 24)
 
             if player.isFMMode {
                 controls
+                    .padding(.top, 8)
             } else {
                 Button {
                     player.startFM()
@@ -102,16 +104,16 @@ struct FMView: View {
                         .shadow(color: Theme.accent.opacity(0.35), radius: 10, y: 3)
                 }
                 .buttonStyle(.pressable)
+                .padding(.top, 12)
             }
 
-            Spacer()
-            Spacer()
+            Spacer(minLength: 24)
         }
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 20)
     }
 
     private var controls: some View {
-        HStack(spacing: 26) {
+        HStack(spacing: 24) {
             Button {
                 player.fmTrash()
             } label: {
@@ -122,7 +124,6 @@ struct FMView: View {
                     .background(.primary.opacity(0.06), in: Circle())
             }
             .buttonStyle(.pressable)
-            .help("不喜欢，换一首")
 
             Button {
                 player.togglePlayPause()
@@ -150,10 +151,9 @@ struct FMView: View {
                     .background(.primary.opacity(0.06), in: Circle())
             }
             .buttonStyle(.pressable)
-            .help("下一首")
 
             if let track {
-                LikeButton(trackID: track.id, size: 16)
+                LikeButton(trackID: track.id, size: 18)
                     .frame(width: 48, height: 48)
                     .background(.primary.opacity(0.06), in: Circle())
             }

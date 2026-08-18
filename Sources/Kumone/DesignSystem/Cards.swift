@@ -15,44 +15,16 @@ struct CoverCard: View {
 
     var body: some View {
         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .bottomLeading) {
-                    CachedAsyncImage(url: coverURL)
-                        .frame(width: size, height: size)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
-                                .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
-                        )
-                    if playCount > 0 {
-                        PlayCountBadge(count: playCount)
-                            .padding(6)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    }
-                    if let onPlay {
-                        PlayOverlayButton(visible: isHovering, action: onPlay)
-                            .padding(8)
-                    }
-                }
-                .frame(width: size, height: size)
-
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .foregroundStyle(.primary)
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: size, alignment: .leading)
-            .contentShape(Rectangle())
+            CoverCardBody(
+                coverURL: coverURL,
+                title: title,
+                subtitle: subtitle,
+                playCount: playCount,
+                size: size,
+                onPlay: onPlay
+            )
         }
         .buttonStyle(.interactiveCard)
-        .onHover { isHovering = $0 }
     }
 }
 
@@ -60,22 +32,24 @@ struct CoverCard: View {
 
 struct ArtistCard: View {
     let artist: ArtistSummary
-    var size: CGFloat = 128
+    var size: CGFloat = 110
     let onOpen: () -> Void
 
     var body: some View {
         Button(action: onOpen) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                     .frame(width: size, height: size)
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+
                 Text(artist.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
             }
-            .frame(width: size + 12)
+            .frame(width: size + 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.interactiveCard)
@@ -85,17 +59,18 @@ struct ArtistCard: View {
 // MARK: - Horizontal shelf
 
 /// A horizontal scroll section whose track reaches the column edges;
-/// the resting inset lives inside the HStack (kaset's slide-under trick).
+/// the resting inset lives inside the HStack.
 struct Shelf<Content: View>: View {
     let title: LocalizedStringKey
     var seeAll: (() -> Void)?
-    var spacing: CGFloat = 16
+    var spacing: CGFloat = 14
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: title, action: seeAll)
                 .padding(.horizontal, Theme.Layout.contentInset)
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: spacing) {
                     Spacer().frame(width: Theme.Layout.contentInset - spacing)
@@ -115,9 +90,9 @@ struct CardGrid<Content: View>: View {
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: minWidth, maximum: minWidth + 40),
-                               spacing: 20, alignment: .top)],
-            alignment: .leading, spacing: 24
+            columns: [GridItem(.adaptive(minimum: minWidth, maximum: minWidth + 50),
+                               spacing: 16, alignment: .top)],
+            alignment: .leading, spacing: 20
         ) {
             content()
         }

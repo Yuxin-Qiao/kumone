@@ -334,23 +334,32 @@
     try {
       let playUrl = null;
       let servedSource = null;
+      let isTrial = false;
 
       try {
         const urls = await NeteaseAPI.songURL([normalized.id], state.quality);
-        if (urls && urls[0] && urls[0].url) {
-          playUrl = urls[0].url;
-          servedSource = urls[0].level || state.quality;
+        if (urls && urls[0]) {
+          const u = urls[0];
+          if (u.url) {
+            playUrl = u.url;
+            servedSource = u.level || state.quality;
+          }
+          if (u.freeTrialInfo != null || (u.freeTimeTrialPrivilege && u.freeTimeTrialPrivilege.remainTime > 0) || (u.freeTrialPrivilege && u.freeTrialPrivilege.cannotListenReason === 1) || u.code === 404) {
+            isTrial = true;
+          }
         }
       } catch (_) {}
 
-      if (!playUrl && state.unblockEnabled) {
-        showToast('正在尝试第三方音源匹配…');
-        const unblock = typeof window !== 'undefined' && window.Unblock ? window.Unblock : null;
+      // If NetEase refused OR returned a 30s VIP trial snippet, resolve full track from third-party sources (UnblockNeteaseMusic 1:1)
+      if ((!playUrl || isTrial) && state.unblockEnabled) {
+        const unblock = typeof window !== 'undefined' && window.Unblock ? window.Unblock : (typeof require === 'function' ? require('./lib/unblock') : null);
         if (unblock) {
           const unblockRes = await unblock.resolve(normalized);
           if (unblockRes && unblockRes.url) {
             playUrl = unblockRes.url;
-            servedSource = unblockRes.source || '解锁音源';
+            servedSource = unblockRes.source || '第三方音源';
+            isTrial = false;
+            showToast(`已使用第三方音源：${servedSource}`);
           }
         }
       }
@@ -359,6 +368,10 @@
         showToast('该歌曲暂无可用播放链接');
         setTimeout(() => playNextTrack(false), 1500);
         return;
+      }
+
+      if (isTrial) {
+        showToast('VIP 歌曲，当前为试听片段');
       }
 
       normalized.servedSource = servedSource;
@@ -546,8 +559,18 @@
 
     try {
       const res = await NeteaseAPI.lyric(songId);
-      const lrc = res && res.lrc ? res.lrc.lyric : '';
-      const tlyric = res && res.tlyric ? res.tlyric.lyric : '';
+      let lrc = res && res.lrc ? res.lrc.lyric : '';
+      let tlyric = res && res.tlyric ? res.tlyric.lyric : '';
+
+      if (!lrc) {
+        try {
+          const fallbackLrc = await fetch(`https://api.injahow.cn/meting/?type=lrc&id=${songId}`).then(r => r.text());
+          if (fallbackLrc && fallbackLrc.includes('[')) {
+            lrc = fallbackLrc;
+          }
+        } catch (_) {}
+      }
+
       state.lyrics = parseLrc(lrc, tlyric);
       renderLyrics();
     } catch (_) {
@@ -1788,6 +1811,10 @@
 
     // Floating Capsule Player Controls
     if (el.fpArtworkBtn) el.fpArtworkBtn.onclick = openNowPlaying;
+    if (el.bpTitle) el.bpTitle.onclick = openNowPlaying;
+    if (el.bpArtist) el.bpArtist.onclick = openNowPlaying;
+    const fpInfoEl = document.querySelector('.fp-info');
+    if (fpInfoEl) fpInfoEl.onclick = openNowPlaying;
     if (el.bpBtnPlay) el.bpBtnPlay.onclick = togglePlay;
     if (el.bpBtnPrev) el.bpBtnPrev.onclick = playPrevTrack;
     if (el.bpBtnNext) el.bpBtnNext.onclick = () => playNextTrack(true);

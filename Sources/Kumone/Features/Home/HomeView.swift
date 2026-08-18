@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 @Observable
 final class HomeViewModel {
-    /// Shared so the loaded page survives sidebar switches (no skeleton flash).
     static let shared = HomeViewModel()
 
     enum State {
@@ -11,8 +10,6 @@ final class HomeViewModel {
         case error(String)
     }
 
-    /// The personalized radar family — global playlist IDs whose content is
-    /// generated per logged-in account (same list YesPlayMusic special-cases).
     static let radarPlaylistIDs = [
         3_136_952_023, // 私人雷达
         2_829_883_282, // 华语私人雷达
@@ -83,7 +80,6 @@ final class HomeViewModel {
         }
         radarPlaylists = Self.radarPlaylistIDs.compactMap { id in
             guard let brief = briefs[id] else { return nil }
-            // Names arrive as "今天从《…》听起|私人雷达" — split into title/subtitle.
             let parts = (brief.name ?? "").components(separatedBy: "|")
             let title = parts.count > 1 ? parts.last! : (brief.name ?? String(localized: "雷达歌单"))
             let subtitle = parts.count > 1 ? parts.dropLast().joined(separator: "|") : nil
@@ -125,30 +121,34 @@ struct HomeView: View {
             }
         }
         .navigationTitle("推荐")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task(id: account.isLoggedIn) {
             await model.load(loggedIn: account.isLoggedIn)
+        }
+        .refreshable {
+            await model.reload(loggedIn: account.isLoggedIn)
         }
     }
 
     private var loadingBody: some View {
-        VStack(alignment: .leading, spacing: 32) {
-            HStack(spacing: 16) {
-                ForEach(0..<3, id: \.self) { _ in
-                    SkeletonView(cornerRadius: Theme.Radius.large)
-                        .frame(width: 230, height: 132)
-                }
-            }
+        VStack(alignment: .leading, spacing: 24) {
+            SkeletonView(cornerRadius: Theme.Radius.large)
+                .frame(height: 100)
+                .padding(.horizontal, Theme.Layout.contentInset)
+
             SkeletonShelf()
             SkeletonShelf()
         }
-        .padding(Theme.Layout.contentInset)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadedBody: some View {
-        LazyVStack(alignment: .leading, spacing: 34) {
+        LazyVStack(alignment: .leading, spacing: 26) {
             featureCards
-                .padding(.top, 8)
+                .padding(.top, 6)
 
             if !model.recommendPlaylists.isEmpty {
                 Shelf(title: "推荐歌单") {
@@ -203,19 +203,21 @@ struct HomeView: View {
                 }
             }
 
-            Color.clear.frame(height: 8)
+            Color.clear.frame(height: 10)
         }
-        .padding(.vertical, Theme.Layout.contentInset - 8)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Feature cards
 
+    @ViewBuilder
     private var featureCards: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
-                Spacer().frame(width: Theme.Layout.contentInset - 16)
-                if account.isLoggedIn {
+        if account.isLoggedIn {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    Spacer().frame(width: Theme.Layout.contentInset - 12)
+
                     NavigationLink(value: Destination.daily) {
                         FeatureCard(
                             title: "每日推荐",
@@ -245,28 +247,68 @@ struct HomeView: View {
                     } label: {
                         FeatureCard(
                             title: "心动模式",
-                            subtitle: "你的红心歌曲和相似推荐",
+                            subtitle: "红心歌曲与相似推荐",
                             icon: "heart.circle.fill",
                             gradient: [Color(red: 0.85, green: 0.19, blue: 0.41),
                                        Color(red: 0.98, green: 0.42, blue: 0.34)]
                         )
                     }
                     .buttonStyle(.interactiveCard)
-                } else {
-                    Button {
-                        openLogin()
-                    } label: {
-                        FeatureCard(
-                            title: "登录网易云音乐",
-                            subtitle: "解锁每日推荐、私人漫游与心动模式",
-                            icon: "person.crop.circle.badge.checkmark",
-                            gradient: [Theme.accentDeep, Theme.accent]
-                        )
-                    }
-                    .buttonStyle(.interactiveCard)
+
+                    Spacer().frame(width: Theme.Layout.contentInset - 12)
                 }
-                Spacer().frame(width: Theme.Layout.contentInset - 16)
             }
+        } else {
+            // Elegant Apple Music-style login prompt banner
+            Button {
+                openLogin()
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.18))
+                            .frame(width: 38, height: 38)
+                        Image(systemName: "music.note.house.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("登录网易云音乐")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                        Text("同步红心歌曲与每日推荐")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Text("登录")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Theme.accentDeep)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(.white, in: Capsule())
+                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.92, green: 0.28, blue: 0.28),
+                                         Color(red: 0.78, green: 0.16, blue: 0.16)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: Theme.accent.opacity(0.2), radius: 8, y: 3)
+                )
+            }
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Theme.Layout.contentInset)
         }
     }
 
@@ -326,17 +368,19 @@ struct HomeView: View {
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
         NavigationLink(value: Destination.artist(artist.id)) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
-                    .frame(width: 128, height: 128)
+                    .frame(width: 110, height: 110)
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
+
                 Text(artist.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-            .frame(width: 140)
+            .frame(width: 120)
             .contentShape(Rectangle())
         }
         .buttonStyle(.interactiveCard)
@@ -346,22 +390,26 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
                 CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(384))
-                    .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
-                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+                    .frame(width: 138, height: 138)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+
+                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
                 Text(toplist.updateFrequency ?? "")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .padding(8)
             }
-            .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
+            .frame(width: 138, height: 138)
+
             Text(toplist.name)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }
-        .frame(width: Theme.Layout.cardSize, alignment: .leading)
+        .frame(width: 138, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -375,116 +423,5 @@ struct HomeView: View {
             }
             player.play(tracks: tracks, source: .playlist(id))
         }
-    }
-}
-
-// MARK: - Feature card
-
-struct FeatureCard: View {
-    let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
-    let icon: String
-    var coverURL: URL?
-    var gradient: [Color] = [Color(red: 0.75, green: 0.16, blue: 0.22),
-                             Color(red: 0.95, green: 0.35, blue: 0.28)]
-    var showsDate = false
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let coverURL {
-                CachedAsyncImage(url: coverURL)
-                    .frame(width: 230, height: 132)
-                LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.68)],
-                               startPoint: .top, endPoint: .bottom)
-            } else {
-                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                RadialGradient(colors: [.white.opacity(0.18), .clear],
-                               center: .topLeading, startRadius: 0, endRadius: 220)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                ZStack {
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(.white)
-                    if showsDate {
-                        Text("\(Calendar.current.component(.day, from: .now))")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                            .offset(y: 3)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                Text(title)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .lineLimit(1)
-            }
-            .padding(14)
-            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-        }
-        .frame(width: 230, height: 132)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
-        )
-        .contentShape(Rectangle())
-    }
-}
-
-/// Card body without its own Button wrapper (for use inside NavigationLink).
-struct CoverCardBody: View {
-    let coverURL: URL?
-    let title: String
-    var subtitle: String?
-    var playCount: Int = 0
-    var size: CGFloat = Theme.Layout.cardSize
-    var onPlay: (() -> Void)?
-
-    @State private var isHovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
-                CachedAsyncImage(url: coverURL)
-                    .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
-                            .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
-                    )
-                if playCount > 0 {
-                    PlayCountBadge(count: playCount)
-                        .padding(6)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                }
-                if let onPlay {
-                    PlayOverlayButton(visible: isHovering, action: onPlay)
-                        .padding(8)
-                }
-            }
-            .frame(width: size, height: size)
-
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: size, alignment: .leading)
-            if let subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: size, alignment: .leading)
-            }
-        }
-        .frame(width: size, alignment: .leading)
-        .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
     }
 }

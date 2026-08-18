@@ -478,6 +478,11 @@ body {
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+  cursor: pointer;
+}
+
+.fp-info:hover .fp-title {
+  color: var(--accent);
 }
 
 .fp-title-row {

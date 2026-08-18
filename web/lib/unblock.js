@@ -12,17 +12,22 @@
 
   async function get(urlString, userAgent = 'Mozilla/5.0') {
     try {
-      const res = await fetch(urlString, {
+      let fetchUrl = urlString;
+      if (typeof window !== 'undefined' && window.location && window.location.origin) {
+        // Route through worker proxy to avoid mixed content & CORS issues
+        fetchUrl = `${window.location.origin}/api/netease?target=${encodeURIComponent(urlString)}`;
+      }
+      const res = await fetch(fetchUrl, {
         headers: { 'User-Agent': userAgent },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) return null;
       return await res.text();
     } catch (_) { return null; }
   }
 
-  const getJSON = async (url) => {
-    const text = await get(url);
+  const getJSON = async (url, userAgent) => {
+    const text = await get(url, userAgent);
     if (!text) return null;
     try { return JSON.parse(text); } catch (_) { return null; }
   };
@@ -37,14 +42,26 @@
     return match || list[0];
   }
 
-  // MARK: - pyncmd
+  // MARK: - Provider 1: pyncmd / GD Studio / Meting
   async function pyncmd(track) {
-    const obj = await getJSON(`https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=${track.id}&br=320`);
-    if (!obj || !(obj.br > 0) || typeof obj.url !== 'string') return null;
-    return obj.url.replace(/^http:/, 'https:');
+    try {
+      const obj = await getJSON(`https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=${track.id}&br=320`);
+      if (obj && obj.br > 0 && typeof obj.url === 'string' && obj.url.startsWith('http')) {
+        return obj.url.replace(/^http:/, 'https:');
+      }
+    } catch (_) {}
+
+    try {
+      const metingObj = await getJSON(`https://api.injahow.cn/meting/?type=url&id=${track.id}`);
+      if (metingObj && typeof metingObj.url === 'string' && metingObj.url.startsWith('http')) {
+        return metingObj.url.replace(/^http:/, 'https:');
+      }
+    } catch (_) {}
+
+    return null;
   }
 
-  // MARK: - kuwo
+  // MARK: - Provider 2: kuwo (High fidelity MP3 stream)
   async function kuwo(track) {
     const query = encodeURIComponent(keyword(track));
     const searchURL = 'http://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8'
@@ -73,7 +90,7 @@
     return m ? m[0] : null;
   }
 
-  // MARK: - kugou (pure JS MD5)
+  // MARK: - Provider 3: kugou (MD5 signed CDN)
   function md5(string) {
     function rotateLeft(lValue, iShiftBits) {
       return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits));
