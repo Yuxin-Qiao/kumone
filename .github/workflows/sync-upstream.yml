@@ -1,15 +1,22 @@
-name: Sync Upstream & Auto Release
+name: Sync Upstream & Auto Build
 
 on:
   schedule:
     # 每 3 小时自动检查并同步上游更新
     - cron: '0 */3 * * *'
-  # 支持在 GitHub Actions 页面手动随时一键触发
+  # 支持在 GitHub Actions 页面随时手动一键触发
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: '是否无论是否有新提交，都强制触发 Windows & Android 构建'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   issues: write
+  actions: write
 
 jobs:
   sync:
@@ -28,8 +35,26 @@ jobs:
 
       - name: Add Upstream and Fetch
         run: |
-          git remote add upstream https://github.com/missuo/kumone.git || true
+          git remote add upstream https://github.com/missuo/kumone.git || git remote set-url upstream https://github.com/missuo/kumone.git
           git fetch upstream --tags --force
+
+      - name: Sync Tags from Upstream
+        id: sync_tags
+        run: |
+          LOCAL_TAGS=$(git tag -l)
+          UPSTREAM_TAGS=$(git tag -l --sort=v:refname)
+          NEW_TAGS=false
+
+          # 检查是否有上游新标签需要推送到 origin
+          for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's#refs/tags/##' | grep -v '\^{}'); do
+            if ! git tag -l | grep -q "^$tag$"; then
+              echo "Found new upstream tag: $tag"
+              git fetch upstream tag "$tag" --no-tags
+              NEW_TAGS=true
+            fi
+          done
+
+          echo "new_tags=$NEW_TAGS" >> $GITHUB_OUTPUT
 
       - name: Merge upstream/main into main
         id: merge
@@ -42,21 +67,29 @@ jobs:
           if [ "$UPSTREAM_HEAD" = "$MERGE_BASE" ]; then
             echo "Already up to date with upstream/main."
             echo "updated=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "Merging upstream/main into main..."
-          if git merge --no-edit upstream/main; then
-            echo "updated=true" >> $GITHUB_OUTPUT
           else
-            echo "Merge conflict detected!"
-            exit 1
+            echo "Merging upstream/main into main..."
+            if git merge --no-edit upstream/main -m "chore(sync): merge upstream/main into main"; then
+              echo "Merge successful."
+              echo "updated=true" >> $GITHUB_OUTPUT
+            else
+              echo "Merge conflict detected!"
+              exit 1
+            fi
           fi
 
       - name: Push branch and tags to origin
-        if: steps.merge.outputs.updated == 'true'
         run: |
           git push origin main --tags
+
+      - name: Trigger Downstream Matrix Builds (Windows & Android)
+        if: steps.merge.outputs.updated == 'true' || steps.sync_tags.outputs.new_tags == 'true' || inputs.force_build == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Triggering Windows and Android builds for new upstream updates..."
+          gh workflow run build-windows.yml || echo "Build Windows trigger dispatched"
+          gh workflow run build-android.yml || echo "Build Android trigger dispatched"
 
       - name: Notify on Conflict
         if: failure()
@@ -64,5 +97,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue create \
-            --title "⚠️ 上游自动同步冲突提醒" \
-            --body "GitHub Actions 在自动合并上游 \`missuo/kumone\` 时遇到代码冲突，请在本地拉取后手动解决冲突并推送。" || true
+            --title "⚠️ [自动同步告警] 上游代码合并出现冲突" \
+            --body "GitHub Actions 在自动同步上游 \`missuo/kumone\` 代码时遇到冲突，请在本地拉取代码并手动解决冲突后推送到 \`main\` 分支。" || true
