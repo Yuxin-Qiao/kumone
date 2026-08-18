@@ -4,6 +4,64 @@
 const USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14; Mobile; rv:125.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
 
+if (typeof window !== 'undefined') {
+  window.__nativeHttpCallbacks = window.__nativeHttpCallbacks || {};
+  window.__nativeHttpCallback = function (reqId, err, resp) {
+    const cb = window.__nativeHttpCallbacks[reqId];
+    if (cb) {
+      delete window.__nativeHttpCallbacks[reqId];
+      cb(err, resp);
+    }
+  };
+}
+
+function nativeHttpRequest(url, method, headers, body) {
+  if (typeof window !== 'undefined' && window.AndroidBridge) {
+    if (typeof window.AndroidBridge.asyncHttpRequest === 'function') {
+      return new Promise((resolve, reject) => {
+        const reqId = 'req_' + Math.random().toString(36).slice(2) + '_' + Date.now();
+        window.__nativeHttpCallbacks[reqId] = (err, resp) => {
+          if (err) {
+            const error = new Error(err);
+            reject(error);
+          } else {
+            resolve(resp);
+          }
+        };
+        try {
+          window.AndroidBridge.asyncHttpRequest(
+            reqId,
+            url,
+            method,
+            JSON.stringify(headers || {}),
+            body || ''
+          );
+        } catch (e) {
+          delete window.__nativeHttpCallbacks[reqId];
+          reject(e);
+        }
+      });
+    } else if (typeof window.AndroidBridge.httpRequest === 'function') {
+      try {
+        const raw = window.AndroidBridge.httpRequest(
+          url,
+          method,
+          JSON.stringify(headers || {}),
+          body || ''
+        );
+        const parsed = JSON.parse(raw);
+        if (!parsed.ok && parsed.status === 0 && parsed.error) {
+          return Promise.reject(new Error(parsed.error));
+        }
+        return Promise.resolve(parsed);
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    }
+  }
+  return null;
+}
+
 class NeteaseClient {
   constructor() {
     this.cookies = {};
@@ -76,14 +134,19 @@ class NeteaseClient {
     return Object.entries(all).map(([k, v]) => `${k}=${v}`).join('; ');
   }
 
-  absorbSetCookies(res) {
+  absorbSetCookies(resOrCookies) {
     try {
-      const raws = typeof res.headers.getSetCookie === 'function'
-        ? res.headers.getSetCookie()
-        : (res.headers.get('set-cookie') ? [res.headers.get('set-cookie')] : []);
+      let raws = [];
+      if (Array.isArray(resOrCookies)) {
+        raws = resOrCookies;
+      } else if (resOrCookies && typeof resOrCookies.headers === 'object') {
+        raws = typeof resOrCookies.headers.getSetCookie === 'function'
+          ? resOrCookies.headers.getSetCookie()
+          : (resOrCookies.headers.get('set-cookie') ? [resOrCookies.headers.get('set-cookie')] : []);
+      }
       const parsed = {};
       for (const raw of raws) {
-        const pair = raw.split(';')[0];
+        const pair = String(raw).split(';')[0];
         const eq = pair.indexOf('=');
         if (eq <= 0) continue;
         const name = pair.slice(0, eq).trim();
@@ -99,14 +162,33 @@ class NeteaseClient {
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&');
 
+    const headers = {
+      'User-Agent': USER_AGENT,
+      'Referer': 'https://music.163.com',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': this.cookieHeader({ os: 'android', appver: '8.9.70' }),
+    };
+
+    // Try native Android bridge first
+    const nativePromise = nativeHttpRequest(url, 'POST', headers, bodyStr);
+    if (nativePromise) {
+      const resp = await nativePromise;
+      if (resp && resp.cookies) {
+        this.absorbSetCookies(resp.cookies);
+      }
+      if (!resp || !resp.ok) {
+        const status = (resp && resp.status) || 0;
+        const err = new Error(resp && resp.error ? resp.error : `网络错误 (${status})`);
+        err.httpStatus = status;
+        throw err;
+      }
+      return resp.data;
+    }
+
+    // Browser / Node fallback
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Referer': 'https://music.163.com',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': this.cookieHeader({ os: 'android', appver: '8.9.70' }),
-      },
+      headers,
       body: bodyStr,
     });
     this.absorbSetCookies(res);
@@ -156,7 +238,9 @@ class NeteaseClient {
 
 async function decode(buf) {
   let text = '';
-  if (typeof TextDecoder !== 'undefined') {
+  if (typeof buf === 'string') {
+    text = buf;
+  } else if (typeof TextDecoder !== 'undefined') {
     text = new TextDecoder('utf-8').decode(buf);
   } else {
     text = Buffer.from(buf).toString('utf8');
@@ -192,3 +276,4 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window.NeteaseClient = { client: clientInstance, decode, USER_AGENT };
 }
+

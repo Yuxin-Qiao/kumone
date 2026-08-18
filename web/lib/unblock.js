@@ -2,6 +2,42 @@
 'use strict';
 
 async function get(urlString, userAgent = 'Mozilla/5.0') {
+  if (typeof window !== 'undefined' && window.AndroidBridge) {
+    if (typeof window.AndroidBridge.asyncHttpRequest === 'function') {
+      try {
+        const reqId = 'unblock_' + Math.random().toString(36).slice(2) + '_' + Date.now();
+        const resp = await new Promise((resolve, reject) => {
+          window.__nativeHttpCallbacks = window.__nativeHttpCallbacks || {};
+          window.__nativeHttpCallbacks[reqId] = (err, r) => {
+            if (err) reject(new Error(err));
+            else resolve(r);
+          };
+          window.AndroidBridge.asyncHttpRequest(
+            reqId,
+            urlString,
+            'GET',
+            JSON.stringify({ 'User-Agent': userAgent }),
+            ''
+          );
+        });
+        if (resp && resp.ok) return resp.data;
+        return null;
+      } catch (_) { return null; }
+    } else if (typeof window.AndroidBridge.httpRequest === 'function') {
+      try {
+        const raw = window.AndroidBridge.httpRequest(
+          urlString,
+          'GET',
+          JSON.stringify({ 'User-Agent': userAgent }),
+          ''
+        );
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.ok) return parsed.data;
+        return null;
+      } catch (_) { return null; }
+    }
+  }
+
   try {
     const res = await fetch(urlString, {
       headers: { 'User-Agent': userAgent },

@@ -553,12 +553,32 @@
     el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载发现内容…</div>';
 
     try {
-      const [recPlaylists, toplists, newAlbums, newSongs] = await Promise.all([
+      const [recRes, topRes, albumRes, songRes] = await Promise.allSettled([
         NeteaseAPI.personalizedPlaylists(10),
         NeteaseAPI.toplists(),
         NeteaseAPI.newAlbums('ALL', 8),
         NeteaseAPI.personalizedNewSongs(8),
       ]);
+
+      const recPlaylists = recRes.status === 'fulfilled' && Array.isArray(recRes.value) ? recRes.value : [];
+      const toplists = topRes.status === 'fulfilled' && Array.isArray(topRes.value) ? topRes.value : [];
+      const newAlbums = albumRes.status === 'fulfilled' && Array.isArray(albumRes.value) ? albumRes.value : [];
+      const newSongs = songRes.status === 'fulfilled' && Array.isArray(songRes.value) ? songRes.value : [];
+
+      if (!recPlaylists.length && !toplists.length && !newAlbums.length && !newSongs.length) {
+        const errorMsg = (recRes.reason && recRes.reason.message) || (topRes.reason && topRes.reason.message) || '网络连接异常，请检查网络设置';
+        el.viewContainer.innerHTML = `
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <div style="font-size:32px;margin-bottom:12px">📡</div>
+            <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:8px">加载发现内容失败</div>
+            <div style="font-size:13px;margin-bottom:20px">${escapeHtml(errorMsg)}</div>
+            <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 24px;border-radius:20px">重新加载</button>
+          </div>
+        `;
+        const retryBtn = document.getElementById('btn-retry-home');
+        if (retryBtn) retryBtn.onclick = renderHomeView;
+        return;
+      }
 
       let html = `
         <div class="hero-banners">
@@ -575,69 +595,97 @@
             <div class="hero-label">心动模式</div>
           </div>
         </div>
-
-        <div class="section-header">
-          <div class="section-title">推荐歌单</div>
-        </div>
-        <div class="horizontal-scroll-list">
-          ${(recPlaylists || []).map((p) => `
-            <div class="media-card" data-action="open-playlist" data-id="${p.id}">
-              <div class="card-cover-wrapper">
-                <img class="card-cover-img" src="${p.picUrl}?param=240y240" loading="lazy" alt="">
-                <div class="card-play-count">▶ ${formatCount(p.playCount)}</div>
-              </div>
-              <div class="card-title">${escapeHtml(p.name)}</div>
-            </div>
-          `).join('')}
-        </div>
-
-        <div class="section-header">
-          <div class="section-title">最新音乐</div>
-        </div>
-        <div class="track-list">
-          ${(newSongs || []).map((s, idx) => renderTrackItemHtml(s, idx, newSongs)).join('')}
-        </div>
-
-        <div class="section-header">
-          <div class="section-title">新碟上架</div>
-        </div>
-        <div class="horizontal-scroll-list">
-          ${(newAlbums || []).map((a) => `
-            <div class="media-card" data-action="open-album" data-id="${a.id}">
-              <div class="card-cover-wrapper">
-                <img class="card-cover-img" src="${a.picUrl}?param=240y240" loading="lazy" alt="">
-              </div>
-              <div class="card-title">${escapeHtml(a.name)}</div>
-              <div class="card-subtitle">${escapeHtml(a.artist ? a.artist.name : '')}</div>
-            </div>
-          `).join('')}
-        </div>
-
-        <div class="section-header">
-          <div class="section-title">排行榜</div>
-        </div>
-        <div class="media-grid">
-          ${(toplists || []).slice(0, 6).map((t) => `
-            <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${t.id}">
-              <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                <img class="card-cover-img" src="${t.coverImgUrl}?param=300y300" loading="lazy" alt="">
-                <div class="card-play-count">▶ ${formatCount(t.playCount)}</div>
-              </div>
-              <div class="card-title">${escapeHtml(t.name)}</div>
-            </div>
-          `).join('')}
-        </div>
       `;
 
+      if (recPlaylists && recPlaylists.length) {
+        html += `
+          <div class="section-header">
+            <div class="section-title">推荐歌单</div>
+          </div>
+          <div class="horizontal-scroll-list">
+            ${recPlaylists.map((p) => `
+              <div class="media-card" data-action="open-playlist" data-id="${p.id}">
+                <div class="card-cover-wrapper">
+                  <img class="card-cover-img" src="${p.picUrl}?param=240y240" loading="lazy" alt="">
+                  <div class="card-play-count">▶ ${formatCount(p.playCount)}</div>
+                </div>
+                <div class="card-title">${escapeHtml(p.name)}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      if (newSongs && newSongs.length) {
+        html += `
+          <div class="section-header">
+            <div class="section-title">最新音乐</div>
+          </div>
+          <div class="track-list">
+            ${newSongs.map((s, idx) => renderTrackItemHtml(s, idx, newSongs)).join('')}
+          </div>
+        `;
+      }
+
+      if (newAlbums && newAlbums.length) {
+        html += `
+          <div class="section-header">
+            <div class="section-title">新碟上架</div>
+          </div>
+          <div class="horizontal-scroll-list">
+            ${newAlbums.map((a) => `
+              <div class="media-card" data-action="open-album" data-id="${a.id}">
+                <div class="card-cover-wrapper">
+                  <img class="card-cover-img" src="${a.picUrl}?param=240y240" loading="lazy" alt="">
+                </div>
+                <div class="card-title">${escapeHtml(a.name)}</div>
+                <div class="card-subtitle">${escapeHtml(a.artist ? a.artist.name : '')}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      if (toplists && toplists.length) {
+        html += `
+          <div class="section-header">
+            <div class="section-title">排行榜</div>
+          </div>
+          <div class="media-grid">
+            ${toplists.slice(0, 6).map((t) => `
+              <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${t.id}">
+                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
+                  <img class="card-cover-img" src="${t.coverImgUrl}?param=300y300" loading="lazy" alt="">
+                  <div class="card-play-count">▶ ${formatCount(t.playCount)}</div>
+                </div>
+                <div class="card-title">${escapeHtml(t.name)}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
       el.viewContainer.innerHTML = html;
-      attachTrackEvents(newSongs);
+      if (newSongs && newSongs.length) attachTrackEvents(newSongs);
       attachCardEvents();
 
-      document.getElementById('btn-hero-daily').onclick = openDailyRecommend;
-      document.getElementById('btn-hero-fm').onclick = () => navigateTo('fm');
-      document.getElementById('btn-hero-heartbeat').onclick = startHeartbeatMode;
+      const heroDaily = document.getElementById('btn-hero-daily');
+      if (heroDaily) heroDaily.onclick = openDailyRecommend;
+      const heroFm = document.getElementById('btn-hero-fm');
+      if (heroFm) heroFm.onclick = () => navigateTo('fm');
+      const heroHeartbeat = document.getElementById('btn-hero-heartbeat');
+      if (heroHeartbeat) heroHeartbeat.onclick = startHeartbeatMode;
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+      el.viewContainer.innerHTML = `
+        <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+          <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+          <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:8px">加载失败</div>
+          <div style="font-size:13px;margin-bottom:20px">${escapeHtml(e.message)}</div>
+          <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 24px;border-radius:20px">重新加载</button>
+        </div>
+      `;
+      const retryBtn = document.getElementById('btn-retry-home');
+      if (retryBtn) retryBtn.onclick = renderHomeView;
     }
   }
 

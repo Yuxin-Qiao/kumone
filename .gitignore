@@ -19,5 +19,7 @@ windows/dist-installer/
 android/.gradle/
 android/build/
 android/app/build/
+android/local.properties
+local.properties
 *.apk
 *.aab
