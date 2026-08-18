@@ -520,39 +520,38 @@
     const tlines = tlyricText ? tlyricText.split('\n') : [];
     const transMap = new Map();
 
-    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
-    for (const line of tlines) {
-      let match;
-      timeRegex.lastIndex = 0;
-      while ((match = timeRegex.exec(line)) !== null) {
-        const min = parseInt(match[1], 10);
-        const sec = parseInt(match[2], 10);
-        const msStr = match[3].length === 2 ? match[3] + '0' : match[3];
-        const ms = parseInt(msStr, 10);
-        const timeMs = min * 60000 + sec * 1000 + ms;
-        const text = line.replace(timeRegex, '').trim();
-        if (text) transMap.set(timeMs, text);
+    const parseLrcLines = (rawLines) => {
+      const results = [];
+      for (const line of rawLines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const matches = [...trimmed.matchAll(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g)];
+        if (!matches.length) continue;
+        const text = trimmed.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]/g, '').trim();
+        for (const m of matches) {
+          const min = parseInt(m[1], 10);
+          const sec = parseInt(m[2], 10);
+          const msStr = m[3] ? (m[3].length === 2 ? m[3] + '0' : m[3]) : '0';
+          const ms = parseInt(msStr, 10);
+          const timeMs = min * 60000 + sec * 1000 + ms;
+          results.push({ timeMs, text });
+        }
       }
+      return results;
+    };
+
+    for (const item of parseLrcLines(tlines)) {
+      if (item.text) transMap.set(item.timeMs, item.text);
     }
 
     const parsed = [];
-    for (const line of lines) {
-      let match;
-      timeRegex.lastIndex = 0;
-      while ((match = timeRegex.exec(line)) !== null) {
-        const min = parseInt(match[1], 10);
-        const sec = parseInt(match[2], 10);
-        const msStr = match[3].length === 2 ? match[3] + '0' : match[3];
-        const ms = parseInt(msStr, 10);
-        const timeMs = min * 60000 + sec * 1000 + ms;
-        const text = line.replace(timeRegex, '').trim();
-        if (text) {
-          parsed.push({
-            timeMs,
-            text,
-            translation: transMap.get(timeMs) || '',
-          });
-        }
+    for (const item of parseLrcLines(lines)) {
+      if (item.text) {
+        parsed.push({
+          timeMs: item.timeMs,
+          text: item.text,
+          translation: transMap.get(item.timeMs) || '',
+        });
       }
     }
 
