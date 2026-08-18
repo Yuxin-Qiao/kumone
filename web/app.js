@@ -1445,7 +1445,7 @@
     }
   }
 
-  async function showLoginModal(tabName = 'phone') {
+  async function showLoginModal(tabName = 'qr') {
     el.loginSheetBackdrop.classList.add('active');
     switchLoginTab(tabName);
   }
