@@ -140,7 +140,6 @@
     el.loginQrOverlayContent = document.getElementById('login-qr-overlay-content');
     el.loginQrStatus = document.getElementById('login-qr-status');
     el.btnCloseLogin = document.getElementById('btn-close-login');
-    el.btnJumpNeteaseApp = document.getElementById('btn-jump-netease-app');
 
     el.bottomNav = document.getElementById('bottom-nav');
     el.toastContainer = document.getElementById('toast-container');
@@ -1522,24 +1521,6 @@
     }
   }
 
-  function handleJumpNeteaseApp() {
-    if (!state.currentUnikey) {
-      showToast('正在获取登录密钥，请稍候…');
-      startQrLogin().then(() => {
-        if (state.currentUnikey) doJumpNetease();
-      });
-      return;
-    }
-    doJumpNetease();
-  }
-
-  function doJumpNetease() {
-    const url = NeteaseAPI.qrLoginURL(state.currentUnikey);
-    window.open(url, '_blank');
-    if (el.loginQrStatus) el.loginQrStatus.textContent = '已打开授权页面，请在网易云中确认登录…';
-    showToast('已打开授权链接');
-  }
-
   async function checkAccountStatus() {
     if (NeteaseAPI.getClient().isLoggedIn) {
       try {
@@ -1719,7 +1700,6 @@
       if (e.target === el.loginSheetBackdrop) hideLoginModal();
     };
     if (el.btnCloseLogin) el.btnCloseLogin.onclick = hideLoginModal;
-    if (el.btnJumpNeteaseApp) el.btnJumpNeteaseApp.onclick = handleJumpNeteaseApp;
   }
 
   async function init() {
