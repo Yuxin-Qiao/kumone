@@ -950,7 +950,7 @@
       </div>
       <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px">
         <div style="font-weight:600;margin-bottom:4px">Kumone for Android</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">版本 v0.1.4 · 雲の音 NetEase Cloud Music client</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">版本 v0.1.9 · 雲の音 NetEase Cloud Music client</div>
         <div style="font-size:12px;color:var(--primary);cursor:pointer" id="btn-open-repo">GitHub: https://github.com/Yuxin-Qiao/kumone</div>
       </div>
     `;

@@ -64,7 +64,7 @@ This fork introduces a dedicated Android version located under [`android/`](andr
 - **Crypto & API Parity**: Byte-identical AES-128-CBC/ECB + MD5 `weapi` and `eapi` implementation in Kotlin + JS.
 - **UnblockNeteaseMusic Fallback**: Automatic multi-source unblocking via pyncmd, Kuwo, and Kugou.
 
-**Download APK** — [Releases → android-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.4) (Android 7.0+ / API 24+): `Kumone-v0.1.4.apk`. Built automatically by [CI](.github/workflows/build-android.yml).
+**Download APK** — [Releases → android-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.9) (Android 7.0+ / API 24+): `Kumone-v0.1.9.apk`. Built automatically by [CI](.github/workflows/build-android.yml).
 
 ```bash
 # Smoke test (crypto parity & structural verification)

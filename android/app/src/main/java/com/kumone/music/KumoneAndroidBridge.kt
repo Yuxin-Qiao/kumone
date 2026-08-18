@@ -146,7 +146,7 @@ class KumoneAndroidBridge(
 
     @JavascriptInterface
     fun getAppVersion(): String {
-        return "0.1.4"
+        return "0.1.9"
     }
 
     fun dispatchProgress(isPlaying: Boolean, positionMs: Int, durationMs: Int) {

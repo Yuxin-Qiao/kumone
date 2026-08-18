@@ -64,7 +64,7 @@ macOS 原生 SwiftUI · Windows Electron 移植版 · Android Kotlin 原生后�
 - **算法与接口一致性**：weapi / eapi 加密算法与 macOS 原版逐字节一致。
 - **灰色无版权歌曲解锁**：自动回落 pyncmd / 酷我 / 酷狗音源。
 
-**APK 下载** — [Releases → android-v0.1.4](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.4)（Android 7.0+ / API 24+）：可以直接下载安装包 `Kumone-v0.1.4.apk` 并安装。由 [CI](.github/workflows/build-android.yml) 自动构建。
+**APK 下载** — [Releases → android-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/android-v0.1.9)（Android 7.0+ / API 24+）：可以直接下载安装包 `Kumone-v0.1.9.apk` 并安装。由 [CI](.github/workflows/build-android.yml) 自动构建。
 
 ```bash
 # 运行冒烟测试（加密算法对拍与完整性检查）
