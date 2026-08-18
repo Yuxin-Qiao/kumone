@@ -3,11 +3,10 @@ name: Build Android (Native Kotlin APK)
 on:
   push:
     branches: [main, master]
-    tags: ["v*", "android-v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: '发布到的 GitHub Release Tag (例如 v0.2.0 或 android-v0.2.0，为空则不发布到 Release)'
+        description: '发布到的 GitHub Release Tag (例如 v0.1.9.1 或 v0.2.0，为空则仅打包不发布)'
         required: false
         type: string
         default: ''
@@ -33,7 +32,7 @@ jobs:
           RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
           VERSION=$(echo "$RAW_TAG" | sed -E 's/^(android-)?v//')
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
-            VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed -E 's/^(android-)?v//' || echo "0.2.0")
+            VERSION=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null | sed -E 's/^v//' || echo "0.2.0")
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT

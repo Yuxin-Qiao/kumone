@@ -20,7 +20,7 @@ function getTargetVersion() {
   }
 
   try {
-    const gitTag = execSync('git describe --tags --abbrev=0', { cwd: ROOT_DIR, encoding: 'utf-8' }).trim();
+    const gitTag = execSync('git describe --tags --match="v*" --abbrev=0', { cwd: ROOT_DIR, encoding: 'utf-8' }).trim();
     if (gitTag) {
       return gitTag.replace(/^(v|android-v|windows-v|linux-v)/, '');
     }
