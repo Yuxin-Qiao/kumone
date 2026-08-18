@@ -1,8 +1,8 @@
 package com.kumone.music.crypto
 
+import android.util.Base64
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -45,9 +45,9 @@ object NeteaseCrypto {
 
     fun weapi(jsonText: String): Map<String, String> {
         val first = aesCbcEncrypt(jsonText.toByteArray(StandardCharsets.UTF_8), WEAPI_PRESET_KEY, WEAPI_IV)
-        val firstB64 = Base64.getEncoder().encodeToString(first)
+        val firstB64 = Base64.encodeToString(first, Base64.NO_WRAP)
         val second = aesCbcEncrypt(firstB64.toByteArray(StandardCharsets.UTF_8), WEAPI_SECRET_KEY, WEAPI_IV)
-        val params = Base64.getEncoder().encodeToString(second)
+        val params = Base64.encodeToString(second, Base64.NO_WRAP)
         return mapOf(
             "params" to params,
             "encSecKey" to WEAPI_ENC_SEC_KEY
