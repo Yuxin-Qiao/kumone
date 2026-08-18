@@ -1116,3 +1116,104 @@ body {
   border-radius: 20px;
 }
 
+/* Upstream SidebarView.swift Replicated Account Card Popover */
+.account-card-modal {
+  position: relative;
+  background: var(--bg-surface-elevated, #242426);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  border-radius: 20px;
+  width: 90%;
+  max-width: 260px;
+  padding: 24px 20px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto;
+  box-sizing: border-box;
+}
+
+.account-card-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  margin-bottom: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.account-card-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+  width: 100%;
+}
+
+.account-card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.account-card-nickname {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-vip-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #ff334b;
+  background: rgba(255, 51, 75, 0.15);
+  border: 1px solid rgba(255, 51, 75, 0.3);
+  padding: 1px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.account-card-signature {
+  font-size: 11.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  line-height: 1.4;
+  max-height: 34px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.account-card-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.08));
+  margin-bottom: 14px;
+}
+
+.account-card-logout-btn {
+  width: 100%;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary, #fa2d48);
+  background: rgba(250, 45, 72, 0.12);
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.account-card-logout-btn:hover {
+  background: rgba(250, 45, 72, 0.22);
+}
+

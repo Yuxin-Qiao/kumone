@@ -213,6 +213,23 @@
     </div>
   </div>
 
+  <!-- User Profile Popover Modal (Replicating upstream SidebarView.swift accountCard 1:1) -->
+  <div class="bottom-sheet-backdrop" id="account-card-backdrop">
+    <div class="account-card-modal" id="account-card-modal">
+      <img class="account-card-avatar" id="account-card-avatar" src="" alt="Avatar">
+      <div class="account-card-info">
+        <div class="account-card-name-row">
+          <span class="account-card-nickname" id="account-card-nickname">用户</span>
+          <span class="account-vip-badge" id="account-card-vip" style="display:none">VIP</span>
+        </div>
+        <div class="account-card-signature" id="account-card-signature"></div>
+      </div>
+      <div class="account-card-divider"></div>
+      <button class="account-card-logout-btn" id="btn-account-logout">退出登录</button>
+      <button class="login-dialog-cancel" id="btn-close-account-card" style="margin-top:8px">关闭</button>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 

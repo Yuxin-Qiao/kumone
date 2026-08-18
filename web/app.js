@@ -149,6 +149,14 @@
     el.loginQrStatus = document.getElementById('login-qr-status');
     el.btnCloseLogin = document.getElementById('btn-close-login');
 
+    el.accountCardBackdrop = document.getElementById('account-card-backdrop');
+    el.accountCardAvatar = document.getElementById('account-card-avatar');
+    el.accountCardNickname = document.getElementById('account-card-nickname');
+    el.accountCardVip = document.getElementById('account-card-vip');
+    el.accountCardSignature = document.getElementById('account-card-signature');
+    el.btnAccountLogout = document.getElementById('btn-account-logout');
+    el.btnCloseAccountCard = document.getElementById('btn-close-account-card');
+
     el.bottomNav = document.getElementById('bottom-nav');
     el.toastContainer = document.getElementById('toast-container');
   }
@@ -1423,6 +1431,39 @@
     el.queueSheetBackdrop.classList.remove('active');
   }
 
+  function showAccountCard() {
+    if (!state.user) return;
+    if (el.accountCardAvatar) el.accountCardAvatar.src = state.user.avatarUrl ? `${state.user.avatarUrl}?param=140y140` : '';
+    if (el.accountCardNickname) el.accountCardNickname.textContent = state.user.nickname || '用户';
+    if (el.accountCardVip) {
+      el.accountCardVip.style.display = (state.user.vipType && state.user.vipType > 0) ? 'inline-block' : 'none';
+    }
+    if (el.accountCardSignature) {
+      el.accountCardSignature.textContent = state.user.signature || '';
+      el.accountCardSignature.style.display = state.user.signature ? 'block' : 'none';
+    }
+    if (el.accountCardBackdrop) el.accountCardBackdrop.classList.add('active');
+  }
+
+  function hideAccountCard() {
+    if (el.accountCardBackdrop) el.accountCardBackdrop.classList.remove('active');
+  }
+
+  async function handleLogout() {
+    hideAccountCard();
+    try {
+      await NeteaseAPI.logout();
+    } catch (_) {}
+    NeteaseAPI.getClient().clearAuthCookies();
+    state.user = null;
+    state.likedIds.clear();
+    updateAccountUI();
+    showToast('已退出登录');
+    if (state.currentView === 'library') renderLibraryView();
+    else if (state.currentView === 'home') renderHomeView();
+    else if (state.currentView === 'settings') renderSettingsView();
+  }
+
   let captchaCountdownTimer = null;
 
   async function showLoginModal() {
@@ -1753,7 +1794,7 @@
 
     el.btnAccount.onclick = () => {
       if (!state.user) showLoginModal();
-      else navigateTo('library');
+      else showAccountCard();
     };
 
     el.btnBrandHome.onclick = () => navigateTo('home');
@@ -1824,6 +1865,14 @@
         if (e.key === 'Enter') handleSubmitCaptchaLogin();
       });
     }
+
+    if (el.accountCardBackdrop) {
+      el.accountCardBackdrop.onclick = (e) => {
+        if (e.target === el.accountCardBackdrop) hideAccountCard();
+      };
+    }
+    if (el.btnCloseAccountCard) el.btnCloseAccountCard.onclick = hideAccountCard;
+    if (el.btnAccountLogout) el.btnAccountLogout.onclick = handleLogout;
   }
 
   async function init() {
