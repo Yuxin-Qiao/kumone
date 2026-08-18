@@ -30,6 +30,7 @@ const CHANNELS = {
   recommendResource: () => NeteaseAPI.recommendResource(),
   dailyRecommendSongs: () => NeteaseAPI.dailyRecommendSongs(),
   playlistDetail: ({ id }) => NeteaseAPI.playlistDetail(id),
+  playlistBrief: ({ id }) => NeteaseAPI.playlistBrief(id),
   toplists: () => NeteaseAPI.toplists(),
   highQualityPlaylists: ({ before }) => NeteaseAPI.highQualityPlaylists('全部', 12, before || 0),
   newAlbums: () => NeteaseAPI.newAlbums('ALL', 12),

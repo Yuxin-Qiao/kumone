@@ -85,6 +85,10 @@ const NeteaseAPI = {
   async playlistDetail(id) {
     return weapi('/v6/playlist/detail', { id, n: 100000, s: 8 });
   },
+  async playlistBrief(id) {
+    const res = await weapi('/v6/playlist/detail', { id, n: 1, s: 0 });
+    return (res && res.playlist) || {};
+  },
   async songDetails(ids) {
     if (!ids.length) return { songs: [], privileges: [] };
     const c = '[' + ids.map((i) => `{"id":${i}}`).join(',') + ']';

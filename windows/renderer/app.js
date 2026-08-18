@@ -23,9 +23,16 @@ const el = (tag, attrs = {}, ...children) => {
     else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
     else node.setAttribute(k, v);
   }
+  const appendChild = (c) => {
+    if (c == null || c === false) return;
+    if (Array.isArray(c)) {
+      for (const item of c) appendChild(item);
+    } else {
+      node.append(c);
+    }
+  };
   for (const c of children) {
-    if (c == null) continue;
-    node.append(c);
+    appendChild(c);
   }
   return node;
 };
@@ -93,14 +100,18 @@ function promptModal(title, defaultValue = '') {
 // Mirrors Track.swift: accepts both "v3" (ar/al/dt) and legacy (artists/album/duration).
 function normalizeTrack(raw) {
   if (!raw) return null;
+  const rawArtists = raw.ar || raw.artists || (raw.artist ? [raw.artist] : []);
+  const artists = (Array.isArray(rawArtists) ? rawArtists : [rawArtists])
+    .map((a) => (typeof a === 'string' ? { id: 0, name: a } : { id: a.id || 0, name: a.name || '' }))
+    .filter((a) => a.name);
   return {
     id: raw.id,
     name: raw.name || '',
-    artists: (raw.ar || raw.artists || []).map((a) => ({ id: a.id || 0, name: a.name || '' })),
+    artists: artists.length ? artists : [{ id: 0, name: '未知歌手' }],
     album: {
       id: (raw.al || raw.album || {}).id || 0,
       name: (raw.al || raw.album || {}).name || '',
-      picUrl: (raw.al || raw.album || {}).picUrl || null,
+      picUrl: (raw.al || raw.album || {}).picUrl || (raw.al || raw.album || {}).pic || null,
     },
     durationMS: raw.dt || raw.duration || 0,
     alias: raw.alia || raw.alias || [],
@@ -112,7 +123,28 @@ function normalizeTrack(raw) {
     privilege: raw.privilege || null,
   };
 }
-const artistNames = (t) => t.artists.map((a) => a.name).join(' / ');
+
+const artistNames = (t) => {
+  if (!t || !t.artists || !t.artists.length) return '未知歌手';
+  const names = t.artists.map((a) => a.name).filter(Boolean);
+  return names.length ? names.join(' / ') : '未知歌手';
+};
+
+function renderArtistSpans(artists) {
+  if (!artists || !artists.length) return [document.createTextNode('未知歌手')];
+  const nodes = [];
+  artists.forEach((a, ai) => {
+    if (ai > 0) nodes.push(document.createTextNode(' / '));
+    const span = el('span', {
+      onclick: (ev) => {
+        ev.stopPropagation();
+        if (a.id) nav({ type: 'artist', id: a.id });
+      },
+    }, a.name || '未知歌手');
+    nodes.push(span);
+  });
+  return nodes;
+}
 const trackSubtitle = (t) => t.tns[0] || t.alias[0] || null;
 
 function normalizePlaylist(raw) {
@@ -283,13 +315,21 @@ async function renderHome(root) {
   }
 
   const secRec = el('div');
+  const secRadar = el('div');
+  const titleRadar = el('div', { class: 'section-title' }, '雷达歌单');
   const secHQ = el('div');
   const secTop = el('div');
   const secArtists = el('div');
   const secAlbums = el('div');
   const secDaily = el('div', { class: 'daily-section' });
+
   root.append(
     el('div', { class: 'section-title' }, isLoggedIn() ? '推荐歌单' : '精选歌单'), secRec,
+  );
+  if (isLoggedIn()) {
+    root.append(titleRadar, secRadar);
+  }
+  root.append(
     el('div', { class: 'section-title' }, '精品歌单'), secHQ,
     el('div', { class: 'section-title' }, '排行榜'), secTop,
     el('div', { class: 'section-title' }, '推荐歌手'), secArtists,
@@ -297,6 +337,7 @@ async function renderHome(root) {
     el('div', { class: 'section-title' }, isLoggedIn() ? '每日推荐' : '最新音乐'), secDaily,
   );
   for (const s of [secRec, secHQ, secTop, secArtists, secAlbums, secDaily]) setLoading(s);
+  if (isLoggedIn()) setLoading(secRadar);
 
   invoke('personalizedPlaylists').then((list) => {
     secRec.textContent = '';
@@ -343,6 +384,33 @@ async function renderHome(root) {
   }).catch(() => { secAlbums.textContent = ''; });
 
   if (isLoggedIn()) {
+    const RADAR_IDS = [3136952023, 2829883282, 2829816518, 2829896389];
+    Promise.all(RADAR_IDS.map((id) => invoke('playlistBrief', { id }).catch(() => null))).then((briefs) => {
+      secRadar.textContent = '';
+      const list = (briefs || []).filter((b) => b && b.id).map((b) => {
+        const parts = (b.name || '').split('|');
+        const title = parts.length > 1 ? parts[parts.length - 1] : (b.name || '雷达歌单');
+        const subtitle = parts.length > 1 ? parts.slice(0, -1).join('|') : null;
+        return {
+          id: b.id,
+          name: title,
+          cover: b.coverImgUrl,
+          playCount: 0,
+          trackCount: 0,
+          copywriter: subtitle,
+        };
+      });
+      if (list.length) {
+        secRadar.append(playlistGrid(list));
+      } else {
+        titleRadar.remove();
+        secRadar.remove();
+      }
+    }).catch(() => {
+      titleRadar.remove();
+      secRadar.remove();
+    });
+
     invoke('recommendResource').then((list) => {
       if ((list || []).length) { secRec.textContent = ''; secRec.append(playlistGrid(list.map(normalizePlaylist))); }
     }).catch(() => {});
@@ -515,14 +583,11 @@ function trackTable({ tracks, privileges, sourceID, removable }) {
         p === 'vipOnly' ? el('span', { class: 'tag vip' }, 'VIP') : null,
         p === 'paidAlbum' ? el('span', { class: 'tag vip' }, '付费') : null,
         p === 'noCopyright' || p === 'delisted' ? el('span', { class: 'tag nc' }, '无版权') : null),
-      el('td', { class: 't-artist' },
-        track.artists.map((a, ai) => el('span', {
-          onclick: (ev) => { ev.stopPropagation(); if (a.id) nav({ type: 'artist', id: a.id }); },
-        }, (ai ? ' / ' : '') + a.name))),
+      el('td', { class: 't-artist' }, renderArtistSpans(track.artists)),
       el('td', { class: 't-album' },
         el('span', {
           onclick: (ev) => { ev.stopPropagation(); if (track.album.id) nav({ type: 'album', id: track.album.id }); },
-        }, track.album.name)),
+        }, track.album.name || '未知专辑')),
       el('td', { class: 't-duration' }, fmtDurationMS(track.durationMS)),
       el('td', { class: 't-duration' },
         el('span', { class: 't-act' },
@@ -908,8 +973,11 @@ function recordsTable(items, tracks) {
       el('td', { class: 't-index' }, el('span', { class: 'pc-badge' }, fmtCount(it.playCount)),
         el('button', { class: 't-play-btn', title: '播放', onclick: () => playQueue(tracks, i, 0) }, '▶')),
       el('td', { class: 't-name' }, track.name),
-      el('td', { class: 't-artist' }, artistNames(track)),
-      el('td', { class: 't-album' }, track.album.name),
+      el('td', { class: 't-artist' }, renderArtistSpans(track.artists)),
+      el('td', { class: 't-album' },
+        el('span', {
+          onclick: (ev) => { ev.stopPropagation(); if (track.album.id) nav({ type: 'album', id: track.album.id }); },
+        }, track.album.name || '未知专辑')),
       el('td', { class: 't-duration' }, fmtDurationMS(track.durationMS)),
       el('td', { class: 't-duration' },
         el('button', {
@@ -968,8 +1036,11 @@ async function renderCloud(root) {
         el('td', { class: 't-index' },
           el('button', { class: 't-play-btn', title: '播放', onclick: () => playQueue(tracks, i, -200) }, '▶')),
         el('td', { class: 't-name' }, track.name),
-        el('td', { class: 't-artist' }, artistNames(track)),
-        el('td', { class: 't-album' }, track.album.name),
+        el('td', { class: 't-artist' }, renderArtistSpans(track.artists)),
+        el('td', { class: 't-album' },
+          el('span', {
+            onclick: (ev) => { ev.stopPropagation(); if (track.album.id) nav({ type: 'album', id: track.album.id }); },
+          }, track.album.name || '未知专辑')),
         el('td', { class: 't-duration' }, fmtBytes(it.fileSize)),
         el('td', { class: 't-duration' },
           el('button', {
