@@ -33,6 +33,9 @@ struct IOSLibraryView: View {
             }
         }
         .navigationTitle("我的")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

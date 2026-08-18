@@ -1952,6 +1952,9 @@
     onNativePrev,
     navigateTo,
     playTrack,
+    openNowPlaying,
+    closeNowPlaying,
+    loadLyrics,
   };
 
   document.addEventListener('DOMContentLoaded', init);

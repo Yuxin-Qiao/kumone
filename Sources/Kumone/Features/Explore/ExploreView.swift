@@ -125,6 +125,9 @@ struct ExploreView: View {
             }
         }
         .navigationTitle("精选")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task {
             if model.playlists.isEmpty, model.toplists.isEmpty {
                 await model.loadMore()
