@@ -82,15 +82,15 @@ macOS 原生 SwiftUI · Windows/Linux Electron 版 · Android 原生后台与移
 
 支持标准 Linux 桌面集成与 MPRIS 媒体键控制协议。
 
-**下载** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64)：`Kumone-0.2.0-x86_64.AppImage` 或 `Kumone_0.2.0_amd64.deb`。由 [CI](.github/workflows/build-linux.yml) 自动构建。
+**下载** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64)：`Kumone-0.1.9.1-x86_64.AppImage` 或 `Kumone_0.1.9.1_amd64.deb`。由 [CI](.github/workflows/build-linux.yml) 自动构建。
 
 ```bash
 # 运行 AppImage
 chmod +x Kumone-0.1.9-x86_64.AppImage
-./Kumone-0.2.0-x86_64.AppImage
+./Kumone-0.1.9.1-x86_64.AppImage
 
 # 或在 Ubuntu/Debian 上安装 Deb 包
-sudo dpkg -i Kumone_0.2.0_amd64.deb
+sudo dpkg -i Kumone_0.1.9.1_amd64.deb
 ```
 
 ## Android (安卓原生移植版)
@@ -119,7 +119,7 @@ cd android
 weapi/eapi 加密层与 Swift 实现**逐字节一致**（固定向量对拍验证），API 客户端、
 UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
 
-**下载** — [Releases → v0.2.0](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.2.0)（Windows 10/11 x64）：安装包 `Kumone-Setup-0.2.0-x64.exe` 或便携版 zip。
+**下载** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1)（Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.9.1-x64.exe` 或便携版 zip。
 由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
 
 ```bash
