@@ -10,13 +10,15 @@
 
 # Kumone
 
-**雲の音 — 网易云音乐客户端（macOS、Windows & Android）**
+**雲の音 — 网易云音乐客户端（macOS、Windows、Linux、Android & Web）**
 
-macOS 原生 SwiftUI · Windows Electron 移植版 · Android Kotlin 原生后台与移动端移植版 · 直连网易云真实 API
+macOS 原生 SwiftUI · Windows/Linux Electron 版 · Android 原生后台与移动端 · Web/PWA/Docker 全端通用
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-移植版)
+[![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-桌面版-appimage--deb)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-安卓原生移植版)
+[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker-免安装与自建)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.10-7F52FF?logo=kotlin&logoColor=white)](android)
 [![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
@@ -49,12 +51,47 @@ macOS 原生 SwiftUI · Windows Electron 移植版 · Android Kotlin 原生后�
 - 🖼 **沉浸播放页** — 封面取色渐变背景 + 大封面 + 大字同步歌词（点击播放条封面进入，Esc 退出）
 - 📻 **私人漫游** — 沉浸式 FM 页面，不喜欢 / 切歌
 - 📝 **歌词** — 侧边面板 / 全屏滚动，逐行同步 + 翻译 + 罗马音注音，点击跳转
-- 🪟 **桌面歌词 (macOS)** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
+- 🪟 **桌面歌词** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
 - 📚 **音乐库** — 我喜欢的音乐、创建 / 收藏的歌单、收藏专辑、关注歌手、最近播放、音乐云盘
 - ✏️ **歌单管理** — 新建 / 删除 / 收藏歌单、添加 / 移除歌曲、红心
 - 🔍 **搜索** — 综合 / 单曲 / 歌手 / 专辑 / 歌单，热搜词占位
-- ⌨️ **系统集成** — 媒体键 / 控制中心 / Android MediaSession 通知（Now Playing）、听歌打卡、退出后恢复播放队列
+- ⌨️ **系统集成** — 媒体键 / 控制中心 / SMTC / MPRIS / Android MediaSession 通知（Now Playing）、听歌打卡、退出后恢复播放队列
 - 🌐 **多语言** — 简体中文与英文界面，跟随系统语言；Sparkle 更新说明双语
+
+## Web / PWA / Docker (免安装与自建)
+
+可在任何现代化浏览器中即开即用（包括 iOS Safari、iPadOS、Chrome、Edge、车机/特斯拉中控屏）。
+
+- 🌐 **在线免安装体验 / PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone)（iOS/iPad Safari 点击「分享 → 添加到主屏幕」即可获得全屏沉浸 App 体验）
+- 🐳 **Docker 一键启动**:
+  ```bash
+  docker run -d --name kumone-web -p 3000:3000 ghcr.io/yuxin-qiao/kumone-web:latest
+  ```
+- 📦 **Docker Compose 编排**:
+  ```yaml
+  version: '3.8'
+  services:
+    kumone-web:
+      image: ghcr.io/yuxin-qiao/kumone-web:latest
+      restart: unless-stopped
+      ports:
+        - "3000:3000"
+  ```
+
+## Linux 桌面版 (AppImage & Deb)
+
+支持标准 Linux 桌面集成与 MPRIS 媒体键控制协议。
+
+**下载** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64)：`Kumone-0.1.9-x86_64.AppImage` 或 `Kumone_0.1.9_amd64.deb`。由 [CI](.github/workflows/build-linux.yml) 自动构建。
+
+```bash
+# 运行 AppImage
+chmod +x Kumone-0.1.9-x86_64.AppImage
+./Kumone-0.1.9-x86_64.AppImage
+
+# 或在 Ubuntu/Debian 上安装 Deb 包
+sudo dpkg -i Kumone_0.1.9_amd64.deb
+```
 
 ## Android (安卓原生移植版)
 
@@ -76,8 +113,6 @@ cd android
 ./gradlew assembleRelease
 ```
 
-通过 [CI](.github/workflows/build-android.yml) 自动构建并在发布 release 时产出 APK 安装包。详细说明见 [`android/README.md`](android/README.md)。
-
 ## Windows（Electron 移植版）
 
 本仓库在 [`windows/`](windows) 目录下新增了完整的 Windows 移植版——Swift 源码逐文件对等移植：
@@ -88,22 +123,13 @@ UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
 （Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.9-x64.exe` 或便携版 zip。
 由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
 
-Feature parity with upstream v0.1.9: 扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、雷达歌单、
-云盘音乐、听歌排行、心动模式、下一首播放插播队列、歌词（原文+翻译+罗马音）、
-独立正在播放大页、曲目右键菜单、音质选择与实际音质徽标、灰色歌曲解锁、
-媒体键/系统 SMTC、键盘快捷键、重启恢复播放队列与进度。
-
 ```bash
 cd windows
 npm install
 npm test             # 加密对拍 + 真实 API 冒烟
 npm run e2e          # CDP 驱动的 UI 端到端测试（16 项断言）
-npm run package:win  # NSIS 安装包（macOS 上交叉构建，无需 wine）
+npm run package:win  # NSIS 安装包
 ```
-
-已知限制：未签名（首次运行 SmartScreen 提示「仍要运行」）、自动更新仅生成骨架
-（latest.yml 已产出，更新器未接线）、关注歌手接口被服务端拒绝（code 250，
-上游 macOS 版同样受影响）。详见 [`windows/README.md`](windows/README.md)。
 
 ## 安装（macOS）
 
@@ -120,9 +146,6 @@ brew install owo-network/brew/kumone --cask
 从 [Releases](https://github.com/missuo/kumone/releases/latest) 下载最新的
 `Kumone-x.y.z.zip`，解压后拖入「应用程序」。
 
-应用已使用 Developer ID 签名并通过 Apple 公证，内置 Sparkle 自动更新
-（菜单栏 Kumone → 检查更新…）。
-
 ## 构建
 
 要求 macOS 15+、Xcode 26+。
@@ -138,9 +161,10 @@ Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
 ```
 Kumone/
 ├── Sources/Kumone/     # macOS SwiftUI 原生实现
-├── windows/            # Windows Electron 移植版
+├── windows/            # Windows & Linux Electron 桌面端实现
 ├── android/            # Android Kotlin + Web 混合原生应用
-└── .github/workflows/  # macOS, Windows & Android CI/CD 自动化流水线
+├── web/                # Web / PWA / Docker 免安装与自建播放器
+└── .github/workflows/  # macOS, Windows, Linux, Android & Web 全平台自动化 CI/CD
 ```
 
 不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生实现，请求直达 `music.163.com` / `interface.music.163.com`。

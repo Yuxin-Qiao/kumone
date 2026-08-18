@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  kumone-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/yuxin-qiao/kumone-web:latest
+    container_name: kumone-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0

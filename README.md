@@ -10,13 +10,15 @@
 
 # Kumone
 
-**雲の音 — NetEase Cloud Music client for macOS, Windows & Android**
+**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux, Android & Web**
 
-Native SwiftUI on macOS · Electron port for Windows · Native Kotlin & Web for Android · Talks directly to NetEase's real API
+Native SwiftUI on macOS · Electron for Windows & Linux · Native Kotlin on Android · PWA & Docker for Web
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
+[![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-desktop-appimage--deb)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-native-port)
+[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.10-7F52FF?logo=kotlin&logoColor=white)](android)
 [![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
@@ -49,12 +51,47 @@ Native SwiftUI on macOS · Electron port for Windows · Native Kotlin & Web for 
 - 🖼 **Immersive now-playing page** — artwork-tinted gradient backdrop, large artwork, big synced lyrics (click the player-bar artwork to open, Esc to close)
 - 📻 **Personal FM** — immersive roaming page with trash / skip
 - 📝 **Lyrics** — glass side panel with line-synced lyrics + translation + romanization, click to seek
-- 🪟 **Desktop lyrics (macOS)** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
+- 🪟 **Desktop lyrics (macOS / Desktop)** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
 - 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
 - ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
 - 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center / Android MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
+- ⌨️ **System integration** — media keys / Control Center / SMTC / MPRIS / Android MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
 - 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
+
+## Web / PWA / Docker
+
+Run Kumone in any browser — iOS Safari, iPadOS, Chrome, Edge, smart TVs, in-car infotainment, or self-hosted via Docker.
+
+- 🌐 **Live Demo & PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone) (Tap *Share → Add to Home Screen* on iOS/iPadOS for full-screen native experience)
+- 🐳 **Run with Docker**:
+  ```bash
+  docker run -d --name kumone-web -p 3000:3000 ghcr.io/yuxin-qiao/kumone-web:latest
+  ```
+- 📦 **Docker Compose**:
+  ```yaml
+  version: '3.8'
+  services:
+    kumone-web:
+      image: ghcr.io/yuxin-qiao/kumone-web:latest
+      restart: unless-stopped
+      ports:
+        - "3000:3000"
+  ```
+
+## Linux Desktop (AppImage & Deb)
+
+Native Linux desktop client with MPRIS media control support and system notifications.
+
+**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.1.9-x86_64.AppImage` or `Kumone_0.1.9_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
+
+```bash
+# Run AppImage
+chmod +x Kumone-0.1.9-x86_64.AppImage
+./Kumone-0.1.9-x86_64.AppImage
+
+# Or install Deb on Ubuntu/Debian
+sudo dpkg -i Kumone_0.1.9_amd64.deb
+```
 
 ## Android (Native Port)
 
@@ -76,8 +113,6 @@ cd android
 ./gradlew assembleRelease
 ```
 
-Built automatically on push via [CI](.github/workflows/build-android.yml). Full documentation in [`android/README.md`](android/README.md).
-
 ## Windows (Electron port)
 
 This fork adds a full Windows port under [`windows/`](windows) — the Swift
@@ -91,25 +126,13 @@ Electron.
 portable zip. Built on a real Windows runner by
 [CI](.github/workflows/build-windows.yml).
 
-Feature parity with upstream v0.1.9: QR login, discovery / library / search,
-playlist / album / artist pages, Personal FM, radar playlists, cloud disk, play records,
-Heartbeat Mode, play-next queue, lyrics with translation + romanization,
-dedicated now-playing page, track context menu, quality selection with served
-badge, UnblockNeteaseMusic fallback, media keys / SMTC, keyboard shortcuts,
-queue + position restore across launches.
-
 ```bash
 cd windows
 npm install
 npm test             # crypto parity + live API smoke
 npm run e2e          # CDP-driven UI tests (16 assertions)
-npm run package:win  # NSIS installer (cross-built from macOS, no wine)
+npm run package:win  # NSIS installer
 ```
-
-Known limitations: unsigned (SmartScreen prompt on first run), auto-update
-scaffolding only (`latest.yml` is generated; updater not wired), and the
-artist-subscribe endpoint is rejected server-side (code 250 — upstream's
-macOS build is affected equally). Details in [`windows/README.md`](windows/README.md).
 
 ## Installation (macOS)
 
@@ -127,9 +150,6 @@ Download the latest `Kumone-x.y.z.zip` from
 [Releases](https://github.com/missuo/kumone/releases/latest), unzip, and drag
 it into Applications.
 
-The app is signed with a Developer ID certificate and notarized by Apple, with
-built-in Sparkle automatic updates (menu bar: Kumone → Check for Updates…).
-
 ## Building
 
 Requires macOS 15+ and Xcode 26+.
@@ -145,9 +165,10 @@ Scripts/compile_and_run.sh     # kill → repackage → relaunch
 ```
 Kumone/
 ├── Sources/Kumone/     # macOS SwiftUI native implementation
-├── windows/            # Windows Electron port
+├── windows/            # Windows & Linux Electron desktop ports
 ├── android/            # Android Kotlin + Web hybrid native app
-└── .github/workflows/  # CI/CD pipelines for macOS, Windows & Android
+├── web/                # Web / PWA / Docker portable player
+└── .github/workflows/  # Automated multi-platform CI/CD & Upstream sync
 ```
 
 No third-party API server involved: weapi (double AES-CBC + RSA) and eapi

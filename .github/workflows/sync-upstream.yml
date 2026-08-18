@@ -82,20 +82,23 @@ jobs:
         run: |
           git push origin main --tags
 
-      - name: Trigger Downstream Matrix Builds (Windows & Android)
+      - name: Trigger Downstream Multi-Platform Matrix Builds (Windows, Android, Linux, Web)
         if: steps.merge.outputs.updated == 'true' || steps.sync_tags.outputs.new_tags == 'true' || inputs.force_build == true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          echo "Triggering simultaneous Windows and Android builds (Target Tag: $LATEST_TAG)..."
+          echo "Triggering simultaneous Multi-Platform builds (Windows, Android, Linux, Web) (Target Tag: $LATEST_TAG)..."
           if [ -n "$LATEST_TAG" ]; then
             gh workflow run build-windows.yml -f tag="$LATEST_TAG" || gh workflow run build-windows.yml || true
             gh workflow run build-android.yml -f tag="$LATEST_TAG" || gh workflow run build-android.yml || true
+            gh workflow run build-linux.yml -f tag="$LATEST_TAG" || gh workflow run build-linux.yml || true
           else
             gh workflow run build-windows.yml || true
             gh workflow run build-android.yml || true
+            gh workflow run build-linux.yml || true
           fi
+          gh workflow run build-web.yml || true
 
       - name: Notify on Conflict
         if: failure()

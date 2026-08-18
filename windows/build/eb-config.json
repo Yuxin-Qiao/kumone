@@ -2,7 +2,7 @@
   "appId": "im.missuo.kumone",
   "productName": "Kumone",
   "directories": { "output": "dist-installer" },
-  "files": ["lib/**", "renderer/**", "build/icon.ico", "main.js", "preload.js", "package.json", "node_modules/**"],
+  "files": ["lib/**", "renderer/**", "build/icon.ico", "build/icon.png", "build/icons/**", "main.js", "preload.js", "package.json", "node_modules/**"],
   "win": {
     "target": [{ "target": "nsis", "arch": ["x64"] }],
     "icon": "build/icon.ico"
@@ -13,6 +13,25 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "artifactName": "Kumone-Setup-${version}-${arch}.${ext}"
+  },
+  "linux": {
+    "target": ["AppImage", "deb", "tar.gz"],
+    "icon": "build/icons",
+    "category": "AudioVideo",
+    "synopsis": "NetEase Cloud Music client",
+    "description": "Kumone (雲の音) — Modern, lightweight NetEase Cloud Music client for macOS, Windows and Linux",
+    "desktop": {
+      "StartupWMClass": "kumone",
+      "Categories": "AudioVideo;Audio;Music;Player;"
+    }
+  },
+  "deb": {
+    "packageCategory": "sound",
+    "priority": "optional",
+    "artifactName": "Kumone_${version}_${arch}.${ext}"
+  },
+  "appImage": {
+    "artifactName": "Kumone-${version}-${arch}.${ext}"
   },
   "publish": [
     {

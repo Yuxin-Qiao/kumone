@@ -11,7 +11,8 @@
     "test": "node test/unit.js && node test/smoke.js",
     "test:unit": "node test/unit.js",
     "e2e": "node test/e2e.js",
-    "package:win": "electron-builder --win nsis --x64 --config build/eb-config.json --publish never"
+    "package:win": "electron-builder --win nsis --x64 --config build/eb-config.json --publish never",
+    "package:linux": "electron-builder --linux --x64 --config build/eb-config.json --publish never"
   },
   "devDependencies": {
     "@electron/asar": "^4.2.1",

@@ -1,0 +1,13 @@
+{
+  "name": "kumone-web",
+  "version": "0.1.9",
+  "description": "Kumone — Modern, lightweight NetEase Cloud Music Web & PWA player",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.js"
+  },
+  "keywords": ["kumone", "netease", "music", "pwa", "web"],
+  "author": "Yuxin Qiao",
+  "license": "LGPL-3.0-only"
+}

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#17171a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kumone">
+  <title>Kumone — 雲の音 Web</title>
+  
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Top Header -->
+    <header id="top-bar">
+      <div class="brand-wrapper" id="btn-brand-home">
+        <div class="brand-icon">く</div>
+        <div class="brand-title">Kumone</div>
+      </div>
+      <div class="user-chip" id="btn-account">
+        <img class="user-avatar" id="user-avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2371717a'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E" alt="Avatar">
+        <span class="user-name" id="user-name">未登录</span>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="main-scroll-view">
+      <div id="view-container"></div>
+    </main>
+
+    <!-- Bottom Player Bar -->
+    <div id="bottom-player-bar">
+      <div class="bp-progress-bar">
+        <div class="bp-progress-fill" id="bp-progress-fill"></div>
+      </div>
+      <img class="bp-cover" id="bp-cover" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233f3f46'%3E%3Crect width='24' height='24'/%3E%3C/svg%3E" alt="Cover">
+      <div class="bp-info" id="bp-info-area">
+        <div class="bp-title" id="bp-title">雲の音</div>
+        <div class="bp-artist" id="bp-artist">选择歌曲开始播放</div>
+      </div>
+      <div class="bp-controls">
+        <button class="bp-btn" id="bp-btn-like" title="喜欢">♡</button>
+        <button class="bp-btn bp-btn-play" id="bp-btn-play" title="播放/暂停">▶</button>
+        <button class="bp-btn" id="bp-btn-next" title="下一首">⏭</button>
+      </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav id="bottom-nav">
+      <div class="nav-tab active" data-tab="home">
+        <div class="nav-tab-icon">🏠</div>
+        <div>发现</div>
+      </div>
+      <div class="nav-tab" data-tab="search">
+        <div class="nav-tab-icon">🔍</div>
+        <div>搜索</div>
+      </div>
+      <div class="nav-tab" data-tab="fm">
+        <div class="nav-tab-icon">📻</div>
+        <div>私人 FM</div>
+      </div>
+      <div class="nav-tab" data-tab="library">
+        <div class="nav-tab-icon">📚</div>
+        <div>我的</div>
+      </div>
+      <div class="nav-tab" data-tab="settings">
+        <div class="nav-tab-icon">⚙</div>
+        <div>设置</div>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Fullscreen Immersive Now Playing View -->
+  <div id="fullscreen-player">
+    <div class="fs-backdrop" id="fs-backdrop"></div>
+    <div class="fs-overlay"></div>
+    <div class="fs-content">
+      <div class="fs-header">
+        <button class="fs-btn-close" id="fs-btn-close">⌵</button>
+        <div class="fs-header-info">
+          <div class="fs-header-title" id="fs-title">正在播放</div>
+          <div class="fs-header-artist" id="fs-artist">Kumone</div>
+        </div>
+        <button class="fs-btn-lyrics" id="fs-btn-lyrics-toggle" title="切换歌词">词</button>
+      </div>
+
+      <div class="fs-body" id="fs-body-area">
+        <!-- Artwork View -->
+        <div class="fs-artwork-container" id="fs-artwork-view">
+          <img class="fs-artwork-img" id="fs-cover" src="" alt="Album Cover">
+        </div>
+        <!-- Lyrics View -->
+        <div class="fs-lyrics-container" id="fs-lyrics-view">
+          <div id="fs-lyrics-content"></div>
+        </div>
+      </div>
+
+      <div class="fs-progress-wrapper">
+        <input type="range" class="fs-seek-slider" id="fs-seek-slider" min="0" max="1000" value="0">
+        <div class="fs-time-row">
+          <span id="fs-time-cur">00:00</span>
+          <span id="fs-time-dur">00:00</span>
+        </div>
+      </div>
+
+      <div class="fs-controls-main">
+        <button class="fs-btn-mode" id="fs-btn-mode" title="循环模式">🔁</button>
+        <button class="fs-btn-prev" id="fs-btn-prev" title="上一首">⏮</button>
+        <button class="fs-btn-play-pause" id="fs-btn-play" title="播放/暂停">▶</button>
+        <button class="fs-btn-next" id="fs-btn-next" title="下一首">⏭</button>
+        <button class="fs-btn-like" id="fs-btn-like" title="喜欢">♡</button>
+      </div>
+
+      <div class="fs-bottom-bar">
+        <span class="fs-quality-badge" id="fs-quality-badge">标准音质</span>
+        <button class="fs-btn-queue" id="fs-btn-queue" title="播放队列">☰</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue Bottom Sheet -->
+  <div class="bottom-sheet-backdrop" id="queue-sheet-backdrop">
+    <div class="bottom-sheet" id="queue-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span>播放队列 (<span id="queue-count">0</span>)</span>
+        <button id="btn-clear-queue" style="background:none;border:none;color:var(--text-muted);font-size:12px;">清空</button>
+      </div>
+      <div class="track-list" id="queue-track-list"></div>
+    </div>
+  </div>
+
+  <!-- Track Action Sheet (Menu) -->
+  <div class="bottom-sheet-backdrop" id="action-sheet-backdrop">
+    <div class="bottom-sheet" id="action-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span id="action-track-title">歌曲操作</span>
+      </div>
+      <div id="action-menu-items">
+        <div class="sheet-menu-item" id="action-play-next">
+          <span>➕</span><span>下一首播放</span>
+        </div>
+        <div class="sheet-menu-item" id="action-like">
+          <span>❤️</span><span>收藏 / 取消喜欢</span>
+        </div>
+        <div class="sheet-menu-item" id="action-album">
+          <span>💿</span><span>查看专辑</span>
+        </div>
+        <div class="sheet-menu-item" id="action-artist">
+          <span>👤</span><span>查看歌手</span>
+        </div>
+        <div class="sheet-menu-item" id="action-simi">
+          <span>✦</span><span>相似歌曲</span>
+        </div>
+        <div class="sheet-menu-item" id="action-copy-link">
+          <span>🔗</span><span>复制歌曲链接</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login QR Code Modal -->
+  <div class="bottom-sheet-backdrop" id="login-sheet-backdrop">
+    <div class="bottom-sheet" id="login-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span>扫码登录</span>
+        <button id="btn-close-login" style="background:none;border:none;color:var(--text-muted);font-size:16px;">✕</button>
+      </div>
+      <div class="qr-modal-body">
+        <div class="qr-image-wrapper">
+          <img class="qr-image" id="login-qr-img" alt="QR Code">
+        </div>
+        <div class="qr-status-text" id="login-qr-status">正在生成二维码…</div>
+        <button class="sheet-menu-item" id="btn-refresh-qr" style="justify-content:center;color:var(--primary);display:none;">点击刷新二维码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="lib/qrcode.min.js"></script>
+  <script src="lib/crypto.js"></script>
+  <script src="lib/client.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="lib/unblock.js"></script>
+  <script src="app.js"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
