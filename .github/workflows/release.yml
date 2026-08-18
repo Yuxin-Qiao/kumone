@@ -413,31 +413,35 @@ jobs:
 
       - name: Generate Unified Release Notes & Asset Table
         run: |
-          cat << 'EOF' > release_body.md
-## 📦 全平台安装包下载 (Downloads)
+          node -e '
+            const fs = require("fs");
+            const { execSync } = require("child_process");
+            const version = process.env.VERSION || "0.2.0";
+            const owner = process.env.GITHUB_REPOSITORY_OWNER || "Yuxin-Qiao";
+            let body = `## 📦 全平台安装包下载 (Downloads)\n\n` +
+              `| 平台 (Platform) | 安装包类型 (Package Type) | 文件名 (Filename) | 说明 (Notes) |\n` +
+              `| :--- | :--- | :--- | :--- |\n` +
+              `| 🍎 **macOS** | 原生应用压缩包 | \`Kumone-${version}.zip\` | macOS 15.0+ 原生 SwiftUI 构建 |\n` +
+              `| 🪟 **Windows** | NSIS 安装程序 (推荐) | \`Kumone-Setup-${version}-x64.exe\` | 自动创建快捷方式与卸载程序 |\n` +
+              `| 🪟 **Windows** | 免安装便携版 Zip | \`Kumone-win32-x64.zip\` | 解压即用 |\n` +
+              `| 🐧 **Linux** | AppImage 通用包 | \`Kumone-${version}-x86_64.AppImage\` | \`chmod +x\` 即可直接运行 |\n` +
+              `| 🐧 **Linux** | Debian / Ubuntu 安装包 | \`Kumone_${version}_amd64.deb\` | \`sudo dpkg -i\` 一键安装 |\n` +
+              `| 📱 **Android** | 原生通用安装包 (推荐) | \`Kumone-${version}.apk\` | 支持 Android 7.0+ (API 24+) |\n` +
+              `| 🌐 **Web & PWA** | 在线网页版 / PWA | [在线体验](https://${owner}.github.io/kumone/) | 支持浏览器打开并一键安装到桌面 |\n\n---\n\n`;
 
-| 平台 (Platform) | 安装包类型 (Package Type) | 文件名 (Filename) | 说明 (Notes) |
-| :--- | :--- | :--- | :--- |
-| 🍎 **macOS** | 原生应用压缩包 | \`Kumone-${{ env.VERSION }}.zip\` | macOS 15.0+ 原生 SwiftUI 构建 |
-| 🪟 **Windows** | NSIS 安装程序 (推荐) | \`Kumone-Setup-${{ env.VERSION }}-x64.exe\` | 自动创建快捷方式与卸载程序 |
-| 🪟 **Windows** | 免安装便携版 Zip | \`Kumone-win32-x64.zip\` | 解压即用 |
-| 🐧 **Linux** | AppImage 通用包 | \`Kumone-${{ env.VERSION }}-x86_64.AppImage\` | \`chmod +x\` 即可直接运行 |
-| 🐧 **Linux** | Debian / Ubuntu 安装包 | \`Kumone_${{ env.VERSION }}_amd64.deb\` | \`sudo dpkg -i\` 一键安装 |
-| 📱 **Android** | 原生通用安装包 (推荐) | \`Kumone-${{ env.VERSION }}.apk\` | 支持 Android 7.0+ (API 24+) |
-| 🌐 **Web & PWA** | 在线网页版 / PWA | [在线体验](https://${{ github.repository_owner }}.github.io/kumone/) | 支持浏览器打开并一键安装到桌面 |
-
----
-
-EOF
-          # Append CHANGELOG notes if available
-          if [ -f CHANGELOG.md ]; then
-            NOTES=$(Scripts/release-notes.sh "$VERSION" 2>/dev/null || true)
-            if [ -n "$NOTES" ]; then
-              echo "$NOTES" >> release_body.md
-            else
-              git log -1 --pretty=%B >> release_body.md
-            fi
-          fi
+            if (fs.existsSync("CHANGELOG.md")) {
+              try {
+                const notes = execSync(`Scripts/release-notes.sh "${version}"`, { encoding: "utf-8" });
+                if (notes && notes.trim()) body += notes;
+              } catch (_) {
+                try {
+                  const gitLog = execSync("git log -1 --pretty=%B", { encoding: "utf-8" });
+                  body += gitLog;
+                } catch (_) {}
+              }
+            }
+            fs.writeFileSync("release_body.md", body, "utf-8");
+          '
 
       - name: Create or update GitHub Release
         env:

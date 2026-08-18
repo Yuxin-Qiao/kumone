@@ -53,13 +53,23 @@ function updateFile(relPath, transformFn) {
   }
 }
 
+function toSemVer(v) {
+  const parts = v.split('.');
+  if (parts.length > 3) {
+    return `${parts[0]}.${parts[1]}.${parts[2]}`;
+  }
+  return v;
+}
+
+const pkgSemVer = toSemVer(targetVersion);
+
 // 2. Synchronize package.json files
 updateFile('windows/package.json', (content) => {
-  return content.replace(/"version":\s*"[^"]+"/, `"version": "${targetVersion}"`);
+  return content.replace(/"version":\s*"[^"]+"/, `"version": "${pkgSemVer}"`);
 });
 
 updateFile('web/package.json', (content) => {
-  return content.replace(/"version":\s*"[^"]+"/, `"version": "${targetVersion}"`);
+  return content.replace(/"version":\s*"[^"]+"/, `"version": "${pkgSemVer}"`);
 });
 
 // 3. Synchronize Android Gradle & Bridge
