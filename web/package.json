@@ -1,6 +1,6 @@
 {
   "name": "kumone-web",
-  "version": "0.1.9.1",
+  "version": "0.2.0",
   "description": "Kumone — Modern, lightweight NetEase Cloud Music Web & PWA player",
   "main": "server.js",
   "scripts": {

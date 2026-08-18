@@ -2,18 +2,50 @@
 'use strict';
 
 (function () {
-  const NeteaseAPI = (typeof window !== 'undefined' && window.NeteaseAPI)
-    ? window.NeteaseAPI
-    : (typeof require === 'function' ? require('./lib/api') : null);
-  const NeteaseClient = (typeof window !== 'undefined' && window.NeteaseClient)
-    ? window.NeteaseClient
-    : (typeof require === 'function' ? require('./lib/client') : null);
-  const NeteaseCrypto = (typeof window !== 'undefined' && window.NeteaseCrypto)
-    ? window.NeteaseCrypto
-    : (typeof require === 'function' ? require('./lib/crypto') : null);
-  const Unblock = (typeof window !== 'undefined' && window.Unblock)
-    ? window.Unblock
-    : (typeof require === 'function' ? require('./lib/unblock') : null);
+  const getAPI = () => (typeof window !== 'undefined' && window.NeteaseAPI ? window.NeteaseAPI : (typeof require === 'function' ? require('./lib/api') : {}));
+  const getClientMod = () => (typeof window !== 'undefined' && window.NeteaseClient ? window.NeteaseClient : (typeof require === 'function' ? require('./lib/client') : {}));
+  const getCryptoMod = () => (typeof window !== 'undefined' && window.NeteaseCrypto ? window.NeteaseCrypto : (typeof require === 'function' ? require('./lib/crypto') : {}));
+  const getUnblockMod = () => (typeof window !== 'undefined' && window.Unblock ? window.Unblock : (typeof require === 'function' ? require('./lib/unblock') : {}));
+
+  const NeteaseAPI = new Proxy({}, {
+    get(target, prop) {
+      const api = getAPI();
+      if (api && prop in api) {
+        return typeof api[prop] === 'function' ? api[prop].bind(api) : api[prop];
+      }
+      return target[prop];
+    }
+  });
+
+  const NeteaseClient = new Proxy({}, {
+    get(target, prop) {
+      const client = getClientMod();
+      if (client && prop in client) {
+        return typeof client[prop] === 'function' ? client[prop].bind(client) : client[prop];
+      }
+      return target[prop];
+    }
+  });
+
+  const NeteaseCrypto = new Proxy({}, {
+    get(target, prop) {
+      const crypto = getCryptoMod();
+      if (crypto && prop in crypto) {
+        return typeof crypto[prop] === 'function' ? crypto[prop].bind(crypto) : crypto[prop];
+      }
+      return target[prop];
+    }
+  });
+
+  const Unblock = new Proxy({}, {
+    get(target, prop) {
+      const unblock = getUnblockMod();
+      if (unblock && prop in unblock) {
+        return typeof unblock[prop] === 'function' ? unblock[prop].bind(unblock) : unblock[prop];
+      }
+      return target[prop];
+    }
+  });
 
   const state = {
     user: null,
@@ -1027,7 +1059,7 @@
       </div>
       <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px">
         <div style="font-weight:600;margin-bottom:4px">Kumone</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">版本 v0.1.9.1 · 雲の音 NetEase Cloud Music client</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">版本 v0.2.0 · 雲の音 NetEase Cloud Music client</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">维护者: Yuxin Qiao, ksingir · 原作者: missuo</div>
         <div style="font-size:12px;color:var(--primary);cursor:pointer" id="btn-open-repo">GitHub: https://github.com/Yuxin-Qiao/kumone</div>
       </div>

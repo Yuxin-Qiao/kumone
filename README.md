@@ -82,15 +82,15 @@ Run Kumone in any browser — iOS Safari, iPadOS, Chrome, Edge, smart TVs, in-ca
 
 Native Linux desktop client with MPRIS media control support and system notifications.
 
-**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.1.9-x86_64.AppImage` or `Kumone_0.1.9_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
+**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.2.0-x86_64.AppImage` or `Kumone_0.2.0_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
 
 ```bash
 # Run AppImage
 chmod +x Kumone-0.1.9-x86_64.AppImage
-./Kumone-0.1.9-x86_64.AppImage
+./Kumone-0.2.0-x86_64.AppImage
 
 # Or install Deb on Ubuntu/Debian
-sudo dpkg -i Kumone_0.1.9_amd64.deb
+sudo dpkg -i Kumone_0.2.0_amd64.deb
 ```
 
 ## Android (Native Port)
@@ -121,8 +121,7 @@ to the Swift implementation** (verified against fixed vectors), the API client,
 UnblockNeteaseMusic fallback chain and the whole UI are re-implemented in
 Electron.
 
-**Download** — [Releases → windows-v0.1.9](https://github.com/Yuxin-Qiao/kumone/releases/tag/windows-v0.1.9)
-(Windows 10/11 x64): `Kumone-Setup-0.1.9-x64.exe` installer or the
+**Download** — [Releases → v0.2.0](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.2.0) (Windows 10/11 x64): `Kumone-Setup-0.2.0-x64.exe` installer or the
 portable zip. Built on a real Windows runner by
 [CI](.github/workflows/build-windows.yml).
 

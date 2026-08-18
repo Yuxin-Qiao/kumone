@@ -341,7 +341,7 @@ class KumoneAndroidBridge(
 
     @JavascriptInterface
     fun getAppVersion(): String {
-        return "0.1.9.1"
+        return "0.2.0"
     }
 
     fun destroy() {

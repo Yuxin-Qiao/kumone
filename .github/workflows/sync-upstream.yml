@@ -78,6 +78,15 @@ jobs:
             fi
           fi
 
+      - name: Synchronize Documentation & Version Metadata
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.2.0")
+          node Scripts/sync-docs-version.js "$LATEST_TAG"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "chore(docs): auto-sync documentation, release links & version metadata for $LATEST_TAG" || true
+          fi
+
       - name: Push branch and tags to origin
         run: |
           git push origin main --tags
