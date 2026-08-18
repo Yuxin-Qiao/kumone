@@ -214,11 +214,14 @@
     const album = raw.al || raw.album || {};
     const durationMS = raw.dt || raw.duration || 0;
     let picUrl = album.picUrl || raw.picUrl || '';
-    if (!picUrl && album.id) {
-      picUrl = `https://p1.music.126.net/6y-UleORITEDbvlOLx0DEg==/${album.pic || 0}.jpg`;
+    if (!picUrl && album.pic_str) {
+      picUrl = `https://p1.music.126.net/${album.pic_str}.jpg`;
     }
     if (picUrl && picUrl.startsWith('http://')) {
       picUrl = picUrl.replace('http://', 'https://');
+    }
+    if (!picUrl) {
+      picUrl = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%233f3f46\'%3E%3Crect width=\'24\' height=\'24\'/%3E%3C/svg%3E';
     }
 
     return {
