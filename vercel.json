@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/netease", "destination": "/api/netease.js" },
+    { "source": "/(.*)", "destination": "/web/$1" }
+  ]
+}
