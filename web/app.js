@@ -1331,7 +1331,7 @@
 
     try {
       const res = await NeteaseAPI.search(keyword, 1, 30);
-      const songs = (res && res.result && res.result.songs) ? res.result.songs : [];
+      const songs = (res && res.songs) ? res.songs : ((res && res.result && res.result.songs) ? res.result.songs : []);
 
       if (!songs.length) {
         el.viewContainer.innerHTML = `<div style="padding:60px 0;text-align:center;color:var(--text-muted)">未找到与 “${escapeHtml(keyword)}” 相关的歌曲</div>`;
