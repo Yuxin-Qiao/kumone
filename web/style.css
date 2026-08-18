@@ -903,148 +903,121 @@ body {
   100% { opacity: 0; transform: translateY(-10px); }
 }
 
-/* QR Code Login modal */
-.qr-modal-body {
+/* Upstream missuo/kumone Aligned LoginSheet Modal */
+.login-dialog-modal {
+  position: relative;
+  background: var(--bg-surface-elevated, #242426);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  border-radius: 20px;
+  width: 90%;
+  max-width: 320px;
+  padding: 26px 22px 20px;
+  text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
-  padding: 10px 0;
-}
-
-.qr-image-wrapper {
-  background: #fff;
-  padding: 12px;
-  border-radius: var(--radius-md);
-  margin: 16px 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.qr-image {
-  width: 200px;
-  height: 200px;
-  display: block;
-}
-
-.qr-status-text {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
-}
-
-/* Login Modal & Multi-Tab Styles */
-.login-tabs {
-  display: flex;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  padding: 3px;
-  margin-bottom: 16px;
-  gap: 4px;
-}
-
-.login-tab-btn {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 500;
-  padding: 8px 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-}
-
-.login-tab-btn.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.login-tab-content {
-  display: none;
-}
-
-.login-tab-content.active {
-  display: block;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 4px 0 12px;
-}
-
-.login-input-group {
-  display: flex;
-  align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 0 12px;
-  gap: 8px;
-}
-
-.login-input-group:focus-within {
-  border-color: var(--primary);
-}
-
-.input-prefix {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.login-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  padding: 12px 0;
-  font-size: 14px;
-  outline: none;
-}
-
-.login-textarea {
-  width: 100%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text);
-  padding: 10px 12px;
-  font-size: 13px;
-  font-family: inherit;
-  resize: none;
-  outline: none;
+  margin: auto;
   box-sizing: border-box;
 }
 
-.login-textarea:focus {
-  border-color: var(--primary);
+.login-dialog-header {
+  margin-bottom: 20px;
 }
 
-.login-sub-tabs {
+.login-dialog-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.login-dialog-subtitle {
+  font-size: 12.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+}
+
+.login-qr-container {
   display: flex;
-  gap: 16px;
-  padding: 2px 4px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 18px;
 }
 
-.login-radio-label {
+.login-qr-box {
+  position: relative;
+  width: 208px;
+  height: 208px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  cursor: pointer;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.login-radio-label input {
-  accent-color: var(--primary);
+.login-qr-image {
+  width: 180px;
+  height: 180px;
+  display: block;
+  image-rendering: pixelated;
+  transition: filter 0.2s ease;
+}
+
+.login-qr-box.overlay-active .login-qr-image {
+  filter: blur(3px);
+}
+
+.login-qr-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--primary, #fa2d48);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.login-qr-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  text-align: center;
+  color: #111111;
+  z-index: 2;
+  border-radius: 14px;
+}
+
+.login-status-text {
+  font-size: 12.5px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  margin-bottom: 16px;
+  min-height: 18px;
+  line-height: 1.4;
+}
+
+.login-dialog-cancel {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
   cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 12px;
+  transition: all 0.15s ease;
+}
+
+.login-dialog-cancel:hover {
+  color: var(--text-primary, #ffffff);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .btn-block {

@@ -165,83 +165,33 @@
     </div>
   </div>
 
-  <!-- Login Multi-Mode Modal -->
+  <!-- Login Sheet Modal (100% aligned with upstream missuo/kumone) -->
   <div class="bottom-sheet-backdrop" id="login-sheet-backdrop">
-    <div class="bottom-sheet" id="login-sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <span>登录网易云音乐</span>
-        <button id="btn-close-login" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;padding:4px 8px;">✕</button>
+    <div class="login-dialog-modal" id="login-sheet">
+      <div class="login-dialog-header">
+        <div class="login-dialog-title">登录网易云音乐</div>
+        <div class="login-dialog-subtitle">使用网易云音乐 App 扫码登录</div>
       </div>
 
-      <!-- Login Type Switcher Tabs -->
-      <div class="login-tabs">
-        <button class="login-tab-btn active" data-login-tab="qr">📷 扫码登录</button>
-        <button class="login-tab-btn" data-login-tab="phone">📱 手机号登录</button>
-        <button class="login-tab-btn" data-login-tab="cookie">🔑 Cookie 导入</button>
-      </div>
-
-      <!-- Tab 1: QR Code / App Jump Login (Default) -->
-      <div class="login-tab-content active" id="tab-login-qr">
-        <div class="qr-modal-body" style="text-align:center;padding:6px 0;">
-          <div class="qr-image-wrapper" style="background:#ffffff;padding:12px;border-radius:16px;display:inline-block;margin:0 auto 10px;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
-            <img class="qr-image" id="login-qr-img" style="width:176px;height:176px;display:block;margin:0 auto;" alt="QR Code">
+      <div class="login-qr-container">
+        <div class="login-qr-box">
+          <div class="login-qr-spinner" id="login-qr-spinner"></div>
+          <img class="login-qr-image" id="login-qr-img" alt="QR Code" style="display:none">
+          
+          <!-- Overlay for scanned or expired -->
+          <div class="login-qr-overlay" id="login-qr-overlay" style="display:none">
+            <div id="login-qr-overlay-content"></div>
           </div>
-          <div class="qr-status-text" id="login-qr-status" style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:600">正在生成登录二维码…</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">打开手机网易云音乐 App ➜ 顶部搜索栏右侧「扫一扫」</div>
-          <button class="btn btn-secondary btn-block" id="btn-jump-netease-app" type="button" style="padding:9px 0;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
-            <span>🚀</span><span>手机端：一键唤起网易云音乐 App 确认</span>
-          </button>
-          <button class="sheet-menu-item" id="btn-refresh-qr" style="justify-content:center;color:var(--primary);display:none;margin-top:8px;">点击刷新二维码</button>
         </div>
       </div>
 
-      <!-- Tab 2: Phone Login -->
-      <div class="login-tab-content" id="tab-login-phone">
-        <div class="login-form">
-          <div style="font-size:11.5px;color:var(--text-muted);background:var(--bg-app);padding:8px 10px;border-radius:var(--radius-sm);margin-bottom:10px;line-height:1.4">
-            💡 若提示「网络存在安全风险」，推荐切换至上方 <b>「扫码登录」</b>，由官方 App 直接确认授权，免受机房 IP 风控限制。
-          </div>
-          <div class="login-input-group">
-            <span class="input-prefix">+86</span>
-            <input type="tel" id="input-login-phone" class="login-input" placeholder="请输入手机号码" maxlength="11">
-          </div>
+      <div class="login-status-text" id="login-qr-status">正在获取二维码…</div>
 
-          <div class="login-sub-tabs">
-            <label class="login-radio-label">
-              <input type="radio" name="phone-auth-type" value="captcha" checked> 验证码登录
-            </label>
-            <label class="login-radio-label">
-              <input type="radio" name="phone-auth-type" value="password"> 密码登录
-            </label>
-          </div>
+      <button class="btn btn-secondary btn-block" id="btn-jump-netease-app" type="button" style="margin-bottom:12px;padding:8px 0;font-size:12.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span>🚀</span><span>手机端：一键在网易云 App 中确认</span>
+      </button>
 
-          <!-- Captcha Row -->
-          <div class="login-input-group" id="row-login-captcha">
-            <input type="text" id="input-login-captcha" class="login-input" placeholder="请输入短信验证码" maxlength="8">
-            <button class="btn btn-secondary" id="btn-send-captcha" type="button" style="white-space:nowrap;font-size:12px;padding:6px 12px;border-radius:16px;">获取验证码</button>
-          </div>
-
-          <!-- Password Row -->
-          <div class="login-input-group" id="row-login-password" style="display:none;">
-            <input type="password" id="input-login-password" class="login-input" placeholder="请输入网易云账号密码">
-          </div>
-
-          <button class="btn btn-primary btn-block" id="btn-submit-phone-login" type="button" style="margin-top:10px;padding:10px 0;font-size:14px;font-weight:600;">立即登录</button>
-        </div>
-      </div>
-
-      <!-- Tab 3: Cookie / MUSIC_U Login -->
-      <div class="login-tab-content" id="tab-login-cookie">
-        <div class="login-form">
-          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;line-height:1.5;">
-            粘贴网易云音乐的 <code>MUSIC_U</code> 字段值或完整 Cookie 字符串：
-          </div>
-          <textarea id="input-login-cookie" class="login-textarea" rows="3" placeholder="例如：MUSIC_U=0079a4... 或直接粘贴完整 Cookie"></textarea>
-          <button class="btn btn-primary btn-block" id="btn-submit-cookie-login" type="button" style="margin-top:10px;padding:10px 0;font-size:14px;font-weight:600;">导入并登录</button>
-        </div>
-      </div>
-
+      <button class="login-dialog-cancel" id="btn-close-login">取消</button>
     </div>
   </div>
 
