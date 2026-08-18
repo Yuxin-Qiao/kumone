@@ -1471,6 +1471,23 @@
     }
   }
 
+  function startCaptchaCountdown(seconds) {
+    state.captchaCountdown = seconds;
+    el.btnSendCaptcha.disabled = true;
+    el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
+    if (state.captchaTimer) clearInterval(state.captchaTimer);
+    state.captchaTimer = setInterval(() => {
+      state.captchaCountdown--;
+      if (state.captchaCountdown <= 0) {
+        clearInterval(state.captchaTimer);
+        el.btnSendCaptcha.disabled = false;
+        el.btnSendCaptcha.textContent = '获取验证码';
+      } else {
+        el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
+      }
+    }, 1000);
+  }
+
   async function handleSendCaptcha() {
     const phone = (el.inputLoginPhone.value || '').trim();
     if (!/^1\d{10}$/.test(phone)) {
@@ -1487,24 +1504,18 @@
     try {
       await NeteaseAPI.sendCaptcha(phone);
       showToast('验证码已发送，请注意查收');
-      state.captchaCountdown = 60;
-      el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
-
-      if (state.captchaTimer) clearInterval(state.captchaTimer);
-      state.captchaTimer = setInterval(() => {
-        state.captchaCountdown--;
-        if (state.captchaCountdown <= 0) {
-          clearInterval(state.captchaTimer);
-          el.btnSendCaptcha.disabled = false;
-          el.btnSendCaptcha.textContent = '获取验证码';
-        } else {
-          el.btnSendCaptcha.textContent = `${state.captchaCountdown}s 后重发`;
-        }
-      }, 1000);
+      startCaptchaCountdown(60);
     } catch (e) {
-      el.btnSendCaptcha.disabled = false;
-      el.btnSendCaptcha.textContent = '获取验证码';
-      showToast(e.message || '发送验证码失败');
+      const rateLimited = e && (e.code === 406 || /频繁|稍后再试|稍候再试/.test(String(e.message || '')));
+      if (rateLimited) {
+        const waitSec = 300;
+        startCaptchaCountdown(waitSec);
+        showToast('网易云限制发送频率，请约 ' + Math.ceil(waitSec / 60) + ' 分钟后再试，或改用扫码/Cookie 登录');
+      } else {
+        el.btnSendCaptcha.disabled = false;
+        el.btnSendCaptcha.textContent = '获取验证码';
+        showToast(e.message || '发送验证码失败');
+      }
     }
   }
 
