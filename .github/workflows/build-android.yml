@@ -1,0 +1,65 @@
+name: Build Android (Native Kotlin APK)
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*", "android-v*"]
+    paths: ["android/**", ".github/workflows/build-android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Android smoke tests (Crypto parity & structure)
+        run: node android/test/smoke.js
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build APK with Gradle
+        working-directory: android
+        run: |
+          ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kumone-Android-Debug
+          path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kumone-Android-Release
+          path: android/app/build/outputs/apk/release/*.apk
+
+      - name: Publish to GitHub Releases (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          find android/app/build/outputs/apk -name "*.apk" -type f | while read -r apk; do
+            echo "Uploading $apk to release $tag..."
+            gh release upload "$tag" "$apk" --clobber || true
+          done

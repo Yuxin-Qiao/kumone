@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#17171A</color>
+    <color name="surface">#222226</color>
+    <color name="primary">#EA4C89</color>
+    <color name="accent">#4D7CFF</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#8E8E93</color>
+    <color name="divider">#2A2A2E</color>
+    <color name="status_bar">#17171A</color>
+    <color name="navigation_bar">#17171A</color>
+</resources>

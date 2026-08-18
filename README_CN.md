@@ -10,13 +10,15 @@
 
 # Kumone
 
-**雲の音 — 网易云音乐客户端（macOS & Windows）**
+**雲の音 — 网易云音乐客户端（macOS、Windows & Android）**
 
-macOS 原生 SwiftUI · Windows Electron 移植版 · 直连网易云真实 API
+macOS 原生 SwiftUI · Windows Electron 移植版 · Android Kotlin 原生后台与移动端移植版 · 直连网易云真实 API
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-移植版)
+[![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-安卓原生移植版)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.10-7F52FF?logo=kotlin&logoColor=white)](android)
 [![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
@@ -42,17 +44,37 @@ macOS 原生 SwiftUI · Windows Electron 移植版 · 直连网易云真实 API
 - 🔐 **扫码登录** — 网易云 App 扫码，Cookie 本地持久化，自动续期
 - 🏠 **推荐** — 每日推荐、私人漫游、心动模式、推荐歌单、雷达歌单（私人雷达系列，按账号个性化）、排行榜、新碟上架、推荐歌手
 - 🧭 **精选** — 分类歌单（精品 / 官方 / 排行榜 / 场景分类）无限滚动
-- 🎵 **播放** — AVPlayer 引擎，标准 ~ Hi-Res 音质可选（黑胶 VIP 可播无损，自动回落），随机 / 单曲循环 / 列表循环，下一首播放队列，灰色歌曲识别
+- 🎵 **播放** — AVPlayer / MediaSession 引擎，标准 ~ Hi-Res 音质可选（黑胶 VIP 可播无损，自动回落），随机 / 单曲循环 / 列表循环，下一首播放队列，灰色歌曲识别
 - 🔓 **灰色歌曲解锁** — 原生实现 UnblockNeteaseMusic 核心音源（pyncmd / 酷我 / 酷狗），无版权或试听歌曲自动匹配第三方音源
 - 🖼 **沉浸播放页** — 封面取色渐变背景 + 大封面 + 大字同步歌词（点击播放条封面进入，Esc 退出）
 - 📻 **私人漫游** — 沉浸式 FM 页面，不喜欢 / 切歌
-- 📝 **歌词** — 侧边玻璃面板，逐行同步 + 翻译，点击跳转
-- 🪟 **桌面歌词** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
+- 📝 **歌词** — 侧边面板 / 全屏滚动，逐行同步 + 翻译 + 罗马音注音，点击跳转
+- 🪟 **桌面歌词 (macOS)** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
 - 📚 **音乐库** — 我喜欢的音乐、创建 / 收藏的歌单、收藏专辑、关注歌手、最近播放、音乐云盘
 - ✏️ **歌单管理** — 新建 / 删除 / 收藏歌单、添加 / 移除歌曲、红心
 - 🔍 **搜索** — 综合 / 单曲 / 歌手 / 专辑 / 歌单，热搜词占位
-- ⌨️ **系统集成** — 媒体键 / 控制中心（Now Playing）、听歌打卡、退出后恢复播放队列
+- ⌨️ **系统集成** — 媒体键 / 控制中心 / Android MediaSession 通知（Now Playing）、听歌打卡、退出后恢复播放队列
 - 🌐 **多语言** — 简体中文与英文界面，跟随系统语言；Sparkle 更新说明双语
+
+## Android (安卓原生移植版)
+
+本仓库新增了针对移动端的 Android 移植版本（位于 [`android/`](android)）：
+- **原生后台播放服务**：基于 Android Foreground Service、`MediaSessionCompat` 与 `NotificationCompat.MediaStyle`，支持锁屏与系统通知栏常驻播放控制，支持完整的音频焦点处理（如电话呼入、耳机拔出自动暂停）。
+- **移动端沉浸式体验**：底部五栏直达导航（`发现`、`搜索`、`私人 FM`、`我的`、`设置`）、悬浮可伸缩 Mini 播放条、沉浸式全屏播放页与动态模糊封面背景、逐行滚动三行歌词（原文 + 翻译 + 罗马音）。
+- **算法与接口一致性**：weapi / eapi 加密算法与 macOS 原版逐字节一致。
+- **灰色无版权歌曲解锁**：自动回落 pyncmd / 酷我 / 酷狗音源。
+
+```bash
+# 运行冒烟测试（加密算法对拍与完整性检查）
+node android/test/smoke.js
+
+# 本地构建 APK
+cd android
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+通过 [CI](.github/workflows/build-android.yml) 自动构建并在发布 release 时产出 APK 安装包。详细说明见 [`android/README.md`](android/README.md)。
 
 ## Windows（Electron 移植版）
 
@@ -64,7 +86,7 @@ UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
 （Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.9-x64.exe` 或便携版 zip。
 由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
 
-与上游 v0.1.9 功能对齐：扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、雷达歌单、
+Feature parity with upstream v0.1.9: 扫码登录、发现/音乐库/搜索、歌单/专辑/歌手详情、私人 FM、雷达歌单、
 云盘音乐、听歌排行、心动模式、下一首播放插播队列、歌词（原文+翻译+罗马音）、
 独立正在播放大页、曲目右键菜单、音质选择与实际音质徽标、灰色歌曲解锁、
 媒体键/系统 SMTC、键盘快捷键、重启恢复播放队列与进度。
@@ -112,17 +134,14 @@ Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
 ## 架构
 
 ```
-Sources/Kumone/
-├── Core/
-│   ├── API/            # NeteaseCrypto（weapi/eapi 加密）、NeteaseClient（传输 + Cookie）、NeteaseAPI（约 50 个端点）
-│   ├── Models/         # 统一 Track 模型（兼容新旧两种 JSON 格式）、歌词解析器
-│   ├── Player/         # PlayerService（队列 / 随机 / 循环 / FM / URL 解析）、UnblockService、NowPlayingManager
-│   └── Storage/        # AccountStore、SettingsManager、两级图片缓存
-├── DesignSystem/       # 设计 token、按钮样式（hover 缩放 / 行高亮 / chip）、骨架屏、卡片、跑马灯、封面取色
-└── Features/           # 各页面 + 播放条 + 沉浸播放页 + 歌词/队列面板
+Kumone/
+├── Sources/Kumone/     # macOS SwiftUI 原生实现
+├── windows/            # Windows Electron 移植版
+├── android/            # Android Kotlin + Web 混合原生应用
+└── .github/workflows/  # macOS, Windows & Android CI/CD 自动化流水线
 ```
 
-不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生 Swift 实现，请求直达 `music.163.com` / `interface.music.163.com`。
+不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生实现，请求直达 `music.163.com` / `interface.music.163.com`。
 
 ## Credits
 

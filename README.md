@@ -10,13 +10,15 @@
 
 # Kumone
 
-**雲の音 — NetEase Cloud Music client for macOS & Windows**
+**雲の音 — NetEase Cloud Music client for macOS, Windows & Android**
 
-Native SwiftUI on macOS · Electron port for Windows · Talks directly to NetEase's real API
+Native SwiftUI on macOS · Electron port for Windows · Native Kotlin & Web for Android · Talks directly to NetEase's real API
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
+[![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024%2B)-3DDC84?logo=android&logoColor=white)](#android-native-port)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.10-7F52FF?logo=kotlin&logoColor=white)](android)
 [![Electron](https://img.shields.io/badge/Electron-31-9FEAF9?logo=electron&logoColor=black)](windows)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
@@ -42,17 +44,37 @@ Native SwiftUI on macOS · Electron port for Windows · Talks directly to NetEas
 - 🔐 **QR code login** — scan with the NetEase Cloud Music app; cookies are persisted locally and auto-refreshed
 - 🏠 **Home** — daily recommendations, Personal FM, Heartbeat Mode, recommended playlists, radar playlists (Personal Radar family, personalized per account), charts, new albums, recommended artists
 - 🧭 **Explore** — category playlists (curated / official / charts / mood) with infinite scrolling
-- 🎵 **Playback** — AVPlayer engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
+- 🎵 **Playback** — AVPlayer / MediaSession engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
 - 🔓 **Gray track unblocking** — native implementation of UnblockNeteaseMusic's core sources (pyncmd / Kuwo / Kugou); unavailable or trial-only tracks automatically resolve from third-party sources
 - 🖼 **Immersive now-playing page** — artwork-tinted gradient backdrop, large artwork, big synced lyrics (click the player-bar artwork to open, Esc to close)
 - 📻 **Personal FM** — immersive roaming page with trash / skip
-- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation, click to seek
-- 🪟 **Desktop lyrics** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
+- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation + romanization, click to seek
+- 🪟 **Desktop lyrics (macOS)** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
 - 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
 - ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
 - 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center (Now Playing), scrobbling, playback queue restored across launches
+- ⌨️ **System integration** — media keys / Control Center / Android MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
 - 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
+
+## Android (Native Port)
+
+This fork introduces a dedicated Android version located under [`android/`](android) — featuring a hybrid native architecture:
+- **Foreground Service with MediaSessionCompat**: Full background playback, lock screen controls, system notification media controls, and audio focus management (e.g. pausing on headphone disconnect).
+- **Mobile-Tailored UI**: Bottom 5-tab navigation (`Home`, `Search`, `Personal FM`, `Library`, `Settings`), floating collapsible mini-player, full-screen immersive now-playing view with dynamic blurred artwork backdrop, and interactive 3-line synced lyrics.
+- **Crypto & API Parity**: Byte-identical AES-128-CBC/ECB + MD5 `weapi` and `eapi` implementation in Kotlin + JS.
+- **UnblockNeteaseMusic Fallback**: Automatic multi-source unblocking via pyncmd, Kuwo, and Kugou.
+
+```bash
+# Smoke test (crypto parity & structural verification)
+node android/test/smoke.js
+
+# Build Android APK
+cd android
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+Built automatically on push via [CI](.github/workflows/build-android.yml). Full documentation in [`android/README.md`](android/README.md).
 
 ## Windows (Electron port)
 
@@ -119,18 +141,15 @@ Scripts/compile_and_run.sh     # kill → repackage → relaunch
 ## Architecture
 
 ```
-Sources/Kumone/
-├── Core/
-│   ├── API/            # NeteaseCrypto (weapi/eapi encryption), NeteaseClient (transport + cookies), NeteaseAPI (~50 endpoints)
-│   ├── Models/         # unified Track model (tolerates both JSON shapes), lyrics parser
-│   ├── Player/         # PlayerService (queue / shuffle / repeat / FM / URL resolution), UnblockService, NowPlayingManager
-│   └── Storage/        # AccountStore, SettingsManager, two-tier image cache
-├── DesignSystem/       # design tokens, button styles (hover scale / row highlight / chips), skeletons, cards, marquee, artwork palette
-└── Features/           # pages + player bar + immersive now-playing + lyrics/queue panels
+Kumone/
+├── Sources/Kumone/     # macOS SwiftUI native implementation
+├── windows/            # Windows Electron port
+├── android/            # Android Kotlin + Web hybrid native app
+└── .github/workflows/  # CI/CD pipelines for macOS, Windows & Android
 ```
 
 No third-party API server involved: weapi (double AES-CBC + RSA) and eapi
-(AES-ECB + MD5 digest) encryption are implemented natively in Swift, and
+(AES-ECB + MD5 digest) encryption are implemented natively, and
 requests go straight to `music.163.com` / `interface.music.163.com`.
 
 ## Credits
