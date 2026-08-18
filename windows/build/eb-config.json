@@ -19,11 +19,7 @@
     "icon": "build/icons",
     "category": "AudioVideo",
     "synopsis": "NetEase Cloud Music client",
-    "description": "Kumone (雲の音) — Modern, lightweight NetEase Cloud Music client for macOS, Windows and Linux",
-    "desktop": {
-      "StartupWMClass": "kumone",
-      "Categories": "AudioVideo;Audio;Music;Player;"
-    }
+    "description": "Kumone (雲の音) — Modern, lightweight NetEase Cloud Music client for macOS, Windows and Linux"
   },
   "deb": {
     "packageCategory": "sound",
