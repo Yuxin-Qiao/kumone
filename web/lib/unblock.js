@@ -14,7 +14,7 @@
     try {
       let fetchUrl = urlString;
       if (typeof window !== 'undefined' && window.location && window.location.origin) {
-        // Route through worker proxy to avoid mixed content & CORS issues
+        // Route through worker proxy to eliminate mixed content & CORS issues
         fetchUrl = `${window.location.origin}/api/netease?target=${encodeURIComponent(urlString)}`;
       }
       const res = await fetch(fetchUrl, {
@@ -29,7 +29,12 @@
   const getJSON = async (url, userAgent) => {
     const text = await get(url, userAgent);
     if (!text) return null;
-    try { return JSON.parse(text); } catch (_) { return null; }
+    try { return JSON.parse(text); } catch (_) {
+      try {
+        const sanitized = text.replace(/'/g, '"');
+        return JSON.parse(sanitized);
+      } catch (_) { return null; }
+    }
   };
 
   function keyword(track) {
@@ -63,31 +68,35 @@
 
   // MARK: - Provider 2: kuwo (High fidelity MP3 stream)
   async function kuwo(track) {
-    const query = encodeURIComponent(keyword(track));
-    const searchURL = 'http://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8'
-      + `&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all=${query}`;
-    const obj = await getJSON(searchURL);
-    const content = obj && obj.content;
-    if (!Array.isArray(content) || content.length < 2) return null;
-    const abslist = content[1].musicpage && content[1].musicpage.abslist;
-    if (!Array.isArray(abslist) || !abslist.length) return null;
+    try {
+      const query = encodeURIComponent(keyword(track));
+      const searchURL = 'http://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8'
+        + `&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all=${query}`;
+      const obj = await getJSON(searchURL);
+      const content = obj && obj.content;
+      if (!Array.isArray(content) || content.length < 2) return null;
+      const abslist = content[1].musicpage && content[1].musicpage.abslist;
+      if (!Array.isArray(abslist) || !abslist.length) return null;
 
-    const songs = [];
-    for (const item of abslist) {
-      const musicrid = item['MUSICRID'];
-      if (typeof musicrid !== 'string') continue;
-      const rid = musicrid.split('_').pop();
-      const duration = parseInt(item['DURATION'] || '0', 10) || 0;
-      songs.push({ rid, durationMS: duration * 1000 });
+      const songs = [];
+      for (const item of abslist) {
+        const musicrid = item['MUSICRID'];
+        if (typeof musicrid !== 'string') continue;
+        const rid = musicrid.split('_').pop();
+        const duration = parseInt(item['DURATION'] || '0', 10) || 0;
+        songs.push({ rid, durationMS: duration * 1000 });
+      }
+      const match = selectMatch(songs, track.durationMS || 0);
+      if (!match) return null;
+
+      const convertURL = `http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_${match.rid}`;
+      const convText = await get(convertURL, 'okhttp/3.10.0');
+      if (!convText) return null;
+      const m = convText.match(/https?:\/\/[^\s$"]+/);
+      return m ? m[0].replace(/^http:/, 'https:') : null;
+    } catch (_) {
+      return null;
     }
-    const match = selectMatch(songs, track.durationMS || 0);
-    if (!match) return null;
-
-    const convertURL = `http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_${match.rid}`;
-    const text = await get(convertURL, 'okhttp/3.10.0');
-    if (!text) return null;
-    const m = text.match(/http[^\s$"]+/);
-    return m ? m[0] : null;
   }
 
   // MARK: - Provider 3: kugou (MD5 signed CDN)
@@ -242,29 +251,33 @@
   }
 
   async function kugou(track) {
-    const query = encodeURIComponent(keyword(track));
-    const searchURL = `http://songsearch.kugou.com/song_search_v2?keyword=${query}&page=1&pagesize=10&filter=0&bitrate=0&isfp=0&format=json`;
-    const obj = await getJSON(searchURL);
-    const lists = obj && obj.data && obj.data.lists;
-    if (!Array.isArray(lists) || !lists.length) return null;
+    try {
+      const query = encodeURIComponent(keyword(track));
+      const searchURL = `http://songsearch.kugou.com/song_search_v2?keyword=${query}&page=1&pagesize=10&filter=0&bitrate=0&isfp=0&format=json`;
+      const obj = await getJSON(searchURL);
+      const lists = obj && obj.data && obj.data.lists;
+      if (!Array.isArray(lists) || !lists.length) return null;
 
-    const songs = [];
-    for (const item of lists) {
-      const hash = item['FileHash'];
-      const albumID = item['AlbumID'];
-      const duration = item['Duration'] || 0;
-      if (typeof hash !== 'string' || !hash.length) continue;
-      songs.push({ hash, albumID: typeof albumID === 'string' ? albumID : '', durationMS: duration * 1000 });
+      const songs = [];
+      for (const item of lists) {
+        const hash = item['FileHash'];
+        const albumID = item['AlbumID'];
+        const duration = item['Duration'] || 0;
+        if (typeof hash !== 'string' || !hash.length) continue;
+        songs.push({ hash, albumID: typeof albumID === 'string' ? albumID : '', durationMS: duration * 1000 });
+      }
+      const match = selectMatch(songs, track.durationMS || 0);
+      if (!match) return null;
+
+      const key = md5(`${match.hash}kgcloudv2`);
+      const trackURL = `http://trackercdn.kugou.com/i/v2/?key=${key}&hash=${match.hash}`
+        + `&appid=1005&pid=2&cmd=25&behavior=play&album_id=${match.albumID}`;
+      const obj2 = await getJSON(trackURL);
+      const urls = obj2 && obj2.url;
+      return Array.isArray(urls) && urls.length ? urls[0] : null;
+    } catch (_) {
+      return null;
     }
-    const match = selectMatch(songs, track.durationMS || 0);
-    if (!match) return null;
-
-    const key = md5(`${match.hash}kgcloudv2`);
-    const trackURL = `http://trackercdn.kugou.com/i/v2/?key=${key}&hash=${match.hash}`
-      + `&appid=1005&pid=2&cmd=25&behavior=play&album_id=${match.albumID}`;
-    const obj2 = await getJSON(trackURL);
-    const urls = obj2 && obj2.url;
-    return Array.isArray(urls) && urls.length ? urls[0] : null;
   }
 
   async function resolve(track) {

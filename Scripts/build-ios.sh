@@ -127,6 +127,8 @@ cat > "$APP_BUNDLE/Info.plist" <<PLIST
     <array>
         <string>audio</string>
     </array>
+    <key>UILaunchScreen</key>
+    <dict/>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>
