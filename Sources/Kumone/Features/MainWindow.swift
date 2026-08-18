@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if os(macOS)
 struct MainWindow: View {
     @Environment(PlayerService.self) private var player
     @Environment(AccountStore.self) private var account
@@ -126,7 +127,6 @@ struct MainWindow: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
 }
 
 // MARK: - Search field
@@ -171,6 +171,7 @@ struct SearchFieldView: View {
 
     @State private var placeholderQuery = ""
 }
+#endif
 
 // MARK: - Toast
 

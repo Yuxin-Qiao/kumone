@@ -6,7 +6,7 @@ let package = Package(
     defaultLocalization: "zh-Hans",
     platforms: [
         .macOS("15.0"),
-        .iOS("16.0"),
+        .iOS("17.0"),
     ],
     products: [
         .executable(name: "Kumone", targets: ["Kumone"]),

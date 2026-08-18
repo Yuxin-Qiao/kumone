@@ -17,7 +17,7 @@ struct FMView: View {
             }
         }
         .navigationTitle("漫游")
-        .toolbarBackgroundVisibility(.hidden, for: .automatic)
+        .toolbarBackground(.hidden, for: .automatic)
     }
 
     private var track: Track? {
