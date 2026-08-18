@@ -147,6 +147,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        bridge.destroy()
         if (isServiceBound) {
             unbindService(serviceConnection)
             isServiceBound = false
