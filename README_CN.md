@@ -181,7 +181,7 @@ Kumone 是从零编写的 Swift 实现，未复制以下项目的代码，但深
 ## 维护者 (Maintainers)
 
 - **原作者 (Original Author)**: [@missuo](https://github.com/missuo) (macOS 原生版)
-- **多平台维护者 (Maintainer)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao) (Windows / Linux / Android / Web 版本移植与维护)
+- **多平台维护者 (Maintainers)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows / Linux / Android / Web 版本移植与维护)
 
 更多详情请参阅 [MAINTAINERS.md](MAINTAINERS.md)。
 

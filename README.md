@@ -188,7 +188,7 @@ below, but their design and implementation ideas were referenced extensively:
 ## Maintainers
 
 - **Original Author**: [@missuo](https://github.com/missuo) (macOS Native Client)
-- **Maintainer**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao) (Windows, Linux, Android & Web Ports)
+- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux, Android & Web Ports)
 
 See [MAINTAINERS.md](MAINTAINERS.md) for more information.
 
