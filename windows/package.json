@@ -1,7 +1,7 @@
 {
   "name": "kumone",
   "productName": "Kumone",
-  "version": "0.1.9.1",
+  "version": "0.2.0",
   "description": "Kumone — NetEase Cloud Music client for Windows & Linux (Electron port of missuo/kumone)",
   "homepage": "https://github.com/Yuxin-Qiao/kumone",
   "main": "main.js",
