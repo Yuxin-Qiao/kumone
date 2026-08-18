@@ -57,7 +57,7 @@ struct SettingsView: View {
 
             Section("关于") {
                 LabeledContent("Kumone", value: appVersion)
-                LabeledContent("维护者", value: "Yuxin Qiao")
+                LabeledContent("维护者", value: "Yuxin Qiao, ksingir")
                 LabeledContent("原作者", value: "missuo")
                 Text("网易云音乐第三方客户端 · 数据来自网易云音乐")
                     .font(.caption)

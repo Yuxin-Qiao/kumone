@@ -1028,7 +1028,7 @@
       <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px">
         <div style="font-weight:600;margin-bottom:4px">Kumone</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">版本 v0.1.9.1 · 雲の音 NetEase Cloud Music client</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">维护者: Yuxin Qiao · 原作者: missuo</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">维护者: Yuxin Qiao, ksingir · 原作者: missuo</div>
         <div style="font-size:12px;color:var(--primary);cursor:pointer" id="btn-open-repo">GitHub: https://github.com/Yuxin-Qiao/kumone</div>
       </div>
     `;
