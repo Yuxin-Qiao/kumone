@@ -1,4 +1,4 @@
-// Kumone Web & PWA — Main Application Logic
+// Kumone Web & PWA — 1:1 Port of macOS Swift App Architecture
 'use strict';
 
 (function () {
@@ -27,29 +27,11 @@
     }
   });
 
-  const NeteaseCrypto = new Proxy({}, {
-    get(target, prop) {
-      const crypto = getCryptoMod();
-      if (crypto && prop in crypto) {
-        return typeof crypto[prop] === 'function' ? crypto[prop].bind(crypto) : crypto[prop];
-      }
-      return target[prop];
-    }
-  });
-
-  const Unblock = new Proxy({}, {
-    get(target, prop) {
-      const unblock = getUnblockMod();
-      if (unblock && prop in unblock) {
-        return typeof unblock[prop] === 'function' ? unblock[prop].bind(unblock) : unblock[prop];
-      }
-      return target[prop];
-    }
-  });
-
   const state = {
     user: null,
     likedIds: new Set(),
+    createdPlaylists: [],
+    subscribedPlaylists: [],
     queue: [],
     playNextQueue: [],
     historyQueue: [],
@@ -58,22 +40,21 @@
     isPlaying: false,
     currentTime: 0,
     duration: 0,
-    playMode: 'loop',
+    playMode: 'loop', // 'loop' | 'one' | 'shuffle'
     quality: 'lossless',
     unblockEnabled: true,
     lyrics: [],
     activeLyricIndex: -1,
     currentView: 'home',
-    viewHistory: [],
+    viewParams: {},
+    navHistory: [{ view: 'home', params: {} }],
+    navHistoryIndex: 0,
     searchKeyword: '',
     searchType: 1,
     actionTrack: null,
     qrPollTimer: null,
     currentUnikey: null,
-    captchaCountdown: 0,
-    captchaTimer: null,
-    activeLoginTab: 'phone',
-    isLyricsViewActive: false,
+    isNowPlayingActive: false,
     audioElem: null,
   };
 
@@ -82,55 +63,86 @@
   function initElements() {
     el.viewContainer = document.getElementById('view-container');
     el.mainScroll = document.getElementById('main-scroll-view');
+    el.appSidebar = document.getElementById('app-sidebar');
+    
+    // Top Bar & Navigation
+    el.btnNavBack = document.getElementById('btn-nav-back');
+    el.btnNavForward = document.getElementById('btn-nav-forward');
+    el.topSearchInput = document.getElementById('top-search-input');
+    el.btnBrandHome = document.getElementById('btn-brand-home');
+    el.btnMobileBrand = document.getElementById('btn-mobile-brand');
+    el.btnAccount = document.getElementById('btn-account');
     el.userAvatar = document.getElementById('user-avatar');
     el.userName = document.getElementById('user-name');
-    el.btnAccount = document.getElementById('btn-account');
-    el.btnBrandHome = document.getElementById('btn-brand-home');
 
-    el.bpProgressFill = document.getElementById('bp-progress-fill');
+    // Sidebar Items
+    el.sidebarAccountBtn = document.getElementById('sidebar-account-btn');
+    el.sidebarUserAvatar = document.getElementById('sidebar-user-avatar');
+    el.sidebarUserName = document.getElementById('sidebar-user-name');
+    el.sidebarUserVip = document.getElementById('sidebar-user-vip');
+    el.sidebarUserSub = document.getElementById('sidebar-user-sub');
+    el.sidebarCreatedSection = document.getElementById('sidebar-created-section');
+    el.sidebarCreatedList = document.getElementById('sidebar-created-list');
+    el.sidebarSubscribedSection = document.getElementById('sidebar-subscribed-section');
+    el.sidebarSubscribedList = document.getElementById('sidebar-subscribed-list');
+
+    // Floating Capsule Player Bar
+    el.bottomPlayerBar = document.getElementById('bottom-player-bar') || document.getElementById('floating-player-bar');
+    el.fpArtworkBtn = document.getElementById('fp-artwork-btn');
     el.bpCover = document.getElementById('bp-cover');
     el.bpTitle = document.getElementById('bp-title');
+    el.bpVipBadge = document.getElementById('bp-vip-badge');
     el.bpArtist = document.getElementById('bp-artist');
-    el.bpInfoArea = document.getElementById('bp-info-area');
+    el.bpBtnLike = document.getElementById('bp-btn-like');
+    el.bpBtnShuffle = document.getElementById('bp-btn-shuffle');
+    el.bpBtnPrev = document.getElementById('bp-btn-prev');
     el.bpBtnPlay = document.getElementById('bp-btn-play');
     el.bpBtnNext = document.getElementById('bp-btn-next');
-    el.bpBtnLike = document.getElementById('bp-btn-like');
-    el.bottomPlayerBar = document.getElementById('bottom-player-bar');
+    el.bpBtnRepeat = document.getElementById('bp-btn-repeat');
+    el.bpSliderTrack = document.getElementById('bp-slider-track');
+    el.bpProgressFill = document.getElementById('bp-progress-fill');
+    el.bpTimeCurrent = document.getElementById('bp-time-current');
+    el.bpTimeTotal = document.getElementById('bp-time-total');
+    el.bpQualityBadge = document.getElementById('bp-quality-badge');
+    el.bpBtnLyrics = document.getElementById('bp-btn-lyrics');
+    el.bpBtnQueue = document.getElementById('bp-btn-queue');
+    el.bpVolumeSlider = document.getElementById('bp-volume-slider');
 
+    // Fullscreen Immersive Player View (NowPlayingView.swift)
     el.fullscreenPlayer = document.getElementById('fullscreen-player');
     el.fsBackdrop = document.getElementById('fs-backdrop');
-    el.fsCover = document.getElementById('fs-cover');
-    el.fsTitle = document.getElementById('fs-title');
-    el.fsArtist = document.getElementById('fs-artist');
     el.fsBtnClose = document.getElementById('fs-btn-close');
     el.fsBtnLyricsToggle = document.getElementById('fs-btn-lyrics-toggle');
-    el.fsArtworkView = document.getElementById('fs-artwork-view');
+    el.fsTitle = document.getElementById('fs-title');
+    el.fsArtist = document.getElementById('fs-artist');
+    el.fsCover = document.getElementById('fs-cover');
+    el.fsTrackName = document.getElementById('fs-track-name');
+    el.fsArtistName = document.getElementById('fs-artist-name');
     el.fsLyricsView = document.getElementById('fs-lyrics-view');
     el.fsLyricsContent = document.getElementById('fs-lyrics-content');
-    el.fsSeekSlider = document.getElementById('fs-seek-slider');
-    el.fsTimeCur = document.getElementById('fs-time-cur');
-    el.fsTimeDur = document.getElementById('fs-time-dur');
-    el.fsBtnMode = document.getElementById('fs-btn-mode');
-    el.fsBtnPrev = document.getElementById('fs-btn-prev');
-    el.fsBtnPlay = document.getElementById('fs-btn-play');
-    el.fsBtnNext = document.getElementById('fs-btn-next');
-    el.fsBtnLike = document.getElementById('fs-btn-like');
-    el.fsQualityBadge = document.getElementById('fs-quality-badge');
-    el.fsBtnQueue = document.getElementById('fs-btn-queue');
 
-    el.queueSheetBackdrop = document.getElementById('queue-sheet-backdrop');
-    el.queueCount = document.getElementById('queue-count');
-    el.queueTrackList = document.getElementById('queue-track-list');
-    el.btnClearQueue = document.getElementById('btn-clear-queue');
+    // Bottom Navigation Bar (Mobile)
+    el.bottomNav = document.getElementById('bottom-nav');
 
+    // Sheets & Modals
     el.actionSheetBackdrop = document.getElementById('action-sheet-backdrop');
-    el.actionTrackTitle = document.getElementById('action-track-title');
+    el.actionSheetCover = document.getElementById('action-sheet-cover');
+    el.actionSheetTitle = document.getElementById('action-sheet-title');
+    el.actionSheetArtist = document.getElementById('action-sheet-artist');
     el.actionPlayNext = document.getElementById('action-play-next');
     el.actionLike = document.getElementById('action-like');
+    el.actionLikeIcon = document.getElementById('action-like-icon');
+    el.actionLikeText = document.getElementById('action-like-text');
     el.actionAlbum = document.getElementById('action-album');
     el.actionArtist = document.getElementById('action-artist');
     el.actionSimi = document.getElementById('action-simi');
     el.actionCopyLink = document.getElementById('action-copy-link');
+    el.btnCancelAction = document.getElementById('btn-cancel-action');
+
+    el.queueSheetBackdrop = document.getElementById('queue-sheet-backdrop');
+    el.queueListContainer = document.getElementById('queue-list-container');
+    el.btnClearQueue = document.getElementById('btn-clear-queue');
+    el.btnCloseQueue = document.getElementById('btn-close-queue');
 
     el.loginSheetBackdrop = document.getElementById('login-sheet-backdrop');
     el.loginQrBox = document.querySelector('.login-qr-box');
@@ -149,10 +161,12 @@
     el.btnAccountLogout = document.getElementById('btn-account-logout');
     el.btnCloseAccountCard = document.getElementById('btn-close-account-card');
 
-    el.bottomNav = document.getElementById('bottom-nav');
     el.toastContainer = document.getElementById('toast-container');
   }
 
+  // ==========================================================================
+  // Formatting & Utility
+  // ==========================================================================
   function formatTime(seconds) {
     if (isNaN(seconds) || seconds < 0) return '00:00';
     const m = Math.floor(seconds / 60);
@@ -172,7 +186,19 @@
     return artists.map((a) => a.name).join(' / ');
   }
 
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, (m) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[m]);
+  }
+
   function showToast(msg) {
+    if (!el.toastContainer) return;
     const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
@@ -187,7 +213,13 @@
     const artists = raw.ar || raw.artists || [];
     const album = raw.al || raw.album || {};
     const durationMS = raw.dt || raw.duration || 0;
-    const picUrl = album.picUrl || raw.picUrl || (album.id ? `https://p1.music.126.net/6y-UleORITEDbvlOLx0DEg==/${album.pic || 0}.jpg` : '');
+    let picUrl = album.picUrl || raw.picUrl || '';
+    if (!picUrl && album.id) {
+      picUrl = `https://p1.music.126.net/6y-UleORITEDbvlOLx0DEg==/${album.pic || 0}.jpg`;
+    }
+    if (picUrl && picUrl.startsWith('http://')) {
+      picUrl = picUrl.replace('http://', 'https://');
+    }
 
     return {
       id: raw.id,
@@ -203,6 +235,9 @@
     };
   }
 
+  // ==========================================================================
+  // Audio Player Core Engine
+  // ==========================================================================
   function playAudio(url, track, startPosMs = 0) {
     state.isPlaying = true;
     updatePlayPauseButtons();
@@ -226,17 +261,13 @@
   function pauseAudio() {
     state.isPlaying = false;
     updatePlayPauseButtons();
-    if (state.audioElem) {
-      state.audioElem.pause();
-    }
+    if (state.audioElem) state.audioElem.pause();
   }
 
   function resumeAudio() {
     state.isPlaying = true;
     updatePlayPauseButtons();
-    if (state.audioElem) {
-      state.audioElem.play().catch(() => {});
-    }
+    if (state.audioElem) state.audioElem.play().catch(() => {});
   }
 
   function seekAudio(posMs) {
@@ -274,8 +305,7 @@
 
   function updatePlayPauseButtons() {
     const icon = state.isPlaying ? '⏸' : '▶';
-    el.bpBtnPlay.textContent = icon;
-    el.fsBtnPlay.textContent = icon;
+    if (el.bpBtnPlay) el.bpBtnPlay.textContent = icon;
   }
 
   function updateProgressUI() {
@@ -283,10 +313,9 @@
     const dur = state.duration || (state.currentTrack ? state.currentTrack.duration : 0) || 1;
     const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
 
-    el.bpProgressFill.style.width = `${pct}%`;
-    el.fsSeekSlider.value = Math.floor((cur / dur) * 1000);
-    el.fsTimeCur.textContent = formatTime(cur);
-    el.fsTimeDur.textContent = formatTime(dur);
+    if (el.bpProgressFill) el.bpProgressFill.style.width = `${pct}%`;
+    if (el.bpTimeCurrent) el.bpTimeCurrent.textContent = formatTime(cur);
+    if (el.bpTimeTotal) el.bpTimeTotal.textContent = formatTime(dur);
   }
 
   async function playTrack(track, queueContext = null) {
@@ -316,10 +345,13 @@
 
       if (!playUrl && state.unblockEnabled) {
         showToast('正在尝试第三方音源匹配…');
-        const unblockRes = await Unblock.resolve(normalized);
-        if (unblockRes && unblockRes.url) {
-          playUrl = unblockRes.url;
-          servedSource = unblockRes.source || '解锁音源';
+        const unblock = typeof window !== 'undefined' && window.Unblock ? window.Unblock : null;
+        if (unblock) {
+          const unblockRes = await unblock.resolve(normalized);
+          if (unblockRes && unblockRes.url) {
+            playUrl = unblockRes.url;
+            servedSource = unblockRes.source || '解锁音源';
+          }
         }
       }
 
@@ -404,27 +436,25 @@
     if (!state.currentTrack) return;
     const isLiked = state.likedIds.has(state.currentTrack.id);
     const text = isLiked ? '❤️' : '♡';
-    el.bpBtnLike.textContent = text;
-    el.fsBtnLike.textContent = text;
-    if (isLiked) {
-      el.bpBtnLike.classList.add('liked');
-      el.fsBtnLike.classList.add('liked');
-    } else {
-      el.bpBtnLike.classList.remove('liked');
-      el.fsBtnLike.classList.remove('liked');
+    if (el.bpBtnLike) {
+      el.bpBtnLike.textContent = text;
+      el.bpBtnLike.classList.toggle('active', isLiked);
     }
   }
 
   function updateNowPlayingUI(track) {
     const coverUrl = track.picUrl || '';
-    el.bpCover.src = coverUrl;
-    el.bpTitle.textContent = track.name;
-    el.bpArtist.textContent = track.artist;
+    if (el.bpCover) el.bpCover.src = coverUrl;
+    if (el.bpTitle) el.bpTitle.textContent = track.name;
+    if (el.bpArtist) el.bpArtist.textContent = track.artist;
+    if (el.bpVipBadge) el.bpVipBadge.style.display = track.fee === 1 ? 'inline-block' : 'none';
 
-    el.fsCover.src = coverUrl;
-    el.fsTitle.textContent = track.name;
-    el.fsArtist.textContent = track.artist;
-    if (coverUrl) {
+    if (el.fsCover) el.fsCover.src = coverUrl;
+    if (el.fsTitle) el.fsTitle.textContent = track.name;
+    if (el.fsArtist) el.fsArtist.textContent = track.artist;
+    if (el.fsTrackName) el.fsTrackName.textContent = track.name;
+    if (el.fsArtistName) el.fsArtistName.textContent = track.artist;
+    if (coverUrl && el.fsBackdrop) {
       el.fsBackdrop.style.backgroundImage = `url('${coverUrl}')`;
     }
 
@@ -433,309 +463,433 @@
   }
 
   function updateQualityBadge(source) {
-    let text = '标准音质';
+    let text = '标准';
     if (source === 'lossless') text = '无损 FLAC';
     else if (source === 'hires') text = 'Hi-Res';
     else if (source === 'exhigh') text = '极高 320k';
     else if (source === 'higher') text = '较高 192k';
     else if (source) text = source;
-    el.fsQualityBadge.textContent = text;
+    if (el.bpQualityBadge) el.bpQualityBadge.textContent = text;
   }
 
-  function togglePlayMode() {
+  function cyclePlayMode() {
     if (state.playMode === 'loop') {
       state.playMode = 'one';
-      el.fsBtnMode.textContent = '🔂';
+      if (el.bpBtnRepeat) el.bpBtnRepeat.textContent = '🔂';
       showToast('单曲循环');
     } else if (state.playMode === 'one') {
       state.playMode = 'shuffle';
-      el.fsBtnMode.textContent = '🔀';
+      if (el.bpBtnRepeat) el.bpBtnRepeat.textContent = '🔀';
       showToast('随机播放');
     } else {
       state.playMode = 'loop';
-      el.fsBtnMode.textContent = '🔁';
+      if (el.bpBtnRepeat) el.bpBtnRepeat.textContent = '🔁';
       showToast('列表循环');
     }
+  }
+
+  // ==========================================================================
+  // Lyrics Engine (Synchronized Scroll & Bilingual)
+  // ==========================================================================
+  function parseLrc(lrcText, tlyricText = '') {
+    if (!lrcText) return [];
+    const lines = lrcText.split('\n');
+    const tlines = tlyricText ? tlyricText.split('\n') : [];
+    const transMap = new Map();
+
+    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
+    for (const line of tlines) {
+      let match;
+      timeRegex.lastIndex = 0;
+      while ((match = timeRegex.exec(line)) !== null) {
+        const min = parseInt(match[1], 10);
+        const sec = parseInt(match[2], 10);
+        const msStr = match[3].length === 2 ? match[3] + '0' : match[3];
+        const ms = parseInt(msStr, 10);
+        const timeMs = min * 60000 + sec * 1000 + ms;
+        const text = line.replace(timeRegex, '').trim();
+        if (text) transMap.set(timeMs, text);
+      }
+    }
+
+    const parsed = [];
+    for (const line of lines) {
+      let match;
+      timeRegex.lastIndex = 0;
+      while ((match = timeRegex.exec(line)) !== null) {
+        const min = parseInt(match[1], 10);
+        const sec = parseInt(match[2], 10);
+        const msStr = match[3].length === 2 ? match[3] + '0' : match[3];
+        const ms = parseInt(msStr, 10);
+        const timeMs = min * 60000 + sec * 1000 + ms;
+        const text = line.replace(timeRegex, '').trim();
+        if (text) {
+          parsed.push({
+            timeMs,
+            text,
+            translation: transMap.get(timeMs) || '',
+          });
+        }
+      }
+    }
+
+    parsed.sort((a, b) => a.timeMs - b.timeMs);
+    return parsed;
   }
 
   async function loadLyrics(songId) {
     state.lyrics = [];
     state.activeLyricIndex = -1;
-    el.fsLyricsContent.innerHTML = '<div class="lyric-line">歌词加载中…</div>';
+    if (el.fsLyricsContent) {
+      el.fsLyricsContent.innerHTML = '<div class="lyrics-empty-state">歌词加载中…</div>';
+    }
 
     try {
-      const data = await NeteaseAPI.lyric(songId);
-      if (!data || !data.lrc || !data.lrc.lyric) {
-        state.lyrics = [{ time: 0, text: '纯音乐，无歌词' }];
-        renderLyrics();
-        return;
-      }
-      state.lyrics = parseLRC(data.lrc.lyric, (data.tlyric && data.tlyric.lyric) || '', (data.romalrc && data.romalrc.lyric) || '');
+      const res = await NeteaseAPI.lyric(songId);
+      const lrc = res && res.lrc ? res.lrc.lyric : '';
+      const tlyric = res && res.tlyric ? res.tlyric.lyric : '';
+      state.lyrics = parseLrc(lrc, tlyric);
       renderLyrics();
     } catch (_) {
-      state.lyrics = [{ time: 0, text: '歌词加载失败' }];
-      renderLyrics();
-    }
-  }
-
-  function parseLRC(lrcStr, transStr, romaStr) {
-    const timeReg = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
-
-    function parseText(str) {
-      const map = new Map();
-      const lines = str.split('\n');
-      for (const line of lines) {
-        let match;
-        timeReg.lastIndex = 0;
-        const times = [];
-        while ((match = timeReg.exec(line)) !== null) {
-          const m = parseInt(match[1], 10);
-          const s = parseInt(match[2], 10);
-          const ms = match[3] ? parseInt(match[3].padEnd(3, '0').slice(0, 3), 10) : 0;
-          times.push(m * 60000 + s * 1000 + ms);
-        }
-        const text = line.replace(timeReg, '').trim();
-        if (text) {
-          for (const t of times) map.set(t, text);
-        }
+      if (el.fsLyricsContent) {
+        el.fsLyricsContent.innerHTML = '<div class="lyrics-empty-state">暂无歌词</div>';
       }
-      return map;
     }
-
-    const mainMap = parseText(lrcStr);
-    const transMap = parseText(transStr);
-    const romaMap = parseText(romaStr);
-
-    const sortedTimes = Array.from(mainMap.keys()).sort((a, b) => a - b);
-    return sortedTimes.map((time) => ({
-      time,
-      text: mainMap.get(time) || '',
-      trans: transMap.get(time) || '',
-      roma: romaMap.get(time) || '',
-    }));
   }
 
   function renderLyrics() {
+    if (!el.fsLyricsContent) return;
     if (!state.lyrics.length) {
-      el.fsLyricsContent.innerHTML = '<div class="lyric-line">暂无歌词</div>';
+      el.fsLyricsContent.innerHTML = '<div class="lyrics-empty-state">纯音乐，请欣赏</div>';
       return;
     }
-    const html = state.lyrics.map((item, idx) => `
-      <div class="lyric-line" data-idx="${idx}" data-time="${item.time}">
-        <div>${escapeHtml(item.text)}</div>
-        ${item.trans ? `<div class="lyric-trans">${escapeHtml(item.trans)}</div>` : ''}
-        ${item.roma ? `<div class="lyric-trans" style="opacity:0.8">${escapeHtml(item.roma)}</div>` : ''}
+
+    el.fsLyricsContent.innerHTML = state.lyrics.map((line, idx) => `
+      <div class="lyric-line" data-index="${idx}" data-time="${line.timeMs}">
+        <div class="lyric-text">${escapeHtml(line.text)}</div>
+        ${line.translation ? `<div class="lyric-translation">${escapeHtml(line.translation)}</div>` : ''}
       </div>
     `).join('');
-    el.fsLyricsContent.innerHTML = html;
+
+    // Click lyric line to seek
+    el.fsLyricsContent.querySelectorAll('.lyric-line').forEach((item) => {
+      item.onclick = () => {
+        const timeMs = parseInt(item.getAttribute('data-time'), 10);
+        if (!isNaN(timeMs)) seekAudio(timeMs);
+      };
+    });
   }
 
   function updateActiveLyric(posMs) {
-    if (!state.lyrics.length) return;
-    let idx = state.lyrics.findIndex((l, i) => {
-      const next = state.lyrics[i + 1];
-      return posMs >= l.time && (!next || posMs < next.time);
-    });
+    if (!state.lyrics.length || !el.fsLyricsContent) return;
 
-    if (idx === -1 && posMs < state.lyrics[0].time) idx = 0;
+    let activeIdx = -1;
+    for (let i = 0; i < state.lyrics.length; i++) {
+      if (posMs >= state.lyrics[i].timeMs) {
+        activeIdx = i;
+      } else {
+        break;
+      }
+    }
 
-    if (idx !== -1 && idx !== state.activeLyricIndex) {
-      state.activeLyricIndex = idx;
-      const lines = el.fsLyricsContent.querySelectorAll('.lyric-line');
-      lines.forEach((l, i) => {
-        if (i === idx) {
-          l.classList.add('active');
-          if (state.isLyricsViewActive) {
-            l.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (activeIdx !== state.activeLyricIndex) {
+      state.activeLyricIndex = activeIdx;
+      const prevActive = el.fsLyricsContent.querySelector('.lyric-line.active');
+      if (prevActive) prevActive.classList.remove('active');
+
+      if (activeIdx >= 0) {
+        const curActive = el.fsLyricsContent.querySelector(`.lyric-line[data-index="${activeIdx}"]`);
+        if (curActive) {
+          curActive.classList.add('active');
+          if (el.fsLyricsView) {
+            const containerHeight = el.fsLyricsView.clientHeight;
+            const lineTop = curActive.offsetTop;
+            const lineHeight = curActive.clientHeight;
+            el.fsLyricsView.scrollTo({
+              top: lineTop - containerHeight / 2 + lineHeight / 2,
+              behavior: 'smooth'
+            });
           }
-        } else {
-          l.classList.remove('active');
         }
-      });
+      }
     }
   }
 
-  function toggleLyricsView() {
-    state.isLyricsViewActive = !state.isLyricsViewActive;
-    if (state.isLyricsViewActive) {
-      el.fsArtworkView.style.display = 'none';
-      el.fsLyricsView.classList.add('active');
-      el.fsBtnLyricsToggle.style.color = 'var(--primary)';
-    } else {
-      el.fsArtworkView.style.display = 'block';
-      el.fsLyricsView.classList.remove('active');
-      el.fsBtnLyricsToggle.style.color = 'var(--text-secondary)';
+  function openNowPlaying() {
+    if (!state.currentTrack) {
+      showToast('当前未在播放任何歌曲');
+      return;
     }
+    state.isNowPlayingActive = true;
+    if (el.fullscreenPlayer) el.fullscreenPlayer.classList.add('active');
   }
 
-  function navigateTo(viewName, params = {}, pushHistory = true) {
-    if (pushHistory && state.currentView !== viewName) {
-      state.viewHistory.push({ view: state.currentView, params });
-    }
-    state.currentView = viewName;
-    updateNavTabs(viewName);
-    el.mainScroll.scrollTop = 0;
-
-    switch (viewName) {
-      case 'home': renderHomeView(); break;
-      case 'search': renderSearchView(params); break;
-      case 'fm': renderFMView(); break;
-      case 'library': renderLibraryView(); break;
-      case 'settings': renderSettingsView(); break;
-      case 'playlist': renderPlaylistView(params.id); break;
-      case 'album': renderAlbumView(params.id); break;
-      case 'artist': renderArtistView(params.id); break;
-      case 'simi': renderSimiView(params.id); break;
-      default: renderHomeView(); break;
-    }
+  function closeNowPlaying() {
+    state.isNowPlayingActive = false;
+    if (el.fullscreenPlayer) el.fullscreenPlayer.classList.remove('active');
   }
 
-  function updateNavTabs(viewName) {
-    const tabs = el.bottomNav.querySelectorAll('.nav-tab');
-    tabs.forEach((tab) => {
-      if (tab.dataset.tab === viewName) tab.classList.add('active');
-      else tab.classList.remove('active');
+  // ==========================================================================
+  // Navigation & View Router (MainWindow.swift)
+  // ==========================================================================
+  function navigateTo(view, params = {}, addToHistory = true) {
+    state.currentView = view;
+    state.viewParams = params;
+
+    if (addToHistory) {
+      state.navHistory = state.navHistory.slice(0, state.navHistoryIndex + 1);
+      state.navHistory.push({ view, params });
+      state.navHistoryIndex = state.navHistory.length - 1;
+    }
+
+    updateNavHistoryButtons();
+
+    // Update Sidebar Item Active State
+    document.querySelectorAll('.sidebar-nav-item').forEach((item) => {
+      const nav = item.getAttribute('data-nav');
+      item.classList.toggle('active', nav === view);
     });
+
+    // Update Bottom Nav Tab (Mobile)
+    document.querySelectorAll('.nav-tab').forEach((tab) => {
+      const t = tab.getAttribute('data-tab');
+      tab.classList.toggle('active', t === view);
+    });
+
+    // Scroll to top
+    if (el.mainScroll) el.mainScroll.scrollTop = 0;
+
+    switch (view) {
+      case 'home':
+        renderHomeView();
+        break;
+      case 'explore':
+        renderExploreView(params.category || '全部');
+        break;
+      case 'fm':
+        renderFMView();
+        break;
+      case 'liked':
+      case 'library':
+        renderLibraryView();
+        break;
+      case 'daily':
+        openDailyRecommend();
+        break;
+      case 'recents':
+        renderRecentsView();
+        break;
+      case 'collections':
+        renderCollectionsView();
+        break;
+      case 'cloud':
+        renderCloudView();
+        break;
+      case 'search':
+        renderSearchView(params);
+        break;
+      case 'playlist':
+        renderPlaylistView(params.id);
+        break;
+      case 'album':
+        renderAlbumView(params.id);
+        break;
+      case 'artist':
+        renderArtistView(params.id);
+        break;
+      case 'settings':
+        renderSettingsView();
+        break;
+      default:
+        renderHomeView();
+    }
   }
 
+  function handleNavBack() {
+    if (state.navHistoryIndex > 0) {
+      state.navHistoryIndex--;
+      const entry = state.navHistory[state.navHistoryIndex];
+      navigateTo(entry.view, entry.params, false);
+    }
+  }
+
+  function handleNavForward() {
+    if (state.navHistoryIndex < state.navHistory.length - 1) {
+      state.navHistoryIndex++;
+      const entry = state.navHistory[state.navHistoryIndex];
+      navigateTo(entry.view, entry.params, false);
+    }
+  }
+
+  function updateNavHistoryButtons() {
+    if (el.btnNavBack) el.btnNavBack.disabled = state.navHistoryIndex <= 0;
+    if (el.btnNavForward) el.btnNavForward.disabled = state.navHistoryIndex >= state.navHistory.length - 1;
+  }
+
+  // ==========================================================================
+  // View 1: Home View (HomeView.swift 1:1)
+  // ==========================================================================
   async function renderHomeView() {
-    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载发现内容…</div>';
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载推荐内容…</div>';
 
     try {
-      const [recRes, topRes, albumRes, songRes] = await Promise.allSettled([
-        NeteaseAPI.personalizedPlaylists(10),
+      const isLoggedIn = NeteaseClient.isLoggedIn;
+      const todayDate = new Date().getDate();
+
+      const [recRes, topRes, albumRes, artistRes] = await Promise.allSettled([
+        NeteaseAPI.personalizedPlaylists(12),
         NeteaseAPI.toplists(),
-        NeteaseAPI.newAlbums('ALL', 8),
-        NeteaseAPI.personalizedNewSongs(8),
+        NeteaseAPI.newAlbums('ALL', 10),
+        NeteaseAPI.topArtists(6),
       ]);
 
       const recPlaylists = recRes.status === 'fulfilled' && Array.isArray(recRes.value) ? recRes.value : [];
       const toplists = topRes.status === 'fulfilled' && Array.isArray(topRes.value) ? topRes.value : [];
       const newAlbums = albumRes.status === 'fulfilled' && Array.isArray(albumRes.value) ? albumRes.value : [];
-      const newSongs = songRes.status === 'fulfilled' && Array.isArray(songRes.value) ? songRes.value : [];
+      const artists = artistRes.status === 'fulfilled' && Array.isArray(artistRes.value) ? artistRes.value : [];
 
-      if (!recPlaylists.length && !toplists.length && !newAlbums.length && !newSongs.length) {
-        const errorMsg = (recRes.reason && recRes.reason.message) || (topRes.reason && topRes.reason.message) || '网络连接异常，请检查网络设置';
-        el.viewContainer.innerHTML = `
-          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
-            <div style="font-size:32px;margin-bottom:12px">📡</div>
-            <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:8px">加载发现内容失败</div>
-            <div style="font-size:13px;margin-bottom:20px;line-height:1.5">${escapeHtml(errorMsg)}</div>
-            <div style="display:flex;gap:10px;justify-content:center">
-              <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 20px;border-radius:20px">重新加载</button>
-              <button class="btn btn-secondary" id="btn-goto-proxy-settings" style="padding:8px 20px;border-radius:20px">配置网络代理</button>
+      let html = '';
+
+      // 1. Feature Cards Row (HomeView.swift featureCards)
+      html += `
+        <div class="feature-cards-row">
+          ${isLoggedIn ? `
+            <div class="feature-card daily" id="btn-feature-daily">
+              <div class="feature-card-top">
+                <span class="feature-card-icon">📅</span>
+                <span class="feature-card-date-badge">${todayDate}</span>
+              </div>
+              <div class="feature-card-bottom">
+                <div class="feature-card-title">每日推荐</div>
+                <div class="feature-card-subtitle">根据你的口味生成</div>
+              </div>
             </div>
-          </div>
-        `;
-        const retryBtn = document.getElementById('btn-retry-home');
-        if (retryBtn) retryBtn.onclick = renderHomeView;
-        const proxyBtn = document.getElementById('btn-goto-proxy-settings');
-        if (proxyBtn) proxyBtn.onclick = () => navigateTo('settings');
-        return;
-      }
 
-      let html = `
-        <div class="hero-banners">
-          <div class="hero-card" id="btn-hero-daily">
-            <div class="hero-icon">📅</div>
-            <div class="hero-label">每日推荐</div>
-          </div>
-          <div class="hero-card" id="btn-hero-fm">
-            <div class="hero-icon">📻</div>
-            <div class="hero-label">私人 FM</div>
-          </div>
-          <div class="hero-card" id="btn-hero-heartbeat">
-            <div class="hero-icon">💓</div>
-            <div class="hero-label">心动模式</div>
-          </div>
+            <div class="feature-card fm" id="btn-feature-fm">
+              <div class="feature-card-top">
+                <span class="feature-card-icon">📻</span>
+              </div>
+              <div class="feature-card-bottom">
+                <div class="feature-card-title">私人漫游</div>
+                <div class="feature-card-subtitle">从喜欢的歌开始漫游</div>
+              </div>
+            </div>
+
+            <div class="feature-card heartbeat" id="btn-feature-heartbeat">
+              <div class="feature-card-top">
+                <span class="feature-card-icon">💓</span>
+              </div>
+              <div class="feature-card-bottom">
+                <div class="feature-card-title">心动模式</div>
+                <div class="feature-card-subtitle">红心歌曲与相似推荐</div>
+              </div>
+            </div>
+          ` : `
+            <div class="feature-card daily" id="btn-feature-login" style="flex:0 0 320px">
+              <div class="feature-card-top">
+                <span class="feature-card-icon">👤</span>
+              </div>
+              <div class="feature-card-bottom">
+                <div class="feature-card-title">登录网易云音乐</div>
+                <div class="feature-card-subtitle">解锁每日推荐、私人漫游与云端歌单</div>
+              </div>
+            </div>
+          `}
         </div>
       `;
 
+      // 2. 推荐歌单 (Recommend Playlists Shelf)
       if (recPlaylists && recPlaylists.length) {
         html += `
-          <div class="section-header">
-            <div class="section-title">推荐歌单</div>
-          </div>
-          <div class="horizontal-scroll-list">
-            ${recPlaylists.map((p) => `
-              <div class="media-card" data-action="open-playlist" data-id="${p.id}">
-                <div class="card-cover-wrapper">
-                  <img class="card-cover-img" src="${p.picUrl}?param=240y240" loading="lazy" alt="">
-                  <div class="card-play-count">▶ ${formatCount(p.playCount)}</div>
+          <div class="shelf-section">
+            <div class="shelf-header">
+              <div class="shelf-title">推荐歌单</div>
+              <div class="shelf-see-all" data-nav="explore">查看全部 ›</div>
+            </div>
+            <div class="cards-grid">
+              ${recPlaylists.map((p) => `
+                <div class="cover-card" data-action="open-playlist" data-id="${p.id}">
+                  <div class="cover-card-artwork-wrapper">
+                    <img class="cover-card-img" src="${p.picUrl}?param=300y300" loading="lazy" alt="">
+                    <div class="cover-card-playcount">▷ ${formatCount(p.playCount)}</div>
+                    <button class="cover-card-play-btn" data-play-playlist="${p.id}" title="播放歌单">▶</button>
+                  </div>
+                  <div class="cover-card-title">${escapeHtml(p.name)}</div>
+                  <div class="cover-card-subtitle">${escapeHtml(p.copywriter || '')}</div>
                 </div>
-                <div class="card-title">${escapeHtml(p.name)}</div>
-              </div>
-            `).join('')}
+              `).join('')}
+            </div>
           </div>
         `;
       }
 
-      if (newSongs && newSongs.length) {
+      // 3. 排行榜 (Toplists Shelf)
+      if (toplists && toplists.length) {
+        const top4 = toplists.filter(t => [19723756, 3779629, 2884035, 3778678].includes(t.id)).slice(0, 4);
+        const displayLists = top4.length ? top4 : toplists.slice(0, 4);
         html += `
-          <div class="section-header">
-            <div class="section-title">最新音乐</div>
-          </div>
-          <div class="track-list">
-            ${newSongs.map((s, idx) => renderTrackItemHtml(s, idx, newSongs)).join('')}
+          <div class="shelf-section">
+            <div class="shelf-header">
+              <div class="shelf-title">排行榜</div>
+            </div>
+            <div class="cards-grid" style="grid-template-columns:repeat(auto-fill, minmax(180px, 1fr))">
+              ${displayLists.map((t) => `
+                <div class="cover-card" data-action="open-playlist" data-id="${t.id}">
+                  <div class="cover-card-artwork-wrapper">
+                    <img class="cover-card-img" src="${t.coverImgUrl}?param=300y300" loading="lazy" alt="">
+                    <div class="cover-card-playcount">▷ ${formatCount(t.playCount)}</div>
+                    <button class="cover-card-play-btn" data-play-playlist="${t.id}" title="播放榜单">▶</button>
+                  </div>
+                  <div class="cover-card-title">${escapeHtml(t.name)}</div>
+                  <div class="cover-card-subtitle">${escapeHtml(t.updateFrequency || '')}</div>
+                </div>
+              `).join('')}
+            </div>
           </div>
         `;
       }
 
+      // 4. 新碟上架 (New Albums Shelf)
       if (newAlbums && newAlbums.length) {
         html += `
-          <div class="section-header">
-            <div class="section-title">新碟上架</div>
-          </div>
-          <div class="horizontal-scroll-list">
-            ${newAlbums.map((a) => `
-              <div class="media-card" data-action="open-album" data-id="${a.id}">
-                <div class="card-cover-wrapper">
-                  <img class="card-cover-img" src="${a.picUrl}?param=240y240" loading="lazy" alt="">
+          <div class="shelf-section">
+            <div class="shelf-header">
+              <div class="shelf-title">新碟上架</div>
+            </div>
+            <div class="cards-grid">
+              ${newAlbums.slice(0, 6).map((a) => `
+                <div class="cover-card" data-action="open-album" data-id="${a.id}">
+                  <div class="cover-card-artwork-wrapper">
+                    <img class="cover-card-img" src="${a.picUrl}?param=300y300" loading="lazy" alt="">
+                  </div>
+                  <div class="cover-card-title">${escapeHtml(a.name)}</div>
+                  <div class="cover-card-subtitle">${escapeHtml(a.artist ? a.artist.name : '')}</div>
                 </div>
-                <div class="card-title">${escapeHtml(a.name)}</div>
-                <div class="card-subtitle">${escapeHtml(a.artist ? a.artist.name : '')}</div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }
-
-      if (toplists && toplists.length) {
-        html += `
-          <div class="section-header">
-            <div class="section-title">排行榜</div>
-          </div>
-          <div class="media-grid">
-            ${toplists.slice(0, 6).map((t) => `
-              <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${t.id}">
-                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                  <img class="card-cover-img" src="${t.coverImgUrl}?param=300y300" loading="lazy" alt="">
-                  <div class="card-play-count">▶ ${formatCount(t.playCount)}</div>
-                </div>
-                <div class="card-title">${escapeHtml(t.name)}</div>
-              </div>
-            `).join('')}
+              `).join('')}
+            </div>
           </div>
         `;
       }
 
       el.viewContainer.innerHTML = html;
-      if (newSongs && newSongs.length) attachTrackEvents(newSongs);
       attachCardEvents();
 
-      const heroDaily = document.getElementById('btn-hero-daily');
-      if (heroDaily) heroDaily.onclick = openDailyRecommend;
-      const heroFm = document.getElementById('btn-hero-fm');
-      if (heroFm) heroFm.onclick = () => navigateTo('fm');
-      const heroHeartbeat = document.getElementById('btn-hero-heartbeat');
-      if (heroHeartbeat) heroHeartbeat.onclick = startHeartbeatMode;
+      // Feature card events
+      const btnDaily = document.getElementById('btn-feature-daily');
+      if (btnDaily) btnDaily.onclick = openDailyRecommend;
+      const btnFm = document.getElementById('btn-feature-fm');
+      if (btnFm) btnFm.onclick = () => navigateTo('fm');
+      const btnHeartbeat = document.getElementById('btn-feature-heartbeat');
+      if (btnHeartbeat) btnHeartbeat.onclick = startHeartbeatMode;
+      const btnLogin = document.getElementById('btn-feature-login');
+      if (btnLogin) btnLogin.onclick = showLoginModal;
     } catch (e) {
       el.viewContainer.innerHTML = `
         <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
           <div style="font-size:32px;margin-bottom:12px">⚠️</div>
-          <div style="font-size:15px;color:var(--text);font-weight:600;margin-bottom:8px">加载失败</div>
+          <div style="font-size:15px;color:var(--text-primary);font-weight:600;margin-bottom:8px">加载失败</div>
           <div style="font-size:13px;margin-bottom:20px">${escapeHtml(e.message)}</div>
-          <button class="btn btn-primary" id="btn-retry-home" style="padding:8px 24px;border-radius:20px">重新加载</button>
+          <button class="cover-card-play-btn" id="btn-retry-home" style="opacity:1;transform:none;position:static;margin:auto">重试</button>
         </div>
       `;
       const retryBtn = document.getElementById('btn-retry-home');
@@ -743,436 +897,316 @@
     }
   }
 
-  async function openDailyRecommend() {
-    if (!NeteaseAPI.getClient().isLoggedIn) {
-      showLoginModal();
-      return;
-    }
-    try {
-      showToast('正在加载每日推荐…');
-      const songs = await NeteaseAPI.dailyRecommendSongs();
-      if (songs && songs.length) {
-        state.queue = songs.map(normalizeTrack);
-        state.currentIndex = 0;
-        playTrack(state.queue[0]);
-        showToast(`已加载 ${songs.length} 首每日推荐歌曲`);
-      } else {
-        showToast('暂无每日推荐');
-      }
-    } catch (e) {
-      showToast(e.message || '加载每日推荐失败');
-    }
-  }
+  // ==========================================================================
+  // View 2: Explore View (ExploreView.swift 1:1)
+  // ==========================================================================
+  const EXPLORE_CATEGORIES = [
+    "全部", "推荐歌单", "精品歌单", "排行榜", "华语", "流行", "摇滚", "民谣",
+    "电子", "轻音乐", "说唱", "爵士", "古典", "影视原声", "ACG", "古风",
+    "怀旧", "治愈", "放松", "伤感", "快乐", "学习", "工作", "运动", "驾车", "夜晚"
+  ];
 
-  async function startHeartbeatMode() {
-    if (!state.currentTrack) {
-      showToast('请先播放一首种子歌曲');
-      return;
-    }
-    try {
-      showToast('正在进入心动模式…');
-      const songs = await NeteaseAPI.intelligenceList(state.currentTrack.id, 0);
-      if (songs && songs.length) {
-        state.queue = [state.currentTrack, ...songs.map(normalizeTrack)];
-        state.currentIndex = 0;
-        showToast(`心动模式已开启，推荐 ${songs.length} 首相似歌曲`);
-      }
-    } catch (e) {
-      showToast(e.message || '开启心动模式失败');
-    }
-  }
-
-  async function renderSearchView(params = {}) {
-    let defKeyword = '搜索歌曲、歌手、专辑、歌单';
-    try {
-      const def = await NeteaseAPI.searchDefaultKeyword();
-      if (def) defKeyword = def;
-    } catch (_) {}
-
-    el.viewContainer.innerHTML = `
-      <div class="search-input-wrapper">
-        <span class="search-icon-pos">🔍</span>
-        <input type="text" class="search-input" id="search-keyword-input" placeholder="${escapeHtml(defKeyword)}" value="${escapeHtml(state.searchKeyword)}">
+  async function renderExploreView(selectedCat = '全部') {
+    let pillsHtml = `
+      <div class="category-pills-scroll">
+        ${EXPLORE_CATEGORIES.map(cat => `
+          <button class="category-pill ${cat === selectedCat ? 'active' : ''}" data-cat="${cat}">${cat}</button>
+        `).join('')}
       </div>
-      <div class="search-tabs">
-        <div class="search-tab-pill ${state.searchType === 1 ? 'active' : ''}" data-type="1">单曲</div>
-        <div class="search-tab-pill ${state.searchType === 1000 ? 'active' : ''}" data-type="1000">歌单</div>
-        <div class="search-tab-pill ${state.searchType === 10 ? 'active' : ''}" data-type="10">专辑</div>
-        <div class="search-tab-pill ${state.searchType === 100 ? 'active' : ''}" data-type="100">歌手</div>
-      </div>
-      <div id="search-results-container">
-        <div style="text-align:center;padding:40px 0;color:var(--text-muted)">输入关键词并按回车搜索</div>
+      <div id="explore-grid-container" style="min-height:300px">
+        <div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载中…</div>
       </div>
     `;
 
-    const input = document.getElementById('search-keyword-input');
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const kw = input.value.trim() || defKeyword;
-        state.searchKeyword = kw;
-        performSearch(kw, state.searchType);
-      }
-    });
+    el.viewContainer.innerHTML = pillsHtml;
 
-    const tabs = el.viewContainer.querySelectorAll('.search-tab-pill');
-    tabs.forEach((tab) => {
-      tab.onclick = () => {
-        tabs.forEach((t) => t.classList.remove('active'));
-        tab.classList.add('active');
-        state.searchType = parseInt(tab.dataset.type, 10);
-        if (state.searchKeyword) {
-          performSearch(state.searchKeyword, state.searchType);
-        }
+    // Attach pill switcher
+    el.viewContainer.querySelectorAll('.category-pill').forEach(btn => {
+      btn.onclick = () => {
+        const cat = btn.getAttribute('data-cat');
+        renderExploreView(cat);
       };
     });
 
-    if (state.searchKeyword) {
-      performSearch(state.searchKeyword, state.searchType);
-    }
-  }
-
-  async function performSearch(kw, type) {
-    const resContainer = document.getElementById('search-results-container');
-    if (!resContainer) return;
-    resContainer.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--text-muted)">正在搜索…</div>';
-
+    const gridContainer = document.getElementById('explore-grid-container');
     try {
-      const res = await NeteaseAPI.search(kw, type, 30);
-      if (type === 1) {
-        const songs = res.songs || [];
-        if (!songs.length) {
-          resContainer.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--text-muted)">无匹配单曲</div>';
-          return;
-        }
-        resContainer.innerHTML = `<div class="track-list">${songs.map((s, i) => renderTrackItemHtml(s, i, songs)).join('')}</div>`;
-        attachTrackEvents(songs);
-      } else if (type === 1000) {
-        const playlists = res.playlists || [];
-        resContainer.innerHTML = `
-          <div class="media-grid">
-            ${playlists.map((p) => `
-              <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${p.id}">
-                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                  <img class="card-cover-img" src="${p.coverImgUrl}?param=300y300" loading="lazy" alt="">
-                </div>
-                <div class="card-title">${escapeHtml(p.name)}</div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-        attachCardEvents();
-      } else if (type === 10) {
-        const albums = res.albums || [];
-        resContainer.innerHTML = `
-          <div class="media-grid">
-            ${albums.map((a) => `
-              <div class="media-card" style="width:100%" data-action="open-album" data-id="${a.id}">
-                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                  <img class="card-cover-img" src="${a.picUrl}?param=300y300" loading="lazy" alt="">
-                </div>
-                <div class="card-title">${escapeHtml(a.name)}</div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-        attachCardEvents();
-      } else if (type === 100) {
-        const artists = res.artists || [];
-        resContainer.innerHTML = `
-          <div class="media-grid">
-            ${artists.map((ar) => `
-              <div class="media-card" style="width:100%" data-action="open-artist" data-id="${ar.id}">
-                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1;border-radius:50%">
-                  <img class="card-cover-img" src="${ar.picUrl || ar.img1v1Url}?param=300y300" loading="lazy" alt="">
-                </div>
-                <div class="card-title" style="text-align:center">${escapeHtml(ar.name)}</div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-        attachCardEvents();
+      let playlists = [];
+      if (selectedCat === '排行榜') {
+        const lists = await NeteaseAPI.toplists();
+        playlists = (lists || []).map(t => ({
+          id: t.id,
+          name: t.name,
+          picUrl: t.coverImgUrl,
+          playCount: t.playCount,
+          copywriter: t.updateFrequency
+        }));
+      } else if (selectedCat === '推荐歌单') {
+        playlists = await NeteaseAPI.personalizedPlaylists(30);
+      } else if (selectedCat === '精品歌单') {
+        const res = await NeteaseAPI.highQualityPlaylists();
+        playlists = (res && res.playlists) || [];
+      } else {
+        const catParam = selectedCat === '全部' ? '全部' : selectedCat;
+        const res = await NeteaseAPI.topPlaylists(catParam, 'hot', 30);
+        playlists = (res && res.playlists) || [];
       }
-    } catch (e) {
-      resContainer.innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--text-muted)">搜索失败: ${escapeHtml(e.message)}</div>`;
-    }
-  }
 
-  async function renderFMView() {
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在加载私人 FM…</div>';
-
-    try {
-      const fms = await NeteaseAPI.personalFM();
-      if (!fms || !fms.length) {
-        el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">私人 FM 暂无歌曲</div>';
+      if (!playlists.length) {
+        gridContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">暂无分类歌单</div>';
         return;
       }
-      const track = normalizeTrack(fms[0]);
-      el.viewContainer.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;padding:20px 0;">
-          <div class="fs-artwork-container" style="margin-bottom:20px">
-            <img class="fs-artwork-img" src="${track.picUrl}?param=400y400" alt="">
-          </div>
-          <div style="font-size:18px;font-weight:700;margin-bottom:6px">${escapeHtml(track.name)}</div>
-          <div style="font-size:14px;color:var(--text-secondary);margin-bottom:24px">${escapeHtml(track.artist)}</div>
-          <div style="display:flex;gap:20px;align-items:center">
-            <button class="bp-btn" id="btn-fm-trash" style="font-size:22px;background:var(--bg-surface);width:48px;height:48px;border-radius:50%" title="不喜欢">🗑</button>
-            <button class="bp-btn bp-btn-play" id="btn-fm-play" style="width:60px;height:60px;font-size:24px">▶</button>
-            <button class="bp-btn" id="btn-fm-next" style="font-size:24px;background:var(--bg-surface);width:48px;height:48px;border-radius:50%" title="下一首">⏭</button>
-          </div>
-        </div>
-      `;
 
-      document.getElementById('btn-fm-play').onclick = () => playTrack(track, fms);
-      document.getElementById('btn-fm-next').onclick = renderFMView;
-      document.getElementById('btn-fm-trash').onclick = async () => {
-        try {
-          await NeteaseAPI.fmTrash(track.id);
-          showToast('已移入垃圾桶，将减少推荐');
-          renderFMView();
-        } catch (e) {
-          showToast(e.message || '操作失败');
-        }
-      };
-    } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载私人 FM 失败: ${escapeHtml(e.message)}</div>`;
-    }
-  }
-
-  async function renderLibraryView() {
-    if (!NeteaseAPI.getClient().isLoggedIn) {
-      el.viewContainer.innerHTML = `
-        <div style="text-align:center;padding:60px 20px;">
-          <div style="font-size:40px;margin-bottom:12px">🔐</div>
-          <div style="font-size:16px;font-weight:700;margin-bottom:8px">登录网易云音乐账号</div>
-          <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">同步歌单、我喜欢的音乐、云盘与听歌记录</div>
-          <button class="btn primary" id="btn-lib-login" style="padding:10px 24px;border-radius:var(--radius-full);background:var(--primary);color:#fff;border:none;font-weight:600">扫码登录</button>
-        </div>
-      `;
-      document.getElementById('btn-lib-login').onclick = showLoginModal;
-      return;
-    }
-
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在加载我的音乐库…</div>';
-
-    try {
-      const uid = state.user ? state.user.userId : 0;
-      const [playlists, likedAlbums] = await Promise.all([
-        uid ? NeteaseAPI.userPlaylists(uid) : [],
-        NeteaseAPI.likedAlbums(20),
-      ]);
-
-      const created = (playlists || []).filter((p) => p.userId === uid);
-      const subbed = (playlists || []).filter((p) => p.userId !== uid);
-
-      el.viewContainer.innerHTML = `
-        <div class="section-header">
-          <div class="section-title">创建的歌单 (${created.length})</div>
-        </div>
-        <div class="media-grid">
-          ${created.map((p) => `
-            <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${p.id}">
-              <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                <img class="card-cover-img" src="${p.coverImgUrl}?param=300y300" loading="lazy" alt="">
-                <div class="card-play-count">${p.trackCount} 首</div>
+      gridContainer.innerHTML = `
+        <div class="cards-grid">
+          ${playlists.map(p => `
+            <div class="cover-card" data-action="open-playlist" data-id="${p.id}">
+              <div class="cover-card-artwork-wrapper">
+                <img class="cover-card-img" src="${(p.picUrl || p.coverImgUrl)}?param=300y300" loading="lazy" alt="">
+                <div class="cover-card-playcount">▷ ${formatCount(p.playCount)}</div>
+                <button class="cover-card-play-btn" data-play-playlist="${p.id}" title="播放歌单">▶</button>
               </div>
-              <div class="card-title">${escapeHtml(p.name)}</div>
+              <div class="cover-card-title">${escapeHtml(p.name)}</div>
+              <div class="cover-card-subtitle">${escapeHtml(p.copywriter || '')}</div>
             </div>
           `).join('')}
         </div>
-
-        ${subbed.length ? `
-          <div class="section-header">
-            <div class="section-title">收藏的歌单 (${subbed.length})</div>
-          </div>
-          <div class="media-grid">
-            ${subbed.map((p) => `
-              <div class="media-card" style="width:100%" data-action="open-playlist" data-id="${p.id}">
-                <div class="card-cover-wrapper" style="width:100%;height:auto;aspect-ratio:1">
-                  <img class="card-cover-img" src="${p.coverImgUrl}?param=300y300" loading="lazy" alt="">
-                  <div class="card-play-count">${p.trackCount} 首</div>
-                </div>
-                <div class="card-title">${escapeHtml(p.name)}</div>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
       `;
-
       attachCardEvents();
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+      gridContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
     }
   }
 
-  function renderSettingsView() {
-    el.viewContainer.innerHTML = `
-      <div class="section-header">
-        <div class="section-title">播放设置</div>
-      </div>
-      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div>
-            <div style="font-weight:600">在线播放音质</div>
-            <div style="font-size:11px;color:var(--text-muted)">最高音质（VIP 自动回退无损）</div>
-          </div>
-          <select id="settings-quality-select" style="background:var(--bg-surface-elevated);color:#fff;border:1px solid var(--border-subtle);padding:6px 10px;border-radius:var(--radius-sm);outline:none">
-            <option value="standard" ${state.quality === 'standard' ? 'selected' : ''}>标准 (128k)</option>
-            <option value="higher" ${state.quality === 'higher' ? 'selected' : ''}>较高 (192k)</option>
-            <option value="exhigh" ${state.quality === 'exhigh' ? 'selected' : ''}>极高 (320k)</option>
-            <option value="lossless" ${state.quality === 'lossless' ? 'selected' : ''}>无损 (FLAC)</option>
-            <option value="hires" ${state.quality === 'hires' ? 'selected' : ''}>Hi-Res</option>
-          </select>
+  // ==========================================================================
+  // View 3: FM View (FMView.swift 1:1)
+  // ==========================================================================
+  async function renderFMView() {
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在进入私人漫游…</div>';
+
+    if (!NeteaseClient.isLoggedIn) {
+      el.viewContainer.innerHTML = `
+        <div style="padding:80px 20px;text-align:center;color:var(--text-muted)">
+          <div style="font-size:48px;margin-bottom:16px">📻</div>
+          <div style="font-size:16px;color:var(--text-primary);font-weight:600;margin-bottom:8px">私人漫游需要登录</div>
+          <div style="font-size:13px;margin-bottom:20px">登录网易云音乐账号后即可享受个性化推荐电台</div>
+          <button class="account-card-logout-btn" id="btn-fm-login" style="max-width:160px;margin:auto">立即登录</button>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-weight:600">灰色无版权歌曲解锁</div>
-            <div style="font-size:11px;color:var(--text-muted)">自动回落 pyncmd / 酷我 / 酷狗第三方音源</div>
-          </div>
-          <input type="checkbox" id="settings-unblock-toggle" ${state.unblockEnabled ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--primary)">
-        </div>
-      </div>
-
-      <div class="section-header">
-        <div class="section-title">网络与 API 代理</div>
-      </div>
-      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5">
-          在纯静态托管（如 GitHub Pages）环境下，受浏览器跨域 (CORS) 安全策略限制，建议配置 API 代理或使用 Docker / Cloudflare 部署。
-        </div>
-        <div style="margin-bottom:10px">
-          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">API 代理端点 (Proxy URL)</label>
-          <input type="text" id="settings-proxy-input" class="login-input" placeholder="留空默认直连，或如: https://worker.example.workers.dev" value="${escapeHtml(localStorage.getItem('kumone_proxy_url') || '')}" style="width:100%">
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <button class="btn btn-secondary" id="btn-set-proxy-local" style="font-size:11.5px;padding:4px 10px;border-radius:14px">填入同源反代 (/api/netease)</button>
-          <button class="btn btn-secondary" id="btn-clear-proxy" style="font-size:11.5px;padding:4px 10px;border-radius:14px">清除代理 (直连)</button>
-          <button class="btn btn-secondary" id="btn-test-proxy" style="font-size:11.5px;padding:4px 10px;border-radius:14px">⚡ 测试延迟</button>
-        </div>
-        <div id="proxy-test-result" style="font-size:12px;margin-bottom:8px;display:none"></div>
-        <button class="btn btn-primary btn-block" id="btn-save-proxy" style="padding:8px 0;font-size:13px;font-weight:600">保存代理配置</button>
-      </div>
-
-      <div class="section-header">
-        <div class="section-title">账号与数据</div>
-      </div>
-      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-weight:600">当前登录状态</div>
-            <div style="font-size:11px;color:var(--text-muted)">${state.user ? escapeHtml(state.user.nickname) : '未登录'}</div>
-          </div>
-          <button id="btn-settings-auth" style="padding:6px 14px;border-radius:var(--radius-full);background:var(--primary);color:#fff;border:none;font-weight:600;font-size:12px">
-            ${state.user ? '退出登录' : '立即登录'}
-          </button>
-        </div>
-      </div>
-
-      <div class="section-header">
-        <div class="section-title">关于 Kumone</div>
-      </div>
-      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px">
-        <div style="font-weight:600;margin-bottom:4px">Kumone</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">版本 v0.1.9.1 · 雲の音 NetEase Cloud Music client</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">维护者: Yuxin Qiao, ksingir · 原作者: missuo</div>
-        <div style="font-size:12px;color:var(--primary);cursor:pointer" id="btn-open-repo">GitHub: https://github.com/Yuxin-Qiao/kumone</div>
-      </div>
-    `;
-
-    document.getElementById('settings-quality-select').onchange = (e) => {
-      state.quality = e.target.value;
-      showToast('音质已设置为 ' + e.target.value);
-    };
-
-    document.getElementById('settings-unblock-toggle').onchange = (e) => {
-      state.unblockEnabled = e.target.checked;
-      showToast(state.unblockEnabled ? '已开启第三方音源解锁' : '已关闭第三方音源解锁');
-    };
-
-    document.getElementById('btn-set-proxy-local').onclick = () => {
-      document.getElementById('settings-proxy-input').value = '/api/netease';
-    };
-
-    document.getElementById('btn-clear-proxy').onclick = () => {
-      document.getElementById('settings-proxy-input').value = '';
-    };
-
-    document.getElementById('btn-save-proxy').onclick = () => {
-      const val = document.getElementById('settings-proxy-input').value.trim();
-      if (val) {
-        localStorage.setItem('kumone_proxy_url', val);
-        showToast('代理配置已保存');
-      } else {
-        localStorage.removeItem('kumone_proxy_url');
-        showToast('已恢复直连模式');
-      }
-    };
-
-    document.getElementById('btn-test-proxy').onclick = async () => {
-      const resultEl = document.getElementById('proxy-test-result');
-      resultEl.style.display = 'block';
-      resultEl.style.color = 'var(--text-muted)';
-      resultEl.textContent = '正在测试 API 延迟…';
-
-      const tempVal = document.getElementById('settings-proxy-input').value.trim();
-      const oldVal = localStorage.getItem('kumone_proxy_url');
-      if (tempVal) localStorage.setItem('kumone_proxy_url', tempVal);
-      else localStorage.removeItem('kumone_proxy_url');
-
-      const start = Date.now();
-      try {
-        await NeteaseAPI.toplists();
-        const duration = Date.now() - start;
-        resultEl.style.color = 'var(--success, #10b981)';
-        resultEl.textContent = `✓ 连通正常！响应延迟: ${duration} ms`;
-      } catch (err) {
-        resultEl.style.color = 'var(--danger, #ef4444)';
-        resultEl.textContent = `✗ 测试失败: ${err.message}`;
-      } finally {
-        if (oldVal) localStorage.setItem('kumone_proxy_url', oldVal);
-        else localStorage.removeItem('kumone_proxy_url');
-      }
-    };
-
-    document.getElementById('btn-settings-auth').onclick = () => {
-      if (state.user) {
-        NeteaseAPI.logout().then(() => {
-          state.user = null;
-          state.likedIds.clear();
-          updateAccountUI();
-          renderSettingsView();
-          showToast('已退出登录');
-        });
-      } else {
-        showLoginModal();
-      }
-    };
-
-    document.getElementById('btn-open-repo').onclick = () => {
-      window.open('https://github.com/Yuxin-Qiao/kumone', '_blank');
-    };
-  }
-
-  async function renderPlaylistView(playlistId) {
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在加载歌单…</div>';
+      `;
+      const btnLogin = document.getElementById('btn-fm-login');
+      if (btnLogin) btnLogin.onclick = showLoginModal;
+      return;
+    }
 
     try {
-      const data = await NeteaseAPI.playlistDetail(playlistId);
-      const playlist = data.playlist || {};
-      const trackIds = (playlist.trackIds || []).slice(0, 100).map((t) => t.id);
+      const fmTracks = await NeteaseAPI.personalFM();
+      if (!fmTracks || !fmTracks.length) {
+        throw new Error('未获取到 FM 曲目');
+      }
 
-      let tracks = playlist.tracks || [];
-      if (trackIds.length > tracks.length) {
-        const detailRes = await NeteaseAPI.songDetails(trackIds);
-        if (detailRes && detailRes.songs) tracks = detailRes.songs;
+      state.queue = fmTracks.map(normalizeTrack);
+      state.currentIndex = 0;
+      playTrack(state.queue[0]);
+
+      el.viewContainer.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;padding:40px 20px;text-align:center">
+          <div class="fs-artwork-card" style="width:260px;height:260px;margin-bottom:20px">
+            <img class="fs-artwork-img" id="fm-view-cover" src="${state.queue[0].picUrl}" alt="">
+          </div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:6px">${escapeHtml(state.queue[0].name)}</div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px">${escapeHtml(state.queue[0].artist)}</div>
+          <div style="display:flex;gap:20px;align-items:center">
+            <button class="fp-btn-icon" id="btn-fm-trash" title="不喜欢，换一首" style="font-size:20px">🗑️</button>
+            <button class="fp-btn-play" id="btn-fm-play" style="width:48px;height:48px;font-size:18px">⏸</button>
+            <button class="fp-btn-icon" id="btn-fm-next" title="下一首" style="font-size:20px">⏭</button>
+          </div>
+        </div>
+      `;
+
+      const btnTrash = document.getElementById('btn-fm-trash');
+      if (btnTrash) btnTrash.onclick = () => {
+        if (state.currentTrack) NeteaseAPI.fmTrash(state.currentTrack.id);
+        playNextTrack(true);
+      };
+      const btnPlay = document.getElementById('btn-fm-play');
+      if (btnPlay) btnPlay.onclick = togglePlay;
+      const btnNext = document.getElementById('btn-fm-next');
+      if (btnNext) btnNext.onclick = () => playNextTrack(true);
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:60px 0;text-align:center;color:var(--text-muted)">加载 FM 失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  // ==========================================================================
+  // View 4: Library & Liked Songs
+  // ==========================================================================
+  async function renderLibraryView() {
+    if (!NeteaseClient.isLoggedIn) {
+      el.viewContainer.innerHTML = `
+        <div style="padding:80px 20px;text-align:center;color:var(--text-muted)">
+          <div style="font-size:48px;margin-bottom:16px">❤️</div>
+          <div style="font-size:16px;color:var(--text-primary);font-weight:600;margin-bottom:8px">登录后查看我的音乐</div>
+          <div style="font-size:13px;margin-bottom:20px">同步歌单、我喜欢的音乐和云盘资产</div>
+          <button class="account-card-logout-btn" id="btn-lib-login" style="max-width:160px;margin:auto">立即登录</button>
+        </div>
+      `;
+      const btnLogin = document.getElementById('btn-lib-login');
+      if (btnLogin) btnLogin.onclick = showLoginModal;
+      return;
+    }
+
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载我的音乐库…</div>';
+
+    try {
+      const uid = state.user ? state.user.userId : null;
+      const playlists = uid ? await NeteaseAPI.userPlaylists(uid) : [];
+      const likedPlaylist = playlists.find(p => p.name && (p.name.includes('喜欢的音乐') || p.specialType === 5));
+
+      if (likedPlaylist) {
+        renderPlaylistView(likedPlaylist.id);
+      } else if (playlists.length) {
+        renderPlaylistView(playlists[0].id);
+      } else {
+        el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">暂无歌单</div>';
+      }
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function openDailyRecommend() {
+    if (!NeteaseClient.isLoggedIn) {
+      showLoginModal();
+      return;
+    }
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在生成今日每日推荐…</div>';
+
+    try {
+      const tracks = await NeteaseAPI.dailyRecommendSongs();
+      if (!tracks || !tracks.length) {
+        el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">暂无推荐歌曲</div>';
+        return;
       }
 
       el.viewContainer.innerHTML = `
-        <div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">
-          <img src="${playlist.coverImgUrl}?param=240y240" style="width:100px;height:100px;border-radius:var(--radius-md);object-fit:cover" alt="">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(playlist.name)}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">by ${escapeHtml(playlist.creator ? playlist.creator.nickname : '')}</div>
-            <button class="btn primary" id="btn-play-all-playlist" style="padding:6px 16px;border-radius:var(--radius-full);background:var(--primary);color:#fff;border:none;font-weight:600;font-size:12px">▶ 播放全部 (${tracks.length})</button>
+        <div style="margin-bottom:24px">
+          <div style="font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:6px">📅 每日推荐</div>
+          <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">根据你的音乐口味每日 6:00 更新</div>
+          <button class="account-card-logout-btn" id="btn-play-all-daily" style="max-width:140px">▶ 播放全部</button>
+        </div>
+        <div class="track-list">
+          ${tracks.map((t, idx) => renderTrackItemHtml(t, idx, tracks)).join('')}
+        </div>
+      `;
+      attachTrackEvents(tracks);
+
+      const btnPlayAll = document.getElementById('btn-play-all-daily');
+      if (btnPlayAll) {
+        btnPlayAll.onclick = () => {
+          state.queue = tracks.map(normalizeTrack);
+          state.currentIndex = 0;
+          playTrack(state.queue[0]);
+        };
+      }
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载每日推荐失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function renderRecentsView() {
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载最近播放…</div>';
+    try {
+      const tracks = await NeteaseAPI.recordRecentSongs();
+      if (!tracks || !tracks.length) {
+        el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">暂无最近播放记录</div>';
+        return;
+      }
+      el.viewContainer.innerHTML = `
+        <div style="margin-bottom:20px;font-size:20px;font-weight:700">🕒 最近播放</div>
+        <div class="track-list">
+          ${tracks.map((t, idx) => renderTrackItemHtml(t, idx, tracks)).join('')}
+        </div>
+      `;
+      attachTrackEvents(tracks);
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function renderCollectionsView() {
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载收藏…</div>';
+    try {
+      const albums = await NeteaseAPI.sublistAlbums();
+      if (!albums || !albums.length) {
+        el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">暂无收藏专辑</div>';
+        return;
+      }
+      el.viewContainer.innerHTML = `
+        <div style="margin-bottom:20px;font-size:20px;font-weight:700">⭐ 收藏专辑</div>
+        <div class="cards-grid">
+          ${albums.map(a => `
+            <div class="cover-card" data-action="open-album" data-id="${a.id}">
+              <div class="cover-card-artwork-wrapper">
+                <img class="cover-card-img" src="${a.picUrl}?param=300y300" loading="lazy" alt="">
+              </div>
+              <div class="cover-card-title">${escapeHtml(a.name)}</div>
+              <div class="cover-card-subtitle">${escapeHtml(a.artists ? a.artists.map(x=>x.name).join('/') : '')}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      attachCardEvents();
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function renderCloudView() {
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载音乐云盘…</div>';
+    try {
+      const res = await NeteaseAPI.userCloud();
+      const tracks = (res && res.data) ? res.data.map(item => item.simpleSong) : [];
+      if (!tracks.length) {
+        el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">云盘暂无歌曲</div>';
+        return;
+      }
+      el.viewContainer.innerHTML = `
+        <div style="margin-bottom:20px;font-size:20px;font-weight:700">☁️ 音乐云盘</div>
+        <div class="track-list">
+          ${tracks.map((t, idx) => renderTrackItemHtml(t, idx, tracks)).join('')}
+        </div>
+      `;
+      attachTrackEvents(tracks);
+    } catch (e) {
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  // ==========================================================================
+  // View 5: Playlist, Album, Artist Detail Views
+  // ==========================================================================
+  async function renderPlaylistView(playlistId) {
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载歌单…</div>';
+
+    try {
+      const res = await NeteaseAPI.playlistDetail(playlistId);
+      const playlist = res && res.playlist;
+      if (!playlist) throw new Error('未找到歌单');
+
+      let tracks = playlist.tracks || [];
+      if (tracks.length < (playlist.trackCount || 0) && playlist.trackIds && playlist.trackIds.length) {
+        const ids = playlist.trackIds.slice(0, 500).map(t => t.id);
+        const details = await NeteaseAPI.songDetails(ids);
+        if (details && details.songs) tracks = details.songs;
+      }
+
+      el.viewContainer.innerHTML = `
+        <div style="display:flex;gap:24px;margin-bottom:32px;align-items:flex-end">
+          <img src="${playlist.coverImgUrl}?param=300y300" style="width:160px;height:160px;border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(0,0,0,0.4)" alt="">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:11.5px;font-weight:600;color:var(--accent);letter-spacing:0.04em">PLAYLIST</div>
+            <div style="font-size:24px;font-weight:800;color:#ffffff;line-height:1.2">${escapeHtml(playlist.name)}</div>
+            <div style="font-size:12.5px;color:var(--text-secondary)">${escapeHtml(playlist.creator ? playlist.creator.nickname : '')} · ${playlist.trackCount || tracks.length} 首歌曲</div>
+            <button class="account-card-logout-btn" id="btn-play-all-playlist" style="max-width:140px;margin-top:6px">▶ 播放全部</button>
           </div>
         </div>
         <div class="track-list">
@@ -1180,31 +1214,35 @@
         </div>
       `;
 
-      document.getElementById('btn-play-all-playlist').onclick = () => {
-        if (tracks.length) playTrack(tracks[0], tracks);
-      };
-
       attachTrackEvents(tracks);
+      const btnPlayAll = document.getElementById('btn-play-all-playlist');
+      if (btnPlayAll) {
+        btnPlayAll.onclick = () => {
+          state.queue = tracks.map(normalizeTrack);
+          state.currentIndex = 0;
+          playTrack(state.queue[0]);
+        };
+      }
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载歌单失败: ${escapeHtml(e.message)}</div>`;
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">歌单加载失败: ${escapeHtml(e.message)}</div>`;
     }
   }
 
   async function renderAlbumView(albumId) {
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在加载专辑…</div>';
-
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载专辑…</div>';
     try {
-      const data = await NeteaseAPI.album(albumId);
-      const album = data.album || {};
-      const songs = data.songs || [];
+      const res = await NeteaseAPI.album(albumId);
+      const album = res && res.album;
+      const songs = res && res.songs ? res.songs : [];
 
       el.viewContainer.innerHTML = `
-        <div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">
-          <img src="${album.picUrl}?param=240y240" style="width:100px;height:100px;border-radius:var(--radius-md);object-fit:cover" alt="">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:16px;font-weight:700;margin-bottom:4px">${escapeHtml(album.name)}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">歌手: ${escapeHtml(album.artist ? album.artist.name : '')}</div>
-            <button class="btn primary" id="btn-play-all-album" style="padding:6px 16px;border-radius:var(--radius-full);background:var(--primary);color:#fff;border:none;font-weight:600;font-size:12px">▶ 播放全部 (${songs.length})</button>
+        <div style="display:flex;gap:24px;margin-bottom:32px;align-items:flex-end">
+          <img src="${album.picUrl}?param=300y300" style="width:160px;height:160px;border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(0,0,0,0.4)" alt="">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:11.5px;font-weight:600;color:var(--accent);letter-spacing:0.04em">ALBUM</div>
+            <div style="font-size:24px;font-weight:800;color:#ffffff">${escapeHtml(album.name)}</div>
+            <div style="font-size:12.5px;color:var(--text-secondary)">${escapeHtml(album.artist ? album.artist.name : '')} · ${songs.length} 首歌曲</div>
+            <button class="account-card-logout-btn" id="btn-play-all-album" style="max-width:140px;margin-top:6px">▶ 播放全部</button>
           </div>
         </div>
         <div class="track-list">
@@ -1212,228 +1250,367 @@
         </div>
       `;
 
-      document.getElementById('btn-play-all-album').onclick = () => {
-        if (songs.length) playTrack(songs[0], songs);
-      };
-
       attachTrackEvents(songs);
+      const btnPlayAll = document.getElementById('btn-play-all-album');
+      if (btnPlayAll) {
+        btnPlayAll.onclick = () => {
+          state.queue = songs.map(normalizeTrack);
+          state.currentIndex = 0;
+          playTrack(state.queue[0]);
+        };
+      }
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载专辑失败: ${escapeHtml(e.message)}</div>`;
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">专辑加载失败: ${escapeHtml(e.message)}</div>`;
     }
   }
 
   async function renderArtistView(artistId) {
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在加载歌手…</div>';
-
+    el.viewContainer.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在加载歌手…</div>';
     try {
-      const [artistData, albumsData] = await Promise.all([
-        NeteaseAPI.artist(artistId),
-        NeteaseAPI.artistAlbums(artistId, 12),
-      ]);
-
-      const artist = artistData.artist || {};
-      const hotSongs = artistData.hotSongs || [];
-      const albums = albumsData.hotAlbums || [];
+      const res = await NeteaseAPI.artist(artistId);
+      const artist = res && res.artist;
+      const hotSongs = res && res.hotSongs ? res.hotSongs : [];
 
       el.viewContainer.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;padding:10px 0 20px 0">
-          <img src="${artist.picUrl || artist.img1v1Url}?param=300y300" style="width:90px;height:90px;border-radius:50%;object-fit:cover;margin-bottom:8px" alt="">
-          <div style="font-size:18px;font-weight:700">${escapeHtml(artist.name)}</div>
-        </div>
-        <div class="section-header">
-          <div class="section-title">热门单曲 (${hotSongs.length})</div>
+        <div style="display:flex;gap:24px;margin-bottom:32px;align-items:center">
+          <img src="${artist.picUrl}?param=300y300" style="width:140px;height:140px;border-radius:50%;object-fit:cover;box-shadow:0 8px 24px rgba(0,0,0,0.4)" alt="">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:24px;font-weight:800;color:#ffffff">${escapeHtml(artist.name)}</div>
+            <div style="font-size:12.5px;color:var(--text-secondary)">热门单曲 ${hotSongs.length} 首</div>
+          </div>
         </div>
         <div class="track-list">
           ${hotSongs.map((t, idx) => renderTrackItemHtml(t, idx, hotSongs)).join('')}
         </div>
-        ${albums.length ? `
-          <div class="section-header">
-            <div class="section-title">专辑作品</div>
-          </div>
-          <div class="horizontal-scroll-list">
-            ${albums.map((a) => `
-              <div class="media-card" data-action="open-album" data-id="${a.id}">
-                <div class="card-cover-wrapper">
-                  <img class="card-cover-img" src="${a.picUrl}?param=240y240" loading="lazy" alt="">
-                </div>
-                <div class="card-title">${escapeHtml(a.name)}</div>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
       `;
-
       attachTrackEvents(hotSongs);
-      attachCardEvents();
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载歌手失败: ${escapeHtml(e.message)}</div>`;
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">歌手加载失败: ${escapeHtml(e.message)}</div>`;
     }
   }
 
-  async function renderSimiView(songId) {
-    el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">正在寻找相似歌曲…</div>';
+  // ==========================================================================
+  // View 6: Search View (SearchView.swift)
+  // ==========================================================================
+  async function renderSearchView(params = {}) {
+    const keyword = params.keyword || '';
+    if (!keyword) {
+      el.viewContainer.innerHTML = `
+        <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+          <div style="font-size:36px;margin-bottom:12px">🔍</div>
+          <div style="font-size:14px">在上方输入框中搜索音乐、歌手或专辑</div>
+        </div>
+      `;
+      return;
+    }
+
+    el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">正在搜索 “${escapeHtml(keyword)}”…</div>`;
 
     try {
-      const songs = await NeteaseAPI.similarSongs(songId);
-      if (!songs || !songs.length) {
-        el.viewContainer.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">未找到相似歌曲</div>';
+      const res = await NeteaseAPI.search(keyword, 1, 30);
+      const songs = (res && res.result && res.result.songs) ? res.result.songs : [];
+
+      if (!songs.length) {
+        el.viewContainer.innerHTML = `<div style="padding:60px 0;text-align:center;color:var(--text-muted)">未找到与 “${escapeHtml(keyword)}” 相关的歌曲</div>`;
         return;
       }
+
       el.viewContainer.innerHTML = `
-        <div class="section-header">
-          <div class="section-title">相似歌曲推荐 (${songs.length})</div>
+        <div style="margin-bottom:20px;font-size:16px;font-weight:600;color:var(--text-primary)">
+          搜索结果：<span style="color:var(--accent)">${escapeHtml(keyword)}</span>
         </div>
         <div class="track-list">
-          ${songs.map((s, idx) => renderTrackItemHtml(s, idx, songs)).join('')}
+          ${songs.map((t, idx) => renderTrackItemHtml(t, idx, songs)).join('')}
         </div>
       `;
       attachTrackEvents(songs);
     } catch (e) {
-      el.viewContainer.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">加载失败: ${escapeHtml(e.message)}</div>`;
+      el.viewContainer.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--text-muted)">搜索失败: ${escapeHtml(e.message)}</div>`;
     }
   }
 
+  // ==========================================================================
+  // View 7: Settings View
+  // ==========================================================================
+  function renderSettingsView() {
+    el.viewContainer.innerHTML = `
+      <div style="max-width:560px;margin:auto;padding:20px 0">
+        <div style="font-size:22px;font-weight:700;margin-bottom:24px">⚙️ 设置</div>
+        
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:18px;margin-bottom:18px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">音质设置</div>
+          <div style="display:flex;gap:10px">
+            <button class="category-pill ${state.quality === 'standard' ? 'active' : ''}" data-quality="standard">标准 128k</button>
+            <button class="category-pill ${state.quality === 'exhigh' ? 'active' : ''}" data-quality="exhigh">极高 320k</button>
+            <button class="category-pill ${state.quality === 'lossless' ? 'active' : ''}" data-quality="lossless">无损 FLAC</button>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:18px;margin-bottom:18px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">Kumone Web</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">版本 0.2.1 · 1:1 macOS 原生对齐版</div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
+            基于 Cloudflare Workers 边缘计算与标准 Web 技术构建，完全移植自上游 missuo/kumone。
+          </div>
+        </div>
+      </div>
+    `;
+
+    el.viewContainer.querySelectorAll('[data-quality]').forEach(btn => {
+      btn.onclick = () => {
+        state.quality = btn.getAttribute('data-quality');
+        showToast('音质已切换为: ' + state.quality);
+        renderSettingsView();
+      };
+    });
+  }
+
+  // ==========================================================================
+  // Track List Item HTML & Event Binding
+  // ==========================================================================
   function renderTrackItemHtml(trackRaw, index, trackList) {
     const t = normalizeTrack(trackRaw);
-    const isPlayingThis = state.currentTrack && state.currentTrack.id === t.id;
-    const isLiked = state.likedIds.has(t.id);
-
+    const isCurrent = state.currentTrack && state.currentTrack.id === t.id;
     return `
-      <div class="track-item ${isPlayingThis ? 'playing' : ''}" data-track-id="${t.id}" data-index="${index}">
+      <div class="track-item ${isCurrent ? 'playing' : ''}" data-track-index="${index}">
         <div class="track-index">${index + 1}</div>
-        ${t.picUrl ? `<img class="track-cover" src="${t.picUrl}?param=100y100" loading="lazy" alt="">` : ''}
-        <div class="track-info">
+        <img class="track-cover" src="${t.picUrl}?param=80y80" loading="lazy" alt="">
+        <div class="track-meta">
           <div class="track-name-row">
-            <div class="track-name">${escapeHtml(t.name)}</div>
-            ${t.fee === 1 ? '<span class="badge-tag badge-vip">VIP</span>' : ''}
+            <span class="track-name">${escapeHtml(t.name)}</span>
+            ${t.fee === 1 ? '<span class="account-vip-badge">VIP</span>' : ''}
           </div>
-          <div class="track-meta">${escapeHtml(t.artist)} · ${escapeHtml(t.album.name || '单曲')}</div>
+          <div class="track-sub">${escapeHtml(t.artist)} · ${escapeHtml(t.album.name)}</div>
         </div>
-        <div class="track-actions">
-          <button class="track-btn ${isLiked ? 'liked' : ''}" data-action="toggle-like" data-track-id="${t.id}" title="喜欢">${isLiked ? '❤️' : '♡'}</button>
-          <button class="track-btn" data-action="track-menu" data-track-id="${t.id}" title="更多">⋮</button>
+        <div class="track-right-actions">
+          <div class="track-duration">${formatTime(t.duration)}</div>
+          <button class="track-btn-more" data-action-menu="${index}" title="更多操作">⋯</button>
         </div>
       </div>
     `;
   }
 
-  function attachTrackEvents(trackList) {
-    const items = el.viewContainer.querySelectorAll('.track-item');
-    items.forEach((item) => {
-      const trackId = parseInt(item.dataset.trackId, 10);
-      const trackObj = trackList.find((t) => t.id === trackId);
-
+  function attachTrackEvents(rawTracks) {
+    el.viewContainer.querySelectorAll('.track-item').forEach(item => {
       item.onclick = (e) => {
-        if (e.target.closest('[data-action]')) return;
-        if (trackObj) playTrack(trackObj, trackList);
+        if (e.target.closest('.track-btn-more')) return;
+        const idx = parseInt(item.getAttribute('data-track-index'), 10);
+        if (!isNaN(idx) && rawTracks[idx]) {
+          state.queue = rawTracks.map(normalizeTrack);
+          state.currentIndex = idx;
+          playTrack(state.queue[idx]);
+        }
       };
+    });
 
-      const likeBtn = item.querySelector('[data-action="toggle-like"]');
-      if (likeBtn) {
-        likeBtn.onclick = (e) => {
-          e.stopPropagation();
-          const isLiked = state.likedIds.has(trackId);
-          toggleLikeTrack(trackId, !isLiked);
-          likeBtn.textContent = !isLiked ? '❤️' : '♡';
-          likeBtn.classList.toggle('liked');
-        };
-      }
-
-      const menuBtn = item.querySelector('[data-action="track-menu"]');
-      if (menuBtn) {
-        menuBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (trackObj) showActionSheet(normalizeTrack(trackObj));
-        };
-      }
+    el.viewContainer.querySelectorAll('[data-action-menu]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-action-menu'), 10);
+        if (!isNaN(idx) && rawTracks[idx]) {
+          openActionSheet(normalizeTrack(rawTracks[idx]));
+        }
+      };
     });
   }
 
   function attachCardEvents() {
-    const cards = el.viewContainer.querySelectorAll('[data-action]');
-    cards.forEach((card) => {
-      const action = card.dataset.action;
-      const id = parseInt(card.dataset.id, 10);
-      card.onclick = () => {
-        if (action === 'open-playlist') navigateTo('playlist', { id });
-        else if (action === 'open-album') navigateTo('album', { id });
-        else if (action === 'open-artist') navigateTo('artist', { id });
+    el.viewContainer.querySelectorAll('[data-action="open-playlist"]').forEach(card => {
+      card.onclick = (e) => {
+        if (e.target.closest('[data-play-playlist]')) return;
+        const id = card.getAttribute('data-id');
+        if (id) navigateTo('playlist', { id });
       };
+    });
+
+    el.viewContainer.querySelectorAll('[data-action="open-album"]').forEach(card => {
+      card.onclick = () => {
+        const id = card.getAttribute('data-id');
+        if (id) navigateTo('album', { id });
+      };
+    });
+
+    el.viewContainer.querySelectorAll('[data-play-playlist]').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-play-playlist');
+        if (id) {
+          try {
+            const res = await NeteaseAPI.playlistDetail(id);
+            if (res && res.playlist && res.playlist.tracks && res.playlist.tracks.length) {
+              state.queue = res.playlist.tracks.map(normalizeTrack);
+              state.currentIndex = 0;
+              playTrack(state.queue[0]);
+              showToast('开始播放歌单: ' + res.playlist.name);
+            }
+          } catch (err) {
+            showToast('播放失败: ' + err.message);
+          }
+        }
+      };
+    });
+
+    el.viewContainer.querySelectorAll('[data-nav="explore"]').forEach(link => {
+      link.onclick = () => navigateTo('explore');
     });
   }
 
-  function showActionSheet(track) {
+  async function startHeartbeatMode() {
+    if (!NeteaseClient.isLoggedIn) {
+      showLoginModal();
+      return;
+    }
+    try {
+      const uid = state.user ? state.user.userId : null;
+      const playlists = uid ? await NeteaseAPI.userPlaylists(uid) : [];
+      const liked = playlists.find(p => p.name && (p.name.includes('喜欢的音乐') || p.specialType === 5));
+      if (!liked) throw new Error('未找到我喜欢的音乐歌单');
+
+      const detail = await NeteaseAPI.playlistDetail(liked.id);
+      const tracks = detail && detail.playlist ? detail.playlist.tracks : [];
+      if (!tracks || !tracks.length) throw new Error('先收藏一些喜欢的歌曲吧');
+
+      const seed = tracks[Math.floor(Math.random() * tracks.length)];
+      const simi = await NeteaseAPI.simiSongs(seed.id);
+      if (simi && simi.length) {
+        state.queue = [seed, ...simi].map(normalizeTrack);
+        state.currentIndex = 0;
+        playTrack(state.queue[0]);
+        showToast('已开启心动模式: 从《' + seed.name + '》开始推荐');
+      }
+    } catch (e) {
+      showToast(e.message || '心动模式启动失败');
+    }
+  }
+
+  // ==========================================================================
+  // Action Sheet & Queue Sheet Handlers
+  // ==========================================================================
+  function openActionSheet(track) {
+    if (!track) return;
     state.actionTrack = track;
-    el.actionTrackTitle.textContent = track.name + ' — ' + track.artist;
-    el.actionSheetBackdrop.classList.add('active');
+    if (el.actionSheetCover) el.actionSheetCover.src = track.picUrl || '';
+    if (el.actionSheetTitle) el.actionSheetTitle.textContent = track.name;
+    if (el.actionSheetArtist) el.actionSheetArtist.textContent = track.artist;
+    if (el.actionSheetBackdrop) el.actionSheetBackdrop.classList.add('active');
   }
 
   function hideActionSheet() {
-    el.actionSheetBackdrop.classList.remove('active');
-    state.actionTrack = null;
+    if (el.actionSheetBackdrop) el.actionSheetBackdrop.classList.remove('active');
   }
 
   function showQueueSheet() {
-    el.queueCount.textContent = state.queue.length + state.playNextQueue.length;
-    let html = '';
+    if (!el.queueSheetBackdrop) return;
+    el.queueSheetBackdrop.classList.add('active');
+    if (!el.queueListContainer) return;
 
-    if (state.playNextQueue.length > 0) {
-      html += `<div style="font-size:12px;color:var(--primary);padding:6px 10px;font-weight:600">插播队列 (${state.playNextQueue.length})</div>`;
-      html += state.playNextQueue.map((t, idx) => `
-        <div class="track-item" data-action="play-queue" data-type="next" data-idx="${idx}">
-          <div class="track-info">
-            <div class="track-name">${escapeHtml(t.name)}</div>
-            <div class="track-meta">${escapeHtml(t.artist)}</div>
-          </div>
-        </div>
-      `).join('');
+    if (!state.queue.length) {
+      el.queueListContainer.innerHTML = '<div style="padding:30px 0;text-align:center;color:var(--text-muted)">队列暂无歌曲</div>';
+      return;
     }
 
-    html += `<div style="font-size:12px;color:var(--text-muted);padding:6px 10px;font-weight:600">播放列表 (${state.queue.length})</div>`;
-    html += state.queue.map((t, idx) => `
-      <div class="track-item ${state.currentIndex === idx ? 'playing' : ''}" data-action="play-queue" data-type="main" data-idx="${idx}">
-        <div class="track-info">
+    el.queueListContainer.innerHTML = state.queue.map((t, idx) => `
+      <div class="track-item ${state.currentIndex === idx ? 'playing' : ''}" data-queue-idx="${idx}">
+        <div class="track-index">${idx + 1}</div>
+        <div class="track-meta">
           <div class="track-name">${escapeHtml(t.name)}</div>
-          <div class="track-meta">${escapeHtml(t.artist)}</div>
+          <div class="track-sub">${escapeHtml(t.artist)}</div>
         </div>
       </div>
     `).join('');
 
-    el.queueTrackList.innerHTML = html;
-
-    el.queueTrackList.querySelectorAll('[data-action="play-queue"]').forEach((item) => {
+    el.queueListContainer.querySelectorAll('.track-item').forEach(item => {
       item.onclick = () => {
-        const type = item.dataset.type;
-        const idx = parseInt(item.dataset.idx, 10);
-        if (type === 'next') {
-          const t = state.playNextQueue.splice(idx, 1)[0];
-          playTrack(t);
-        } else {
+        const idx = parseInt(item.getAttribute('data-queue-idx'), 10);
+        if (!isNaN(idx) && state.queue[idx]) {
           state.currentIndex = idx;
           playTrack(state.queue[idx]);
+          hideQueueSheet();
         }
-        hideQueueSheet();
       };
     });
-
-    el.queueSheetBackdrop.classList.add('active');
   }
 
   function hideQueueSheet() {
-    el.queueSheetBackdrop.classList.remove('active');
+    if (el.queueSheetBackdrop) el.queueSheetBackdrop.classList.remove('active');
+  }
+
+  // ==========================================================================
+  // Account & Profile System (SidebarView.swift 1:1)
+  // ==========================================================================
+  async function checkAccountStatus() {
+    try {
+      const status = await NeteaseAPI.loginStatus();
+      if (status && status.profile) {
+        state.user = status.profile;
+        if (status.bindings) {
+          const cookie = NeteaseClient.getAuthCookie();
+          if (cookie) NeteaseClient.setAuthCookie(cookie);
+        }
+      }
+    } catch (_) {}
+    updateAccountUI();
+  }
+
+  function updateAccountUI() {
+    const isLoggedIn = NeteaseClient.isLoggedIn && state.user;
+    const nickname = isLoggedIn ? state.user.nickname : '未登录';
+    const avatarUrl = (isLoggedIn && state.user.avatarUrl) ? state.user.avatarUrl : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2371717a'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
+    const isVip = isLoggedIn && state.user.vipType > 0;
+
+    if (el.userName) el.userName.textContent = nickname;
+    if (el.userAvatar) el.userAvatar.src = avatarUrl;
+    if (el.sidebarUserName) el.sidebarUserName.textContent = nickname;
+    if (el.sidebarUserAvatar) el.sidebarUserAvatar.src = avatarUrl;
+    if (el.sidebarUserVip) el.sidebarUserVip.style.display = isVip ? 'inline-block' : 'none';
+    if (el.sidebarUserSub) el.sidebarUserSub.textContent = isLoggedIn ? (state.user.signature || '网易云音乐用户') : '点击登录网易云';
+
+    if (isLoggedIn) {
+      loadUserSidebarPlaylists();
+    } else {
+      if (el.sidebarCreatedSection) el.sidebarCreatedSection.style.display = 'none';
+      if (el.sidebarSubscribedSection) el.sidebarSubscribedSection.style.display = 'none';
+    }
+  }
+
+  async function loadUserSidebarPlaylists() {
+    if (!state.user || !state.user.userId) return;
+    try {
+      const playlists = await NeteaseAPI.userPlaylists(state.user.userId);
+      if (!playlists || !playlists.length) return;
+
+      const created = playlists.filter(p => p.creator && p.creator.userId === state.user.userId);
+      const subscribed = playlists.filter(p => p.creator && p.creator.userId !== state.user.userId);
+
+      if (created.length && el.sidebarCreatedList && el.sidebarCreatedSection) {
+        el.sidebarCreatedSection.style.display = 'block';
+        el.sidebarCreatedList.innerHTML = created.map(p => `
+          <div class="sidebar-playlist-item" data-id="${p.id}">${escapeHtml(p.name)}</div>
+        `).join('');
+      }
+
+      if (subscribed.length && el.sidebarSubscribedList && el.sidebarSubscribedSection) {
+        el.sidebarSubscribedSection.style.display = 'block';
+        el.sidebarSubscribedList.innerHTML = subscribed.map(p => `
+          <div class="sidebar-playlist-item" data-id="${p.id}">${escapeHtml(p.name)}</div>
+        `).join('');
+      }
+
+      document.querySelectorAll('.sidebar-playlist-item').forEach(item => {
+        item.onclick = () => {
+          const id = item.getAttribute('data-id');
+          if (id) navigateTo('playlist', { id });
+        };
+      });
+    } catch (_) {}
   }
 
   function showAccountCard() {
     if (!state.user) return;
-    if (el.accountCardAvatar) el.accountCardAvatar.src = state.user.avatarUrl ? `${state.user.avatarUrl}?param=140y140` : '';
-    if (el.accountCardNickname) el.accountCardNickname.textContent = state.user.nickname || '用户';
-    if (el.accountCardVip) {
-      el.accountCardVip.style.display = (state.user.vipType && state.user.vipType > 0) ? 'inline-block' : 'none';
-    }
-    if (el.accountCardSignature) {
-      el.accountCardSignature.textContent = state.user.signature || '';
-      el.accountCardSignature.style.display = state.user.signature ? 'block' : 'none';
-    }
+    if (el.accountCardAvatar) el.accountCardAvatar.src = state.user.avatarUrl || '';
+    if (el.accountCardNickname) el.accountCardNickname.textContent = state.user.nickname || '';
+    if (el.accountCardVip) el.accountCardVip.style.display = (state.user.vipType > 0) ? 'inline-block' : 'none';
+    if (el.accountCardSignature) el.accountCardSignature.textContent = state.user.signature || '暂无个性签名';
     if (el.accountCardBackdrop) el.accountCardBackdrop.classList.add('active');
   }
 
@@ -1446,18 +1623,19 @@
     try {
       await NeteaseAPI.logout();
     } catch (_) {}
-    NeteaseAPI.getClient().clearAuthCookies();
+    NeteaseClient.setAuthCookie('');
     state.user = null;
     state.likedIds.clear();
     updateAccountUI();
     showToast('已退出登录');
-    if (state.currentView === 'library') renderLibraryView();
-    else if (state.currentView === 'home') renderHomeView();
-    else if (state.currentView === 'settings') renderSettingsView();
+    navigateTo('home');
   }
 
+  // ==========================================================================
+  // QR Code Login (LoginSheet.swift 1:1)
+  // ==========================================================================
   async function showLoginModal() {
-    el.loginSheetBackdrop.classList.add('active');
+    if (el.loginSheetBackdrop) el.loginSheetBackdrop.classList.add('active');
     startQrLogin();
   }
 
@@ -1466,7 +1644,7 @@
       clearInterval(state.qrPollTimer);
       state.qrPollTimer = null;
     }
-    el.loginSheetBackdrop.classList.remove('active');
+    if (el.loginSheetBackdrop) el.loginSheetBackdrop.classList.remove('active');
   }
 
   async function startQrLogin() {
@@ -1475,7 +1653,6 @@
       state.qrPollTimer = null;
     }
 
-    // Phase: Loading
     if (el.loginQrSpinner) el.loginQrSpinner.style.display = 'block';
     if (el.loginQrImg) el.loginQrImg.style.display = 'none';
     if (el.loginQrOverlay) el.loginQrOverlay.style.display = 'none';
@@ -1483,263 +1660,246 @@
     if (el.loginQrStatus) el.loginQrStatus.textContent = '正在获取二维码…';
 
     try {
-      const unikey = await NeteaseAPI.qrKey();
-      if (!unikey) throw new Error('登录密钥为空');
+      const keyRes = await NeteaseAPI.loginQrKey();
+      if (!keyRes || !keyRes.unikey) throw new Error('获取扫码凭证失败');
+      const unikey = keyRes.unikey;
       state.currentUnikey = unikey;
-      const qrUrl = NeteaseAPI.qrLoginURL(unikey);
-      const dataUrl = QRCode.toDataURL(qrUrl, { width: 180, margin: 0 });
 
-      // Phase: Waiting (801)
-      if (el.loginQrImg) {
-        el.loginQrImg.src = dataUrl;
-        el.loginQrImg.style.display = 'block';
-      }
-      if (el.loginQrSpinner) el.loginQrSpinner.style.display = 'none';
-      if (el.loginQrStatus) el.loginQrStatus.textContent = '打开网易云音乐 App，扫一扫登录';
+      const qrUrl = `https://music.163.com/login?codekey=${unikey}`;
+      const qrcodeGen = typeof window !== 'undefined' && window.QRCode ? window.QRCode : (typeof require === 'function' ? require('./lib/qrcode.min') : null);
 
-      state.qrPollTimer = setInterval(async () => {
-        try {
-          const res = await NeteaseAPI.qrCheck(unikey);
-          if (res.code === 800) {
-            // Phase: Expired (800)
-            clearInterval(state.qrPollTimer);
-            state.qrPollTimer = null;
-            if (el.loginQrBox) el.loginQrBox.classList.add('overlay-active');
-            if (el.loginQrOverlay) {
-              el.loginQrOverlay.style.display = 'flex';
-              el.loginQrOverlayContent.innerHTML = `
-                <div style="font-size:32px;color:var(--primary);margin-bottom:6px">↻</div>
-                <div style="font-size:12.5px;font-weight:600;margin-bottom:8px">二维码已失效</div>
-                <button class="btn btn-primary" id="btn-qr-reload" style="padding:4px 16px;font-size:12px;border-radius:14px">刷新</button>
-              `;
-              const reloadBtn = document.getElementById('btn-qr-reload');
-              if (reloadBtn) reloadBtn.onclick = startQrLogin;
-            }
-            if (el.loginQrStatus) el.loginQrStatus.textContent = '二维码已失效，请刷新';
-          } else if (res.code === 801) {
-            // Phase: Waiting
-            if (el.loginQrBox) el.loginQrBox.classList.remove('overlay-active');
-            if (el.loginQrOverlay) el.loginQrOverlay.style.display = 'none';
-            if (el.loginQrStatus) el.loginQrStatus.textContent = '打开网易云音乐 App，扫一扫登录';
-          } else if (res.code === 802) {
-            // Phase: Scanned (802)
-            if (el.loginQrBox) el.loginQrBox.classList.add('overlay-active');
-            if (el.loginQrOverlay) {
-              el.loginQrOverlay.style.display = 'flex';
-              el.loginQrOverlayContent.innerHTML = `
-                <div style="font-size:32px;color:#10b981;margin-bottom:6px">✓</div>
-                <div style="font-size:13px;font-weight:600;margin-bottom:4px">已扫码</div>
-                <div style="font-size:11.5px;color:#333">${escapeHtml(res.nickname || '')}，请在手机上确认</div>
-              `;
-            }
-            if (el.loginQrStatus) el.loginQrStatus.textContent = '等待手机确认…';
-          } else if (res.code === 803) {
-            // Phase: Success (803)
-            clearInterval(state.qrPollTimer);
-            state.qrPollTimer = null;
-            if (el.loginQrStatus) el.loginQrStatus.textContent = '登录成功！';
-            hideLoginModal();
-            await checkAccountStatus();
-            showToast('欢迎回来，' + (state.user ? state.user.nickname : ''));
-            if (state.currentView === 'library') renderLibraryView();
-            else if (state.currentView === 'home') renderHomeView();
+      if (qrcodeGen) {
+        qrcodeGen.toDataURL(qrUrl, { width: 180, margin: 1 }, (err, dataUrl) => {
+          if (!err && dataUrl && el.loginQrImg) {
+            el.loginQrImg.src = dataUrl;
+            el.loginQrImg.style.display = 'block';
+            if (el.loginQrSpinner) el.loginQrSpinner.style.display = 'none';
           }
-        } catch (_) {}
-      }, 1200);
+        });
+      }
+
+      if (el.loginQrStatus) el.loginQrStatus.textContent = '打开网易云音乐 App，扫一扫登录';
+      pollQrCode(unikey);
     } catch (e) {
+      if (el.loginQrStatus) el.loginQrStatus.textContent = '获取二维码失败: ' + e.message;
       if (el.loginQrSpinner) el.loginQrSpinner.style.display = 'none';
-      if (el.loginQrBox) el.loginQrBox.classList.add('overlay-active');
-      if (el.loginQrOverlay) {
-        el.loginQrOverlay.style.display = 'flex';
-        el.loginQrOverlayContent.innerHTML = `
-          <div style="font-size:12.5px;color:var(--primary);margin-bottom:8px">获取二维码失败</div>
-          <button class="btn btn-primary" id="btn-qr-reload" style="padding:4px 16px;font-size:12px;border-radius:14px">重试</button>
-        `;
-        const reloadBtn = document.getElementById('btn-qr-reload');
-        if (reloadBtn) reloadBtn.onclick = startQrLogin;
-      }
-      if (el.loginQrStatus) el.loginQrStatus.textContent = e && e.message ? String(e.message) : '获取失败';
     }
   }
 
-  async function checkAccountStatus() {
-    if (NeteaseAPI.getClient().isLoggedIn) {
+  function pollQrCode(unikey) {
+    state.qrPollTimer = setInterval(async () => {
       try {
-        const profile = await NeteaseAPI.userAccount();
-        if (profile) {
-          state.user = profile;
-          updateAccountUI();
-          const ids = await NeteaseAPI.likedTrackIDs(profile.userId);
-          state.likedIds = new Set(ids || []);
+        const check = await NeteaseAPI.loginQrCheck(unikey);
+        if (!check) return;
+
+        if (check.code === 800) {
+          clearInterval(state.qrPollTimer);
+          state.qrPollTimer = null;
+          if (el.loginQrBox) el.loginQrBox.classList.add('overlay-active');
+          if (el.loginQrOverlay) {
+            el.loginQrOverlay.style.display = 'flex';
+            if (el.loginQrOverlayContent) {
+              el.loginQrOverlayContent.innerHTML = `
+                <div style="font-size:13px;font-weight:600;margin-bottom:8px">二维码已过期</div>
+                <button class="account-card-logout-btn" id="btn-refresh-qr" style="padding:4px 12px;font-size:12px">点击刷新</button>
+              `;
+              const btnRefresh = document.getElementById('btn-refresh-qr');
+              if (btnRefresh) btnRefresh.onclick = startQrLogin;
+            }
+          }
+          if (el.loginQrStatus) el.loginQrStatus.textContent = '二维码已过期，请刷新';
+        } else if (check.code === 802) {
+          if (el.loginQrBox) el.loginQrBox.classList.add('overlay-active');
+          if (el.loginQrOverlay) {
+            el.loginQrOverlay.style.display = 'flex';
+            if (el.loginQrOverlayContent) {
+              el.loginQrOverlayContent.innerHTML = `
+                <div style="font-size:24px;margin-bottom:4px">📱</div>
+                <div style="font-size:13px;font-weight:600">扫描成功</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">请在手机上点击确认登录</div>
+              `;
+            }
+          }
+          if (el.loginQrStatus) el.loginQrStatus.textContent = '扫描成功，请在手机上确认';
+        } else if (check.code === 803) {
+          clearInterval(state.qrPollTimer);
+          state.qrPollTimer = null;
+          if (check.cookie) NeteaseClient.setAuthCookie(check.cookie);
+          hideLoginModal();
+          await checkAccountStatus();
+          showToast('欢迎回来，' + (state.user ? state.user.nickname : ''));
+          navigateTo('home');
         }
-      } catch (_) {
-        NeteaseAPI.getClient().clearAuthCookies();
-        state.user = null;
-        state.likedIds = new Set();
-        updateAccountUI();
-      }
-    } else {
-      state.user = null;
-      state.likedIds = new Set();
-      updateAccountUI();
-    }
+      } catch (_) {}
+    }, 2000);
   }
 
-  function updateAccountUI() {
-    if (state.user) {
-      el.userAvatar.src = state.user.avatarUrl ? `${state.user.avatarUrl}?param=80y80` : '';
-      el.userName.textContent = state.user.nickname || '用户';
-    } else {
-      el.userAvatar.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2371717a'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
-      el.userName.textContent = '未登录';
-    }
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function handleBack() {
-    if (el.actionSheetBackdrop.classList.contains('active')) {
-      hideActionSheet();
-      return 'handled';
-    }
-    if (el.queueSheetBackdrop.classList.contains('active')) {
-      hideQueueSheet();
-      return 'handled';
-    }
-    if (el.loginSheetBackdrop.classList.contains('active')) {
-      hideLoginModal();
-      return 'handled';
-    }
-    if (el.fullscreenPlayer.classList.contains('active')) {
-      el.fullscreenPlayer.classList.remove('active');
-      return 'handled';
-    }
-    if (state.viewHistory.length > 0) {
-      const prev = state.viewHistory.pop();
-      navigateTo(prev.view, prev.params, false);
-      return 'handled';
-    }
-    return 'default';
-  }
-
+  // ==========================================================================
+  // Event Listeners Setup
+  // ==========================================================================
   function setupEventListeners() {
-    el.bottomPlayerBar.onclick = (e) => {
-      if (e.target.closest('.bp-btn')) return;
-      el.fullscreenPlayer.classList.add('active');
-    };
+    // Brand click -> Home
+    if (el.btnBrandHome) el.btnBrandHome.onclick = () => navigateTo('home');
+    if (el.btnMobileBrand) el.btnMobileBrand.onclick = () => navigateTo('home');
 
-    el.fsBtnClose.onclick = () => {
-      el.fullscreenPlayer.classList.remove('active');
-    };
-
-    el.bpBtnPlay.onclick = togglePlay;
-    el.fsBtnPlay.onclick = togglePlay;
-    el.bpBtnNext.onclick = () => playNextTrack(true);
-    el.fsBtnNext.onclick = () => playNextTrack(true);
-    el.fsBtnPrev.onclick = playPrevTrack;
-    el.bpBtnLike.onclick = toggleLikeCurrent;
-    el.fsBtnLike.onclick = toggleLikeCurrent;
-    el.fsBtnMode.onclick = togglePlayMode;
-    el.fsBtnLyricsToggle.onclick = toggleLyricsView;
-    el.fsBtnQueue.onclick = showQueueSheet;
-
-    el.fsSeekSlider.oninput = (e) => {
-      const pct = e.target.value / 1000;
-      const posMs = Math.floor(pct * (state.duration * 1000));
-      el.fsTimeCur.textContent = formatTime(Math.floor(posMs / 1000));
-    };
-
-    el.fsSeekSlider.onchange = (e) => {
-      const pct = e.target.value / 1000;
-      const posMs = Math.floor(pct * (state.duration * 1000));
-      seekAudio(posMs);
-    };
-
-    el.fsLyricsContent.onclick = (e) => {
-      const line = e.target.closest('.lyric-line');
-      if (line && line.dataset.time) {
-        const timeMs = parseInt(line.dataset.time, 10);
-        seekAudio(timeMs);
-      }
-    };
-
-    el.bottomNav.querySelectorAll('.nav-tab').forEach((tab) => {
-      tab.onclick = () => {
-        const tabName = tab.dataset.tab;
-        navigateTo(tabName);
+    // Sidebar navigation clicks
+    document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+      item.onclick = () => {
+        const nav = item.getAttribute('data-nav');
+        if (nav) navigateTo(nav);
       };
     });
 
-    el.btnAccount.onclick = () => {
-      if (!state.user) showLoginModal();
-      else showAccountCard();
+    // Mobile bottom nav clicks
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.onclick = () => {
+        const nav = tab.getAttribute('data-tab');
+        if (nav) navigateTo(nav);
+      };
+    });
+
+    // Navigation arrows
+    if (el.btnNavBack) el.btnNavBack.onclick = handleNavBack;
+    if (el.btnNavForward) el.btnNavForward.onclick = handleNavForward;
+
+    // Top Search Input
+    if (el.topSearchInput) {
+      el.topSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const kw = el.topSearchInput.value.trim();
+          if (kw) navigateTo('search', { keyword: kw });
+        }
+      });
+    }
+
+    // Account Buttons
+    if (el.sidebarAccountBtn) {
+      el.sidebarAccountBtn.onclick = () => {
+        if (NeteaseClient.isLoggedIn) showAccountCard();
+        else showLoginModal();
+      };
+    }
+    if (el.btnAccount) {
+      el.btnAccount.onclick = () => {
+        if (NeteaseClient.isLoggedIn) showAccountCard();
+        else showLoginModal();
+      };
+    }
+
+    // Floating Capsule Player Controls
+    if (el.fpArtworkBtn) el.fpArtworkBtn.onclick = openNowPlaying;
+    if (el.bpBtnPlay) el.bpBtnPlay.onclick = togglePlay;
+    if (el.bpBtnPrev) el.bpBtnPrev.onclick = playPrevTrack;
+    if (el.bpBtnNext) el.bpBtnNext.onclick = () => playNextTrack(true);
+    if (el.bpBtnLike) el.bpBtnLike.onclick = toggleLikeCurrent;
+    if (el.bpBtnRepeat) el.bpBtnRepeat.onclick = cyclePlayMode;
+    if (el.bpBtnShuffle) el.bpBtnShuffle.onclick = () => {
+      state.playMode = 'shuffle';
+      if (el.bpBtnRepeat) el.bpBtnRepeat.textContent = '🔀';
+      showToast('已开启随机播放');
+    };
+    if (el.bpBtnLyrics) el.bpBtnLyrics.onclick = openNowPlaying;
+    if (el.bpBtnQueue) el.bpBtnQueue.onclick = showQueueSheet;
+
+    // Volume Slider
+    if (el.bpVolumeSlider) {
+      el.bpVolumeSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (state.audioElem) state.audioElem.volume = val;
+      });
+    }
+
+    // Scrubber click seek
+    if (el.bpSliderTrack) {
+      el.bpSliderTrack.onclick = (e) => {
+        const rect = el.bpSliderTrack.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const dur = state.duration || (state.currentTrack ? state.currentTrack.duration : 0) || 1;
+        seekAudio(pct * dur * 1000);
+      };
+    }
+
+    // Fullscreen Player Controls
+    if (el.fsBtnClose) el.fsBtnClose.onclick = closeNowPlaying;
+    if (el.fsBtnLyricsToggle) el.fsBtnLyricsToggle.onclick = () => {
+      // Toggle between layout views
+      showToast('歌词排版已同步');
     };
 
-    el.btnBrandHome.onclick = () => navigateTo('home');
+    // Action Sheet & Queue Sheet Backdrops
+    if (el.actionSheetBackdrop) {
+      el.actionSheetBackdrop.onclick = (e) => {
+        if (e.target === el.actionSheetBackdrop) hideActionSheet();
+      };
+    }
+    if (el.btnCancelAction) el.btnCancelAction.onclick = hideActionSheet;
 
-    el.actionSheetBackdrop.onclick = (e) => {
-      if (e.target === el.actionSheetBackdrop) hideActionSheet();
-    };
-    el.actionPlayNext.onclick = () => {
-      if (state.actionTrack) {
-        state.playNextQueue.unshift(state.actionTrack);
-        showToast('已添加到下一首播放');
-      }
-      hideActionSheet();
-    };
-    el.actionLike.onclick = () => {
-      if (state.actionTrack) {
-        const id = state.actionTrack.id;
-        toggleLikeTrack(id, !state.likedIds.has(id));
-      }
-      hideActionSheet();
-    };
-    el.actionAlbum.onclick = () => {
-      if (state.actionTrack && state.actionTrack.album && state.actionTrack.album.id) {
-        navigateTo('album', { id: state.actionTrack.album.id });
-      }
-      hideActionSheet();
-    };
-    el.actionArtist.onclick = () => {
-      if (state.actionTrack && state.actionTrack.artists && state.actionTrack.artists[0]) {
-        navigateTo('artist', { id: state.actionTrack.artists[0].id });
-      }
-      hideActionSheet();
-    };
-    el.actionSimi.onclick = () => {
-      if (state.actionTrack) {
-        navigateTo('simi', { id: state.actionTrack.id });
-      }
-      hideActionSheet();
-    };
-    el.actionCopyLink.onclick = () => {
-      if (state.actionTrack) {
-        const url = `https://music.163.com/#/song?id=${state.actionTrack.id}`;
-        navigator.clipboard.writeText(url).then(() => showToast('已复制歌曲链接'));
-      }
-      hideActionSheet();
-    };
+    if (el.actionPlayNext) {
+      el.actionPlayNext.onclick = () => {
+        if (state.actionTrack) {
+          state.playNextQueue.unshift(state.actionTrack);
+          showToast('已添加到下一首播放');
+          hideActionSheet();
+        }
+      };
+    }
+    if (el.actionLike) {
+      el.actionLike.onclick = () => {
+        if (state.actionTrack) {
+          const id = state.actionTrack.id;
+          toggleLikeTrack(id, !state.likedIds.has(id));
+          hideActionSheet();
+        }
+      };
+    }
+    if (el.actionAlbum) {
+      el.actionAlbum.onclick = () => {
+        if (state.actionTrack && state.actionTrack.album && state.actionTrack.album.id) {
+          hideActionSheet();
+          navigateTo('album', { id: state.actionTrack.album.id });
+        }
+      };
+    }
+    if (el.actionArtist) {
+      el.actionArtist.onclick = () => {
+        if (state.actionTrack && state.actionTrack.artists && state.actionTrack.artists[0]) {
+          hideActionSheet();
+          navigateTo('artist', { id: state.actionTrack.artists[0].id });
+        }
+      };
+    }
+    if (el.actionCopyLink) {
+      el.actionCopyLink.onclick = () => {
+        if (state.actionTrack) {
+          const url = `https://music.163.com/song?id=${state.actionTrack.id}`;
+          if (navigator.clipboard) navigator.clipboard.writeText(url);
+          showToast('已复制歌曲链接');
+          hideActionSheet();
+        }
+      };
+    }
 
-    el.queueSheetBackdrop.onclick = (e) => {
-      if (e.target === el.queueSheetBackdrop) hideQueueSheet();
-    };
-    el.btnClearQueue.onclick = () => {
-      state.queue = [];
-      state.playNextQueue = [];
-      showQueueSheet();
-      showToast('已清空播放队列');
-    };
+    if (el.queueSheetBackdrop) {
+      el.queueSheetBackdrop.onclick = (e) => {
+        if (e.target === el.queueSheetBackdrop) hideQueueSheet();
+      };
+    }
+    if (el.btnClearQueue) {
+      el.btnClearQueue.onclick = () => {
+        state.queue = [];
+        state.playNextQueue = [];
+        showQueueSheet();
+        showToast('已清空播放队列');
+      };
+    }
+    if (el.btnCloseQueue) el.btnCloseQueue.onclick = hideQueueSheet;
 
-    el.loginSheetBackdrop.onclick = (e) => {
-      if (e.target === el.loginSheetBackdrop) hideLoginModal();
-    };
+    // Login & Account Modals
+    if (el.loginSheetBackdrop) {
+      el.loginSheetBackdrop.onclick = (e) => {
+        if (e.target === el.loginSheetBackdrop) hideLoginModal();
+      };
+    }
     if (el.btnCloseLogin) el.btnCloseLogin.onclick = hideLoginModal;
 
     if (el.accountCardBackdrop) {
@@ -1763,7 +1923,8 @@
     onNativePlaybackComplete,
     onNativeNext,
     onNativePrev,
-    handleBack,
+    navigateTo,
+    playTrack,
   };
 
   document.addEventListener('DOMContentLoaded', init);
