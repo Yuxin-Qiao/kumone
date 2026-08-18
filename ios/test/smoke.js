@@ -62,6 +62,8 @@ assert(bridgeContent.includes('asyncHttpRequest'), 'KumoneIOSBridge must support
 assert(bridgeContent.includes('playAudio'), 'KumoneIOSBridge must support playAudio');
 assert(bridgeContent.includes('"data": bodyText'), 'HTTP proxy must return Android-compatible `data` field');
 assert(bridgeContent.includes('"cookies": cookies'), 'HTTP proxy must return Set-Cookie values');
+assert(bridgeContent.includes('k.lowercased() == "set-cookie" ? "Set-Cookie" : k'), 'iOS bridge must normalize Set-Cookie header casing');
+assert(bridgeContent.includes('raw.components(separatedBy: ", ").filter { !$0.isEmpty }'), 'iOS bridge fallback must split comma-joined Set-Cookie values');
 
 const audioContent = fs.readFileSync(path.join(ROOT_DIR, 'Kumone/Audio/AudioPlayerManager.swift'), 'utf-8');
 assert(audioContent.includes('AVAudioSession.sharedInstance()'), 'AudioPlayerManager must configure AVAudioSession');
@@ -92,6 +94,13 @@ const clientJs = fs.readFileSync(path.join(ROOT_DIR, 'Kumone/Resources/web/lib/c
 assert(clientJs.includes('window.webkit.messageHandlers.kumoneBridge'), 'client.js must route HTTP through the iOS native bridge');
 assert(clientJs.includes("action: 'asyncHttpRequest'"), 'client.js must post asyncHttpRequest to iOS');
 assert(clientJs.includes("action: 'setPreference'"), 'client.js must persist cookies through the iOS bridge');
+assert(clientJs.includes('split(/, (?=[A-Za-z_][\\w-]*=)/)'), 'client.js must split comma-joined Set-Cookie strings safely');
+
+const { client: cookieClient } = require(path.join(ROOT_DIR, 'Kumone/Resources/web/lib/client.js'));
+cookieClient.cookies = {};
+cookieClient.absorbSetCookies(['__csrf=csrf123, NMTID=nmt456; Path=/; HttpOnly']);
+assert.strictEqual(cookieClient.cookies.__csrf, 'csrf123', 'client.js must retain __csrf from comma-joined Set-Cookie values');
+assert.strictEqual(cookieClient.cookies.NMTID, 'nmt456', 'client.js must retain secondary cookies from comma-joined Set-Cookie values');
 
 const apiJs = fs.readFileSync(path.join(ROOT_DIR, 'Kumone/Resources/web/lib/api.js'), 'utf-8');
 assert(apiJs.includes("cellphone: cleanPhone"), 'api.js sendCaptcha must use cellphone param for /sms/captcha/sent');

@@ -25,6 +25,32 @@
   }
 
   function nativeHttpRequest(url, method, headers, body) {
+    if (typeof window !== 'undefined' && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kumoneBridge) {
+      return new Promise((resolve, reject) => {
+        const reqId = 'req_' + Math.random().toString(36).slice(2) + '_' + Date.now();
+        window.__nativeHttpCallbacks[reqId] = (err, resp) => {
+          if (err) {
+            reject(new Error(err));
+          } else {
+            resolve(resp);
+          }
+        };
+        try {
+          window.webkit.messageHandlers.kumoneBridge.postMessage({
+            action: 'asyncHttpRequest',
+            reqId: reqId,
+            url: url,
+            method: method,
+            headers: headers || {},
+            body: body || ''
+          });
+        } catch (e) {
+          delete window.__nativeHttpCallbacks[reqId];
+          reject(e);
+        }
+      });
+    }
+
     if (typeof window !== 'undefined' && window.AndroidBridge) {
       if (typeof window.AndroidBridge.asyncHttpRequest === 'function') {
         return new Promise((resolve, reject) => {
@@ -104,6 +130,13 @@
           if (window.AndroidBridge && typeof window.AndroidBridge.setPreference === 'function') {
             window.AndroidBridge.setPreference('kumone_cookies', raw);
           }
+          if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kumoneBridge) {
+            window.webkit.messageHandlers.kumoneBridge.postMessage({
+              action: 'setPreference',
+              key: 'kumone_cookies',
+              value: raw
+            });
+          }
           if (window.localStorage) {
             window.localStorage.setItem('kumone_cookies', raw);
           }
@@ -154,7 +187,18 @@
             : (resOrCookies.headers.get('set-cookie') ? [resOrCookies.headers.get('set-cookie')] : []);
         }
         const parsed = {};
+        // Each raw entry is either "name=value" or a full Set-Cookie line.
+        // iOS bridge may also return comma-joined cookie pairs in one string.
+        const expand = [];
         for (const raw of raws) {
+          const s = String(raw);
+          // A comma-joined list has entries like "name=value, name2=value2"
+          // but cookie values themselves may contain commas (e.g. dates), so
+          // only split on ", " that is followed by a word-char (next name).
+          const parts = s.split(/, (?=[A-Za-z_][\w-]*=)/);
+          for (const p of parts) expand.push(p);
+        }
+        for (const raw of expand) {
           const pair = String(raw).split(';')[0];
           const eq = pair.indexOf('=');
           if (eq <= 0) continue;

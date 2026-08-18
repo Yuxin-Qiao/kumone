@@ -282,17 +282,22 @@ final class KumoneIOSBridge: NSObject, WKScriptMessageHandler {
     }
 
     private static func extractSetCookies(from response: HTTPURLResponse) -> [String] {
+        // HTTPCookie.cookies requires exact "Set-Cookie" capitalisation; normalise all keys.
         var headerFields: [String: String] = [:]
         for (key, value) in response.allHeaderFields {
-            headerFields[String(describing: key)] = String(describing: value)
+            let k = String(describing: key)
+            let normalised = k.lowercased() == "set-cookie" ? "Set-Cookie" : k
+            headerFields[normalised] = String(describing: value)
         }
         let url = response.url ?? URL(string: "https://music.163.com")!
-        var cookies: [String] = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url).map {
-            "\($0.name)=\($0.value)"
+        let parsed = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
+        if !parsed.isEmpty {
+            return parsed.map { "\($0.name)=\($0.value)" }
         }
-        if cookies.isEmpty, let raw = response.value(forHTTPHeaderField: "Set-Cookie"), !raw.isEmpty {
-            cookies.append(raw)
+        // Fallback: header field API is case-insensitive but may return comma-joined values.
+        if let raw = response.value(forHTTPHeaderField: "Set-Cookie"), !raw.isEmpty {
+            return raw.components(separatedBy: ", ").filter { !$0.isEmpty }
         }
-        return cookies
+        return []
     }
 }

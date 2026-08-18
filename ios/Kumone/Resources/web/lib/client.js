@@ -187,7 +187,18 @@
             : (resOrCookies.headers.get('set-cookie') ? [resOrCookies.headers.get('set-cookie')] : []);
         }
         const parsed = {};
+        // Each raw entry is either "name=value" or a full Set-Cookie line.
+        // iOS bridge may also return comma-joined cookie pairs in one string.
+        const expand = [];
         for (const raw of raws) {
+          const s = String(raw);
+          // A comma-joined list has entries like "name=value, name2=value2"
+          // but cookie values themselves may contain commas (e.g. dates), so
+          // only split on ", " that is followed by a word-char (next name).
+          const parts = s.split(/, (?=[A-Za-z_][\w-]*=)/);
+          for (const p of parts) expand.push(p);
+        }
+        for (const raw of expand) {
           const pair = String(raw).split(';')[0];
           const eq = pair.indexOf('=');
           if (eq <= 0) continue;
