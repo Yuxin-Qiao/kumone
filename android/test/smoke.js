@@ -50,6 +50,7 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     'gradle.properties',
     'gradlew',
     'gradle/wrapper/gradle-wrapper.properties',
+    'gradle/wrapper/gradle-wrapper.jar',
     'gradle/libs.versions.toml',
   ];
 

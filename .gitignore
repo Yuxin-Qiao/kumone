@@ -14,3 +14,10 @@ windows/dist-installer/
 *.zip
 *.exe
 *.ico.tmp
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aab
