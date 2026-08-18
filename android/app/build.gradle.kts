@@ -11,8 +11,8 @@ android {
         applicationId = "com.kumone.music"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.9"
+        versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull() ?: 9
+        versionName = (project.findProperty("versionName") as? String) ?: "0.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

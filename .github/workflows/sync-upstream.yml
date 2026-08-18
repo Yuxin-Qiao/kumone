@@ -87,9 +87,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Triggering Windows and Android builds for new upstream updates..."
-          gh workflow run build-windows.yml || echo "Build Windows trigger dispatched"
-          gh workflow run build-android.yml || echo "Build Android trigger dispatched"
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "Triggering simultaneous Windows and Android builds (Target Tag: $LATEST_TAG)..."
+          if [ -n "$LATEST_TAG" ]; then
+            gh workflow run build-windows.yml -f tag="$LATEST_TAG" || gh workflow run build-windows.yml || true
+            gh workflow run build-android.yml -f tag="$LATEST_TAG" || gh workflow run build-android.yml || true
+          else
+            gh workflow run build-windows.yml || true
+            gh workflow run build-android.yml || true
+          fi
 
       - name: Notify on Conflict
         if: failure()

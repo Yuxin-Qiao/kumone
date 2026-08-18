@@ -1,12 +1,16 @@
 name: Build Windows (Electron port)
 
-# 在真实 Windows runner 上构建并冒烟验证 Electron 移植版。
-# 推送到 GitHub 后自动运行；产物在 Actions Artifacts 下载。
 on:
   push:
     branches: [main, master]
     tags: ["v*", "windows-v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布到的 GitHub Release Tag (例如 v0.1.9 或 windows-v0.1.9，为空则不发布到 Release)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -19,6 +23,8 @@ jobs:
         working-directory: windows
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -73,13 +79,14 @@ jobs:
           name: Kumone-portable-windows
           path: windows/Kumone-win32-x64.zip
 
-      - name: Publish to GitHub Releases (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          $tag = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { $env:GITHUB_REF_NAME }
+          Write-Host "Publishing Windows deliverables to release: $tag"
           $files = Get-Item "dist-installer\Kumone-Setup-*-x64.exe", "Kumone-win32-x64.zip"
           gh release upload $tag $files.FullName --clobber
           if ($LASTEXITCODE -ne 0) {

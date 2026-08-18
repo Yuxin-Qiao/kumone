@@ -5,6 +5,12 @@ on:
     branches: [main, master]
     tags: ["v*", "android-v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布到的 GitHub Release Tag (例如 v0.1.9 或 android-v0.1.9，为空则不发布到 Release)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -14,6 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # 清理标签前缀 v 或 android-v
+          VERSION=$(echo "$RAW_TAG" | sed -E 's/^(android-)?v//')
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
+            VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed -E 's/^(android-)?v//' || echo "0.1.9")
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building Android version: $VERSION"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,27 +59,33 @@ jobs:
       - name: Build APK with Gradle
         working-directory: android
         run: |
-          ./gradlew assembleDebug assembleRelease --stacktrace
+          ./gradlew assembleDebug assembleRelease -PversionName="$VERSION" --stacktrace
+
+      - name: Prepare deliverables
+        run: |
+          mkdir -p dist-deliverables
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-deliverables/Kumone-${VERSION}.apk"
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk "dist-deliverables/Kumone-${VERSION}-release-unsigned.apk"
+          ls -lh dist-deliverables/
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Kumone-Android-Debug
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: dist-deliverables/Kumone-*.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: Kumone-Android-Release
-          path: android/app/build/outputs/apk/release/*.apk
+          path: dist-deliverables/Kumone-*-release-unsigned.apk
 
-      - name: Publish to GitHub Releases (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$GITHUB_REF_NAME"
-          find android/app/build/outputs/apk -name "*.apk" -type f | while read -r apk; do
-            echo "Uploading $apk to release $tag..."
-            gh release upload "$tag" "$apk" --clobber || true
-          done
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "Uploading Android APKs to release $TAG..."
+          gh release upload "$TAG" dist-deliverables/*.apk --clobber || \
+          gh release create "$TAG" dist-deliverables/*.apk --title "Kumone $TAG" --generate-notes
