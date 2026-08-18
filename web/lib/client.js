@@ -128,7 +128,7 @@
         .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
         .join('&');
 
-      const cookieStr = this.cookieHeader({ os: 'web', appver: '2.9.7' });
+      const cookieStr = this.cookieHeader({ os: 'pc', appver: '3.1.17', osver: 'Version 14.0 (Build 23A344)' });
       const finalUrl = this.getProxyUrl(url);
       const isProxied = finalUrl !== url;
 
