@@ -1,114 +1,184 @@
-name: Sync Upstream & Auto Build
+name: Upstream Sync PR
 
 on:
   schedule:
-    # 每 3 小时自动检查并同步上游更新
-    - cron: '0 */3 * * *'
-  # 支持在 GitHub Actions 页面随时手动一键触发
+    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
-      force_build:
-        description: '是否无论是否有新提交，都强制触发多平台发布构建'
+      force:
+        description: "Create/update the sync PR even when upstream SHA is unchanged"
         required: false
         type: boolean
         default: false
 
 permissions:
   contents: write
-  issues: write
+  pull-requests: write
   actions: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
+    name: Prepare compatibility-gated upstream PR
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+      branch: ${{ steps.detect.outputs.branch }}
     steps:
-      - name: Checkout repository
+      - name: Checkout downstream main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Add Upstream and Fetch
+      - name: Fetch upstream main
         run: |
-          git remote add upstream https://github.com/missuo/kumone.git || git remote set-url upstream https://github.com/missuo/kumone.git
-          git fetch upstream --tags --force
+          git remote add upstream https://github.com/missuo/kumone.git || \
+            git remote set-url upstream https://github.com/missuo/kumone.git
+          git fetch upstream main --no-tags
 
-      - name: Sync Tags from Upstream
-        id: sync_tags
+      - name: Detect upstream delta
+        id: detect
+        shell: bash
         run: |
-          LOCAL_TAGS=$(git tag -l)
-          UPSTREAM_TAGS=$(git tag -l --sort=v:refname)
-          NEW_TAGS=false
-
-          # 检查是否有上游新标签需要推送到 origin
-          for tag in $(git ls-remote --tags upstream | awk '{print $2}' | sed 's#refs/tags/##' | grep -v '\^{}'); do
-            if ! git tag -l | grep -q "^$tag$"; then
-              echo "Found new upstream tag: $tag"
-              git fetch upstream tag "$tag" --no-tags
-              NEW_TAGS=true
-            fi
-          done
-
-          echo "new_tags=$NEW_TAGS" >> $GITHUB_OUTPUT
-
-      - name: Merge upstream/main into main
-        id: merge
-        run: |
-          git checkout main
-          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          set -euo pipefail
           LOCAL_HEAD=$(git rev-parse HEAD)
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
           MERGE_BASE=$(git merge-base HEAD upstream/main)
+          BRANCH="automation/upstream-sync"
 
-          if [ "$UPSTREAM_HEAD" = "$MERGE_BASE" ]; then
-            echo "Already up to date with upstream/main."
-            echo "updated=false" >> $GITHUB_OUTPUT
+          echo "local_head=$LOCAL_HEAD" >> "$GITHUB_OUTPUT"
+          echo "upstream_head=$UPSTREAM_HEAD" >> "$GITHUB_OUTPUT"
+          echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          if [[ "$UPSTREAM_HEAD" == "$MERGE_BASE" && "${{ inputs.force || false }}" != "true" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Downstream already contains upstream $UPSTREAM_HEAD" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Merging upstream/main into main..."
-            if git merge --no-edit upstream/main -m "chore(sync): merge upstream/main into main"; then
-              echo "Merge successful."
-              echo "updated=true" >> $GITHUB_OUTPUT
-            else
-              echo "Merge conflict detected!"
-              exit 1
-            fi
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Synchronize Documentation & Version Metadata
+      - name: Create clean sync branch
+        if: steps.detect.outputs.changed == 'true'
+        run: git switch -C "${{ steps.detect.outputs.branch }}" main
+
+      - name: Merge upstream into sync branch
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
         run: |
-          LATEST_TAG=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null || echo "v0.2.0")
-          node Scripts/sync-docs-version.js "$LATEST_TAG"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .
-            git commit -m "chore(docs): auto-sync documentation, release links & version metadata for $LATEST_TAG" || true
+          set -euo pipefail
+          if ! git merge --no-ff --no-edit upstream/main -m "chore(upstream): sync missuo/kumone"; then
+            git merge --abort || true
+            {
+              echo "## Upstream sync blocked by merge conflicts"
+              echo
+              echo "Upstream: \`${{ steps.detect.outputs.upstream_head }}\`"
+              echo
+              echo "No downstream main commit was changed. Resolve the conflict on a dedicated branch."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
-      - name: Push branch and tags to origin
+      - name: Generate compatibility report
+        if: steps.detect.outputs.changed == 'true'
+        shell: bash
         run: |
-          git push origin main --tags
+          set -euo pipefail
+          mkdir -p docs/upstream-sync
+          REPORT=docs/upstream-sync/latest.md
+          FILES=$(mktemp)
+          git diff --name-only "${{ steps.detect.outputs.merge_base }}..upstream/main" > "$FILES"
 
-      - name: Trigger Unified Multi-Platform Release Pipeline
-        if: steps.sync_tags.outputs.new_tags == 'true' || inputs.force_build == true
+          api=$(grep -Ec '^Sources/Kumone/Core/API/' "$FILES" || true)
+          models=$(grep -Ec '^Sources/Kumone/Core/Models/' "$FILES" || true)
+          player=$(grep -Ec '^Sources/Kumone/Core/Player/' "$FILES" || true)
+          features=$(grep -Ec '^Sources/Kumone/Features/' "$FILES" || true)
+          design=$(grep -Ec '^Sources/Kumone/DesignSystem/' "$FILES" || true)
+          docs=$(grep -Ec '(^README|^docs/|CHANGELOG)' "$FILES" || true)
+          total=$(wc -l < "$FILES" | tr -d ' ')
+
+          {
+            echo "# Upstream Compatibility Report"
+            echo
+            echo "- Upstream: \`missuo/kumone\`"
+            echo "- Upstream SHA: \`${{ steps.detect.outputs.upstream_head }}\`"
+            echo "- Previous merge base: \`${{ steps.detect.outputs.merge_base }}\`"
+            echo "- Changed files: **$total**"
+            echo
+            echo "## Classification"
+            echo
+            echo "| Area | Files | Required downstream review |"
+            echo "| --- | ---: | --- |"
+            echo "| Core/API | $api | Rust API/crypto parity |"
+            echo "| Core/Models | $models | Rust model parity |"
+            echo "| Core/Player | $player | Rust queue + native playback adapters |"
+            echo "| Features | $features | Windows/Android product parity |"
+            echo "| DesignSystem | $design | Windows/Android UI parity |"
+            echo "| Docs/changelog | $docs | Usually no code port |"
+            echo
+            echo "## Changed upstream files"
+            echo
+            sed 's/^/- `&`/' "$FILES"
+            echo
+            echo "## Merge policy"
+            echo
+            echo "Do not merge this PR until required downstream CI is green and semantic Core/API changes have been ported to \`kumone-core\`."
+          } > "$REPORT"
+
+          git add "$REPORT"
+          git commit -m "chore(upstream): update compatibility report" || true
+
+      - name: Push sync branch
+        if: steps.detect.outputs.changed == 'true'
+        run: git push --force-with-lease origin HEAD:"${{ steps.detect.outputs.branch }}"
+
+      - name: Create or update sync PR
+        if: steps.detect.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+          UPSTREAM_HEAD: ${{ steps.detect.outputs.upstream_head }}
+        shell: bash
         run: |
-          LATEST_TAG=$(git describe --tags --match="v*" --abbrev=0 2>/dev/null || echo "")
-          echo "Triggering Unified Multi-Platform Release Pipeline for $LATEST_TAG..."
-          if [ -n "$LATEST_TAG" ]; then
-            gh workflow run release.yml -f tag="$LATEST_TAG" || true
+          set -euo pipefail
+          BODY=$(mktemp)
+          cat > "$BODY" <<EOF
+          Automated compatibility-gated sync from \`missuo/kumone\`.
+
+          Upstream SHA: \`$UPSTREAM_HEAD\`
+
+          Review \`docs/upstream-sync/latest.md\` before merging. This PR must not bypass Rust Core, Windows, and (once present) Android validation.
+          EOF
+
+          NUMBER=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$NUMBER" ]]; then
+            gh pr edit "$NUMBER" --title "chore(upstream): sync missuo/kumone" --body-file "$BODY"
           else
-            gh workflow run release.yml || true
+            gh pr create --head "$BRANCH" --base main \
+              --title "chore(upstream): sync missuo/kumone" \
+              --body-file "$BODY"
           fi
 
-      - name: Notify on Conflict
-        if: failure()
+      - name: Explicitly dispatch downstream CI
+        if: steps.detect.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+        shell: bash
         run: |
-          gh issue create \
-            --title "⚠️ [自动同步告警] 上游代码合并出现冲突" \
-            --body "GitHub Actions 在自动同步上游 \`missuo/kumone\` 代码时遇到冲突，请在本地拉取代码并手动解决冲突后推送到 \`main\` 分支。" || true
+          # PRs created by GITHUB_TOKEN may not recursively trigger pull_request workflows.
+          # Explicit dispatch keeps validation deterministic.
+          gh workflow run ci-core.yml --ref "$BRANCH"
+          gh workflow run ci-windows.yml --ref "$BRANCH"
+          if gh workflow view ci-android.yml >/dev/null 2>&1; then
+            gh workflow run ci-android.yml --ref "$BRANCH"
+          fi
