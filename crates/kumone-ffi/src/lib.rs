@@ -8,8 +8,7 @@ use std::collections::HashMap;
 
 use kumone_core::netease::{
     EapiContext, RequestBuildError, RequestSpec, SessionCookies,
-    build_eapi_request as core_build_eapi_request,
-    build_weapi_request as core_build_weapi_request,
+    build_eapi_request as core_build_eapi_request, build_weapi_request as core_build_weapi_request,
 };
 use serde_json::Value;
 
@@ -164,14 +163,15 @@ mod tests {
 
     #[test]
     fn ffi_reports_invalid_json_without_panicking() {
-        let result = build_weapi_request(
-            "/search/get".to_owned(),
-            "{".to_owned(),
-            HashMap::new(),
-        );
+        let result = build_weapi_request("/search/get".to_owned(), "{".to_owned(), HashMap::new());
 
         assert!(result.request.is_none());
-        assert!(result.error.as_deref().is_some_and(|error| error.contains("invalid JSON")));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("invalid JSON"))
+        );
     }
 
     #[test]
