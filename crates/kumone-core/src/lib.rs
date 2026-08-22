@@ -2,6 +2,7 @@
 
 pub mod crypto;
 pub mod netease;
+pub mod search;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
