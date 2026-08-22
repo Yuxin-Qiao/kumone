@@ -1,10 +1,13 @@
 #![doc = "Shared, platform-neutral domain core for Kumone."]
 
+pub mod account;
 pub mod crypto;
 pub mod lyrics;
 pub mod netease;
 pub mod playback;
+pub mod queue;
 pub mod search;
+pub mod unblock;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
