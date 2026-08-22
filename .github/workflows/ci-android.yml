@@ -82,6 +82,9 @@ jobs:
             --language kotlin \
             --out-dir apps/android/app/build/generated/uniffi/kotlin \
             --no-format
+          echo "Generated UniFFI Kotlin namespace:"
+          grep -R -m1 '^package ' apps/android/app/build/generated/uniffi/kotlin || true
+          find apps/android/app/build/generated/uniffi/kotlin -type f -maxdepth 5 -print
 
       - name: Build arm64 Rust library for Android
         run: |
