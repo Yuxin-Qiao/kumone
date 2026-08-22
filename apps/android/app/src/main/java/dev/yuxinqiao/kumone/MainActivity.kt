@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
@@ -50,13 +49,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import dev.yuxinqiao.kumone.core.FfiLyricLine
-import dev.yuxinqiao.kumone.core.FfiSearchTrack
 import dev.yuxinqiao.kumone.data.LyricsPage
 import dev.yuxinqiao.kumone.data.NeteaseRepository
 import dev.yuxinqiao.kumone.playback.PlaybackService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import uniffi.kumone_ffi.FfiLyricLine
+import uniffi.kumone_ffi.FfiSearchTrack
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,8 +103,8 @@ private fun KumoneApp() {
 
     LaunchedEffect(controller, nowPlaying) {
         while (controller != null) {
-            positionMs = controller.currentPosition.coerceAtLeast(0)
-            delay(250)
+            positionMs = controller.currentPosition.coerceAtLeast(0L)
+            delay(250L)
         }
     }
 
@@ -167,7 +166,8 @@ private fun KumoneApp() {
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(songs, key = { it.id }) { track ->
                     SongRow(track = track) {
-                        if (controller == null) {
+                        val mediaController = controller
+                        if (mediaController == null) {
                             errorMessage = "Playback service is still connecting"
                             return@SongRow
                         }
@@ -184,17 +184,17 @@ private fun KumoneApp() {
                                         track.albumPicUrl?.let { setArtworkUri(Uri.parse(it)) }
                                     }
                                     .build()
-                                controller.setMediaItem(
+                                mediaController.setMediaItem(
                                     MediaItem.Builder()
                                         .setMediaId(track.id.toString())
                                         .setUri(playback.url)
                                         .setMediaMetadata(metadata)
                                         .build(),
                                 )
-                                controller.prepare()
-                                controller.play()
+                                mediaController.prepare()
+                                mediaController.play()
                                 nowPlaying = track
-                                positionMs = 0
+                                positionMs = 0L
                                 lyrics = runCatching { repository.lyrics(track.id) }.getOrNull()
                             }.onFailure {
                                 errorMessage = it.message ?: "Unable to play this track"
@@ -255,7 +255,7 @@ private fun NowPlayingCard(
     onToggle: () -> Unit,
     onSeek: (Long) -> Unit,
 ) {
-    val duration = track.durationMs.coerceAtLeast(1)
+    val duration = track.durationMs.coerceAtLeast(1L)
     val activeLine = activeLyricLine(lyrics?.lines.orEmpty(), positionMs)
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -291,8 +291,8 @@ private fun activeLyricLine(lines: List<FfiLyricLine>, positionMs: Long): FfiLyr
     lines.lastOrNull { it.timeMs <= positionMs }
 
 private fun formatTime(milliseconds: Long): String {
-    val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1000L
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
 }
 
 @Composable
