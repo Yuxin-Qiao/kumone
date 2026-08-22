@@ -94,8 +94,8 @@ The following remain authoritative in `missuo/kumone` and are monitored for beha
 The following are owned by this fork and must not be overwritten by upstream sync:
 
 - `crates/**`
-- future `apps/windows/**`
-- future `apps/android/**`
+- `apps/windows/**`
+- `apps/android/**`
 - downstream CI/CD
 - compatibility reports and porting metadata
 - Windows/Android packaging and release logic
@@ -107,12 +107,12 @@ Never merge upstream directly into `main` without downstream validation.
 Required flow:
 
 1. scheduled watcher detects a new upstream commit/tag;
-2. create/update an `upstream-sync/*` branch;
-3. merge or replay upstream changes on that branch;
+2. create/update an `automation/upstream-sync` branch;
+3. merge upstream changes on that branch;
 4. generate a compatibility report;
 5. run Rust Core, Windows and Android CI;
 6. open/update a bot PR;
-7. merge only after required checks pass;
+7. merge only after required checks pass and semantic downstream ports are complete;
 8. create a downstream release only after release gates pass.
 
 Changes should be classified automatically:
@@ -130,105 +130,154 @@ Changes should be classified automatically:
 
 Separate workflows by responsibility:
 
-- `ci-core.yml` — fmt, clippy, tests
-- `ci-windows.yml` — Tauri build and Windows smoke tests
-- `ci-android.yml` — Gradle lint/test/build and Rust Android bridge checks
-- `upstream-watch.yml` — detect upstream changes
-- `upstream-sync.yml` — create sync branch/PR and compatibility report
-- `nightly.yml` — API/protocol smoke checks without formal release
-- `release.yml` — orchestration only; publish signed downstream artifacts
-
-The release workflow should not contain all platform build logic itself.
+- `ci-core.yml` — Rust fmt, clippy and tests
+- `ci-windows.yml` — Rust/Web regression, Tauri check/clippy and optimized EXE artifact
+- `ci-android.yml` — Android lint/test/APK build plus downloadable debug APK artifact
+- `sync-upstream.yml` — scheduled compatibility-gated upstream branch/PR generation
+- `release-downstream.yml` — Windows NSIS + signed Android APK/AAB release orchestration
+- legacy workflows — kept only while the Electron/Web/macOS release path is still production-relevant
 
 ## Release artifacts
 
 Windows:
 
-- `Kumone-<version>-x64-setup.exe`
-- optional `.msi`
-- optional portable `.zip`
-- updater metadata/signatures
+- Tauri NSIS installer built on a Windows GitHub-hosted runner
+- optional future portable package
+- future updater metadata/signatures
 
 Android:
 
-- signed `arm64-v8a` APK for direct GitHub installation
+- signed APK for direct GitHub installation
 - signed AAB for Google Play
 
 Common:
 
-- SHA256 checksums
+- SHA256 checksums for Android release assets
 - release notes
-- upstream commit/tag provenance
+- upstream/downstream provenance through Git history and the compatibility report
+
+## Required GitHub Secrets
+
+Android production releases intentionally fail closed if signing material is missing. Configure these repository Actions secrets before running `release-downstream.yml`:
+
+```text
+ANDROID_KEYSTORE_BASE64
+ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEY_ALIAS
+ANDROID_KEY_PASSWORD
+```
+
+`ANDROID_KEYSTORE_BASE64` is the Base64 representation of the release/upload keystore. The keystore and passwords must never be committed to the repository.
+
+Windows package signing is intentionally separate from the first Tauri migration milestone. Add a trusted Windows code-signing certificate in GitHub Secrets before treating the Windows release channel as production-grade; unsigned CI/preview builds may trigger SmartScreen warnings.
 
 ## Versioning
 
-Do not couple downstream fixes 1:1 to upstream tags.
-
-Recommended pattern:
+Do not couple downstream fixes 1:1 to upstream tags. Formal downstream delivery uses tags such as:
 
 ```text
 upstream: v0.4.0
-downstream: v0.4.0-kumone.1
-hotfix: v0.4.0-kumone.2
-next upstream: v0.4.1-kumone.1
+downstream: downstream-v0.4.0-kumone.1
+hotfix: downstream-v0.4.0-kumone.2
+next upstream: downstream-v0.4.1-kumone.1
 ```
+
+`release-downstream.yml` can also be triggered manually with an explicit downstream version. Tag-triggered releases are formal releases; manually dispatched releases default to prerelease.
 
 ## Migration phases
 
 ### Phase 0 — foundation
 
-- create Rust workspace
-- add `kumone-core`
-- establish Rust CI
-- document ownership and migration boundaries
-- preserve all current production implementations
+Status: implemented on the refactor branch.
+
+- Rust workspace and `kumone-core`
+- Rust CI
+- ownership/migration contract
+- current production implementations preserved
 
 ### Phase 1 — port deterministic core logic
 
-Port in this order:
+Status: in progress.
 
-1. crypto test vectors
-2. models
-3. API client/request construction
-4. lyrics parser
-5. unblock matching/fallback logic
-6. queue rules
+Completed:
 
-Keep golden-vector tests against the existing Swift/JS behavior during migration.
+- weapi/eapi Rust implementation
+- fixed byte-for-byte golden vectors against the existing Swift/Node behavior
+
+Next order:
+
+1. models
+2. API client/request construction
+3. lyrics parser
+4. unblock matching/fallback logic
+5. queue rules
+
+Keep golden-vector and fixture tests against existing Swift/JS behavior during migration.
 
 ### Phase 2 — Windows Electron to Tauri
 
-- reuse existing web UI initially
-- replace Electron main/preload IPC with Tauri commands
-- connect Tauri commands to `kumone-core`
+Status: shell and CI established.
+
+Completed:
+
+- Tauri 2 application skeleton
+- existing Web/PWA UI wired as the migration frontend
+- Tauri commands wired directly to Rust `weapi`/`eapi`
+- Windows CI validates Rust Core, Web regression, Tauri check/clippy and optimized build
+- NSIS bundle enabled for downstream releases
+
+Remaining:
+
+- migrate remaining Electron IPC/backend behavior to Rust commands
 - restore SMTC/media key integration
 - add package size/startup/memory benchmarks
 - delete Electron only after feature parity
 
 ### Phase 3 — Android native app
 
-- create Compose shell and navigation
-- connect Rust core bridge
-- add Media3/ExoPlayer playback
-- add MediaSessionService/background playback
-- add account/login, home, search, library, player and lyrics parity
-- build signed APK/AAB in CI
+Status: native shell and CI established.
+
+Completed:
+
+- Kotlin/Compose native app shell
+- stable API 36 release baseline
+- Media3/ExoPlayer `MediaSessionService`
+- lint, unit test and APK build CI
+- release version/signing hooks
+
+Remaining:
+
+- Rust Core bridge
+- account/login, home, search, library, player and lyrics parity
+- playback UI/controller integration
+- production signing secrets and Play delivery
 
 ### Phase 4 — automation hardening
 
-- replace direct-to-main upstream merge with bot PR flow
-- add compatibility report generation
-- add nightly API smoke checks
-- add downstream release orchestration
-- add signing/updater secret handling
+Status: partially implemented.
+
+Completed:
+
+- direct-to-main upstream merge replaced by compatibility-gated bot PR flow
+- compatibility report generation
+- explicit Core/Windows/Android CI dispatch for bot-created sync PRs
+- Cargo/Tauri/Gradle/npm/GitHub Actions Dependabot coverage
+- Windows + Android downstream release workflow
+
+Remaining:
+
+- nightly live API/protocol smoke workflow
+- semantic porting assistance for upstream Core/API changes
+- Windows code signing and updater channel
+- release provenance metadata automation
 
 ### Phase 5 — remove migration debt
 
 Only after Windows + Android are stable:
 
 - remove legacy Electron implementation
-- remove duplicate JS crypto/API/unblock code
-- simplify release workflows
+- remove duplicate JS crypto/API/unblock code where no longer required by Web
+- simplify legacy release workflows
 - tighten bundle-size and performance budgets
 
 ## Non-goals
@@ -237,7 +286,7 @@ Only after Windows + Android are stable:
 - using a Rust UI toolkit for Android
 - creating a single cross-platform playback engine
 - deleting working legacy code before parity exists
-- auto-merging semantic upstream changes without CI gates
+- auto-merging semantic upstream changes merely because a textual merge succeeded
 
 ## Performance budgets
 
