@@ -112,18 +112,12 @@ pub fn build_eapi_request(
 
 #[uniffi::export]
 pub fn ingest_cookie_string(
-    mut cookies: HashMap<String, String>,
+    cookies: HashMap<String, String>,
     raw: String,
 ) -> HashMap<String, String> {
-    let mut session = session_cookies(cookies.clone());
+    let mut session = session_cookies(cookies);
     session.ingest_cookie_string(&raw);
-
-    for name in ["MUSIC_U", "__csrf"] {
-        if let Some(value) = session.cookie(name) {
-            cookies.insert(name.to_owned(), value.to_owned());
-        }
-    }
-    cookies
+    session.into_values().into_iter().collect()
 }
 
 #[uniffi::export]
@@ -132,10 +126,10 @@ pub fn is_logged_in(cookies: HashMap<String, String>) -> bool {
 }
 
 #[uniffi::export]
-pub fn clear_auth_cookies(mut cookies: HashMap<String, String>) -> HashMap<String, String> {
-    cookies.remove("MUSIC_U");
-    cookies.remove("__csrf");
-    cookies
+pub fn clear_auth_cookies(cookies: HashMap<String, String>) -> HashMap<String, String> {
+    let mut session = session_cookies(cookies);
+    session.clear_auth();
+    session.into_values().into_iter().collect()
 }
 
 #[cfg(test)]
@@ -175,14 +169,16 @@ mod tests {
     }
 
     #[test]
-    fn ffi_cookie_helpers_preserve_auth_semantics() {
+    fn ffi_cookie_helpers_preserve_complete_cookie_jar() {
         let cookies = ingest_cookie_string(
             HashMap::new(),
-            "MUSIC_U=token; Path=/;; __csrf=csrf; Secure".to_owned(),
+            "MUSIC_U=token; Path=/;; __csrf=csrf; Secure;; NMTID=device-cookie; HttpOnly".to_owned(),
         );
         assert!(is_logged_in(cookies.clone()));
+        assert_eq!(cookies.get("NMTID").map(String::as_str), Some("device-cookie"));
 
         let cleared = clear_auth_cookies(cookies);
-        assert!(!is_logged_in(cleared));
+        assert!(!is_logged_in(cleared.clone()));
+        assert_eq!(cleared.get("NMTID").map(String::as_str), Some("device-cookie"));
     }
 }
