@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 
-use crate::netease::{
-    EapiContext, RequestResult, RequestSpec, SessionCookies, build_eapi_request,
-};
+use crate::netease::{EapiContext, RequestResult, RequestSpec, SessionCookies, build_eapi_request};
 
 const SEARCH_PATH: &str = "/cloudsearch/pc";
 const SEARCH_TYPE_SONGS: i64 = 1;
