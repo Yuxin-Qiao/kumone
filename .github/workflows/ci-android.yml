@@ -107,6 +107,34 @@ jobs:
           test -n "$APK"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
 
+      - name: Build optimized Android APK for size guard
+        run: |
+          gradle -p apps/android :app:assembleRelease \
+            -PkumoneVersion="0.0.0-ci" \
+            -PkumoneVersionCode="${{ github.run_number }}"
+
+      - name: Enforce Android package size budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' -type f -print -quit)
+          test -n "$APK"
+          BYTES=$(stat -c%s "$APK")
+          MIB=$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+          {
+            echo "### Android size guard"
+            echo "- Optimized APK: **${MIB} MiB**"
+            echo "- Hard budget: **15 MiB**"
+            echo "- Stretch target: **10 MiB**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BYTES" -gt $((15 * 1024 * 1024)) ]; then
+            echo "::error::Android optimized APK is ${MIB} MiB, above the 15 MiB hard budget"
+            exit 1
+          fi
+          if [ "$BYTES" -gt $((10 * 1024 * 1024)) ]; then
+            echo "::warning::Android optimized APK is ${MIB} MiB; still within hard budget but above the 10 MiB stretch target"
+          fi
+
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
