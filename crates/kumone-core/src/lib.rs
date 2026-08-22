@@ -1,6 +1,7 @@
 #![doc = "Shared, platform-neutral domain core for Kumone."]
 
 pub mod crypto;
+pub mod netease;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
