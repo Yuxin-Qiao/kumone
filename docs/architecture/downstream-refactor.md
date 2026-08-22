@@ -73,7 +73,7 @@ Use Android-native media primitives for:
 - Bluetooth/headset controls
 - lifecycle integration
 
-Call the shared Rust core through a stable FFI boundary (prefer UniFFI unless JNI is required for a specific capability).
+Call the shared Rust core through a stable UniFFI boundary. The Android build must package the generated arm64 `libkumone_ffi.so` and CI must verify that it is physically present in the APK.
 
 Target Play-delivered download size <= 15 MB, with <= 10 MB as a stretch goal.
 
@@ -131,17 +131,38 @@ Changes should be classified automatically:
 Separate workflows by responsibility:
 
 - `ci-core.yml` — Rust fmt, clippy and tests
-- `ci-windows.yml` — Rust/Web regression, Tauri check/clippy and optimized EXE artifact
-- `ci-android.yml` — Android lint/test/APK build plus downloadable debug APK artifact
+- `ci-windows.yml` — Rust/Web regression, Tauri check/clippy, optimized EXE artifact, and a 10 MiB hard binary budget
+- `ci-android.yml` — Android lint/test/APK build, Rust-in-APK verification, R8 release-size measurement, 15 MiB hard budget and 10 MiB stretch target
+- `security-codeql.yml` — CodeQL security analysis for Rust, Java/Kotlin, JavaScript/TypeScript and GitHub Actions
+- `dependency-review.yml` — fail PRs that introduce high-severity runtime dependency vulnerabilities; requires the repository Dependency graph setting to be enabled
+- `nightly.yml` — scheduled live protocol/API smoke tests
 - `sync-upstream.yml` — scheduled compatibility-gated upstream branch/PR generation
-- `release-downstream.yml` — Windows NSIS + signed Android APK/AAB release orchestration
+- `release-downstream.yml` — Windows NSIS + signed Android APK/AAB release orchestration, size gates and artifact attestations
 - legacy workflows — kept only while the Electron/Web/macOS release path is still production-relevant
+
+## Security and supply-chain gates
+
+Downstream releases are treated as supply-chain artifacts, not just build outputs.
+
+Required gates:
+
+- CodeQL on Rust, Java/Kotlin, JavaScript/TypeScript and GitHub Actions
+- dependency review for high-severity runtime dependency additions
+- Rust fmt/clippy/tests and platform lint/tests
+- optimized Windows and Android package-size budgets
+- SHA256 checksums for release assets where applicable
+- GitHub artifact attestations for Windows NSIS installers and Android APK/AAB files
+- Android signing keys only through repository Actions secrets
+- future Windows Authenticode signing only through protected secrets
+
+Artifact attestation requires `id-token: write` and `attestations: write` in the release workflow. No signing key, attestation credential or long-lived cloud credential is committed to the repository.
 
 ## Release artifacts
 
 Windows:
 
 - Tauri NSIS installer built on a Windows GitHub-hosted runner
+- GitHub artifact attestation for the installer
 - optional future portable package
 - future updater metadata/signatures
 
@@ -149,14 +170,17 @@ Android:
 
 - signed APK for direct GitHub installation
 - signed AAB for Google Play
+- GitHub artifact attestations for APK/AAB
 
 Common:
 
 - SHA256 checksums for Android release assets
 - release notes
-- upstream/downstream provenance through Git history and the compatibility report
+- upstream/downstream provenance through Git history, compatibility reports and attestations
 
-## Required GitHub Secrets
+## Required GitHub settings and secrets
+
+Dependency Review requires **Dependency graph** to be enabled in the repository's GitHub security settings. Do not weaken the workflow with `continue-on-error`; a missing dependency graph is a repository configuration problem, not a passing security check.
 
 Android production releases intentionally fail closed if signing material is missing. Configure these repository Actions secrets before running `release-downstream.yml`:
 
@@ -203,14 +227,15 @@ Completed:
 
 - weapi/eapi Rust implementation
 - fixed byte-for-byte golden vectors against the existing Swift/Node behavior
+- cookie/session semantics and request construction
+- first shared song-search request/response model and stable FFI view model
 
 Next order:
 
-1. models
-2. API client/request construction
-3. lyrics parser
-4. unblock matching/fallback logic
-5. queue rules
+1. remaining models/API surfaces
+2. lyrics parser
+3. unblock matching/fallback logic
+4. queue rules
 
 Keep golden-vector and fixture tests against existing Swift/JS behavior during migration.
 
@@ -222,39 +247,43 @@ Completed:
 
 - Tauri 2 application skeleton
 - existing Web/PWA UI wired as the migration frontend
-- Tauri commands wired directly to Rust `weapi`/`eapi`
+- Tauri commands wired directly to Rust `weapi`/`eapi` and shared request construction
 - Windows CI validates Rust Core, Web regression, Tauri check/clippy and optimized build
+- optimized Windows binary hard-size budget enforced in CI
 - NSIS bundle enabled for downstream releases
 
 Remaining:
 
 - migrate remaining Electron IPC/backend behavior to Rust commands
 - restore SMTC/media key integration
-- add package size/startup/memory benchmarks
+- add startup/memory benchmarks
 - delete Electron only after feature parity
 
 ### Phase 3 — Android native app
 
-Status: native shell and CI established.
+Status: native shell, Rust bridge and CI established.
 
 Completed:
 
 - Kotlin/Compose native app shell
 - stable API 36 release baseline
 - Media3/ExoPlayer `MediaSessionService`
+- UniFFI Kotlin binding generation
+- arm64 Rust `libkumone_ffi.so` cross-compilation and APK packaging verification
 - lint, unit test and APK build CI
+- R8 release-size budget validation
 - release version/signing hooks
 
 Remaining:
 
-- Rust Core bridge
-- account/login, home, search, library, player and lyrics parity
+- complete search transport/UI vertical slice
+- account/login, home, library, player and lyrics parity
 - playback UI/controller integration
 - production signing secrets and Play delivery
 
 ### Phase 4 — automation hardening
 
-Status: partially implemented.
+Status: substantially implemented.
 
 Completed:
 
@@ -262,14 +291,18 @@ Completed:
 - compatibility report generation
 - explicit Core/Windows/Android CI dispatch for bot-created sync PRs
 - Cargo/Tauri/Gradle/npm/GitHub Actions Dependabot coverage
+- nightly live API/protocol smoke workflow
+- CodeQL security scanning
+- Dependency Review workflow (repository Dependency graph must be enabled)
+- Windows + Android size guards
 - Windows + Android downstream release workflow
+- release artifact provenance attestations
 
 Remaining:
 
-- nightly live API/protocol smoke workflow
 - semantic porting assistance for upstream Core/API changes
 - Windows code signing and updater channel
-- release provenance metadata automation
+- richer release provenance/SBOM metadata if needed
 
 ### Phase 5 — remove migration debt
 
@@ -290,15 +323,15 @@ Only after Windows + Android are stable:
 
 ## Performance budgets
 
-Initial targets, to be measured rather than assumed:
+Initial targets, measured rather than assumed:
 
 | Metric | Target |
 | --- | --- |
-| Windows installer | <= 10 MB where practical |
+| Windows optimized binary / installer | <= 10 MiB hard target where practical |
 | Windows cold start | < 500 ms target on representative hardware |
 | Windows idle CPU | approximately 0% |
 | Windows idle memory | < 100 MB target |
-| Android Play-delivered download | <= 15 MB hard target; <= 10 MB stretch |
+| Android optimized APK / Play-delivered download | <= 15 MiB hard target; <= 10 MiB stretch |
 | Android cold start | < 1 s target on representative hardware |
 
-Every size/performance claim must eventually be backed by CI or benchmark measurements.
+Package-size budgets are enforced by CI. Startup and idle-resource budgets must be added once the feature-complete Windows and Android application flows exist.
