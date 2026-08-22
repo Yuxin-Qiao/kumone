@@ -243,7 +243,9 @@ pub fn decode_qr_check_response(body: &str) -> Result<QrCheckResult, ApiDecodeEr
     })
 }
 
-pub fn build_user_account_request(cookies: &SessionCookies) -> Result<RequestSpec, RequestBuildError> {
+pub fn build_user_account_request(
+    cookies: &SessionCookies,
+) -> Result<RequestSpec, RequestBuildError> {
     build_weapi_request("/w/nuser/account/get", &json!({}), cookies)
 }
 
@@ -302,11 +304,7 @@ pub fn decode_personalized_playlists_response(
 pub fn build_recommend_resource_request(
     cookies: &SessionCookies,
 ) -> Result<RequestSpec, RequestBuildError> {
-    build_weapi_request(
-        "/v1/discovery/recommend/resource",
-        &json!({}),
-        cookies,
-    )
+    build_weapi_request("/v1/discovery/recommend/resource", &json!({}), cookies)
 }
 
 pub fn decode_recommend_resource_response(
@@ -318,7 +316,9 @@ pub fn decode_recommend_resource_response(
     Ok(envelope.recommend)
 }
 
-pub fn build_daily_songs_request(cookies: &SessionCookies) -> Result<RequestSpec, RequestBuildError> {
+pub fn build_daily_songs_request(
+    cookies: &SessionCookies,
+) -> Result<RequestSpec, RequestBuildError> {
     build_weapi_request("/v3/discovery/recommend/songs", &json!({}), cookies)
 }
 
@@ -344,7 +344,9 @@ pub fn decode_playlist_detail_response(body: &str) -> Result<PlaylistDetail, Api
     let envelope: PlaylistDetailEnvelope =
         serde_json::from_str(body).map_err(|error| ApiDecodeError::Decode(error.to_string()))?;
     ensure_code(envelope.code, envelope.message)?;
-    let playlist = envelope.playlist.ok_or(ApiDecodeError::Missing("playlist"))?;
+    let playlist = envelope
+        .playlist
+        .ok_or(ApiDecodeError::Missing("playlist"))?;
     Ok(PlaylistDetail {
         summary: playlist.summary,
         tracks: playlist.tracks,
@@ -359,10 +361,13 @@ mod tests {
     fn qr_contract_matches_upstream_codes() {
         let key = decode_qr_key_response(r#"{"code":200,"unikey":"abc"}"#).expect("key");
         assert_eq!(key, "abc");
-        assert_eq!(qr_login_url(&key), "https://music.163.com/login?codekey=abc");
+        assert_eq!(
+            qr_login_url(&key),
+            "https://music.163.com/login?codekey=abc"
+        );
 
-        let scanned = decode_qr_check_response(r#"{"code":802,"message":"scanned"}"#)
-            .expect("check");
+        let scanned =
+            decode_qr_check_response(r#"{"code":802,"message":"scanned"}"#).expect("check");
         assert_eq!(scanned.state, QrLoginState::Scanned);
     }
 
