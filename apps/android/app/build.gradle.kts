@@ -51,7 +51,9 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.0")
+    // 1.19 requires compileSdk 37; stay on the latest API-36-compatible core line
+    // until Android 17 becomes a public stable SDK.
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.activity:activity-compose:1.13.0")
 
     // Compose 1.11 stable line. Keep API 36 until Android 17 / API 37 is stable
