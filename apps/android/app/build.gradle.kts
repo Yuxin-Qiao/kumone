@@ -21,6 +21,7 @@ val hasReleaseSigning = listOf(
 android {
     namespace = "dev.yuxinqiao.kumone"
     compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "dev.yuxinqiao.kumone"
