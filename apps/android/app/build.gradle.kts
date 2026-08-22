@@ -64,6 +64,13 @@ android {
         }
     }
 
+    sourceSets {
+        getByName("main") {
+            java.srcDir(layout.buildDirectory.dir("generated/uniffi/kotlin"))
+            jniLibs.srcDir(layout.buildDirectory.dir("generated/uniffi/jniLibs"))
+        }
+    }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -93,6 +100,11 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+
+    // UniFFI 0.32 Kotlin bindings use JNA. Keep the FFI dependency isolated to
+    // Android; the shared Rust core remains independent of JNA and coroutines.
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
 }
