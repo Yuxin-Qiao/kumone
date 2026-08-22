@@ -6,9 +6,16 @@
 
 use std::collections::HashMap;
 
-use kumone_core::netease::{
-    EapiContext, RequestBuildError, RequestSpec, SessionCookies,
-    build_eapi_request as core_build_eapi_request, build_weapi_request as core_build_weapi_request,
+use kumone_core::{
+    netease::{
+        EapiContext, RequestBuildError, RequestSpec, SessionCookies,
+        build_eapi_request as core_build_eapi_request,
+        build_weapi_request as core_build_weapi_request,
+    },
+    search::{
+        SearchTrack, build_song_search_request as core_build_song_search_request,
+        decode_song_search_response as core_decode_song_search_response,
+    },
 };
 use serde_json::Value;
 
@@ -50,6 +57,50 @@ impl FfiRequestResult {
     fn failure(error: impl ToString) -> Self {
         Self {
             request: None,
+            error: Some(error.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiSearchTrack {
+    pub id: i64,
+    pub name: String,
+    pub artist_names: String,
+    pub album_name: String,
+    pub album_pic_url: Option<String>,
+    pub duration_ms: i64,
+    pub subtitle: Option<String>,
+}
+
+impl From<SearchTrack> for FfiSearchTrack {
+    fn from(value: SearchTrack) -> Self {
+        let artist_names = value.artist_names();
+        let subtitle = value.subtitle().map(str::to_owned);
+        Self {
+            id: value.id,
+            name: value.name,
+            artist_names,
+            album_name: value.album.name,
+            album_pic_url: value.album.pic_url,
+            duration_ms: value.duration_ms,
+            subtitle,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiSongSearchResult {
+    pub songs: Vec<FfiSearchTrack>,
+    pub total: i64,
+    pub error: Option<String>,
+}
+
+impl FfiSongSearchResult {
+    fn failure(error: impl ToString) -> Self {
+        Self {
+            songs: Vec::new(),
+            total: 0,
             error: Some(error.to_string()),
         }
     }
@@ -111,6 +162,37 @@ pub fn build_eapi_request(
 }
 
 #[uniffi::export]
+pub fn build_song_search_request(
+    keywords: String,
+    limit: i64,
+    offset: i64,
+    cookies: HashMap<String, String>,
+    request_id: String,
+    build_version: String,
+) -> FfiRequestResult {
+    let context = EapiContext::new(request_id, build_version);
+    request_result(core_build_song_search_request(
+        &keywords,
+        limit,
+        offset,
+        &session_cookies(cookies),
+        &context,
+    ))
+}
+
+#[uniffi::export]
+pub fn decode_song_search_response(body: String) -> FfiSongSearchResult {
+    match core_decode_song_search_response(&body) {
+        Ok(result) => FfiSongSearchResult {
+            songs: result.songs.into_iter().map(Into::into).collect(),
+            total: result.total,
+            error: None,
+        },
+        Err(error) => FfiSongSearchResult::failure(error),
+    }
+}
+
+#[uniffi::export]
 pub fn ingest_cookie_string(
     cookies: HashMap<String, String>,
     raw: String,
@@ -166,6 +248,33 @@ mod tests {
                 .as_deref()
                 .is_some_and(|error| error.contains("invalid JSON"))
         );
+    }
+
+    #[test]
+    fn ffi_search_exposes_ui_stable_track_fields() {
+        let result = decode_song_search_response(
+            r#"{
+                "code": 200,
+                "result": {
+                    "songCount": 1,
+                    "songs": [{
+                        "id": 42,
+                        "name": "Kumone",
+                        "ar": [{"id": 1, "name": "Artist"}],
+                        "al": {"id": 2, "name": "Album", "picUrl": "https://img"},
+                        "dt": 123000,
+                        "tns": ["Translation"]
+                    }]
+                }
+            }"#
+            .to_owned(),
+        );
+
+        assert!(result.error.is_none());
+        assert_eq!(result.total, 1);
+        assert_eq!(result.songs[0].id, 42);
+        assert_eq!(result.songs[0].artist_names, "Artist");
+        assert_eq!(result.songs[0].subtitle.as_deref(), Some("Translation"));
     }
 
     #[test]
