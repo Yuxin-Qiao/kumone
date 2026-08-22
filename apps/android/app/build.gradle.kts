@@ -67,8 +67,11 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDir(layout.buildDirectory.dir("generated/uniffi/kotlin"))
-            jniLibs.srcDir(layout.buildDirectory.dir("generated/uniffi/jniLibs"))
+            // CI generates these directories before Gradle starts. Treat them as
+            // static inputs here rather than passing Provider<Directory> into
+            // the legacy SourceSet API, which AGP 9.3 deliberately rejects.
+            java.srcDir(file("build/generated/uniffi/kotlin"))
+            jniLibs.srcDir(file("build/generated/uniffi/jniLibs"))
         }
     }
 
