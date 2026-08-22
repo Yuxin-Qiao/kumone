@@ -80,8 +80,12 @@ impl SessionCookies {
     #[must_use]
     pub fn header_with_defaults(&self) -> String {
         let mut values = self.values.clone();
-        values.entry("appver".to_owned()).or_insert_with(|| "3.1.17".to_owned());
-        values.entry("os".to_owned()).or_insert_with(|| "pc".to_owned());
+        values
+            .entry("appver".to_owned())
+            .or_insert_with(|| "3.1.17".to_owned());
+        values
+            .entry("os".to_owned())
+            .or_insert_with(|| "pc".to_owned());
         values
             .into_iter()
             .map(|(name, value)| format!("{name}={value}"))
@@ -181,13 +185,25 @@ pub fn build_eapi_request(
     let mut header = Map::new();
     header.insert("os".to_owned(), Value::String("pc".to_owned()));
     header.insert("appver".to_owned(), Value::String("3.1.17".to_owned()));
-    header.insert("osver".to_owned(), Value::String(context.os_version.clone()));
+    header.insert(
+        "osver".to_owned(),
+        Value::String(context.os_version.clone()),
+    );
     header.insert("deviceId".to_owned(), Value::String("kumone".to_owned()));
-    header.insert("requestId".to_owned(), Value::String(context.request_id.clone()));
+    header.insert(
+        "requestId".to_owned(),
+        Value::String(context.request_id.clone()),
+    );
     header.insert("clientSign".to_owned(), Value::String(String::new()));
     header.insert("versioncode".to_owned(), Value::String("140".to_owned()));
-    header.insert("buildver".to_owned(), Value::String(context.build_version.clone()));
-    header.insert("resolution".to_owned(), Value::String(context.resolution.clone()));
+    header.insert(
+        "buildver".to_owned(),
+        Value::String(context.build_version.clone()),
+    );
+    header.insert(
+        "resolution".to_owned(),
+        Value::String(context.resolution.clone()),
+    );
     header.insert("channel".to_owned(), Value::String(String::new()));
     if let Some(value) = cookies.cookie("MUSIC_U") {
         header.insert("MUSIC_U".to_owned(), Value::String(value.to_owned()));
@@ -272,7 +288,10 @@ mod tests {
             request.url,
             "https://music.163.com/weapi/search/get?csrf_token=csrf-token"
         );
-        assert_eq!(request.headers.get("Referer").map(String::as_str), Some(REFERER));
+        assert_eq!(
+            request.headers.get("Referer").map(String::as_str),
+            Some(REFERER)
+        );
         assert!(request.body.starts_with("params="));
         assert!(request.body.contains("&encSecKey="));
         assert!(!request.body.contains('+'));
@@ -310,6 +329,9 @@ mod tests {
     fn request_builder_rejects_non_object_payloads() {
         let cookies = SessionCookies::default();
         let result = build_weapi_request("/x", &json!([1, 2, 3]), &cookies);
-        assert!(matches!(result, Err(RequestBuildError::PayloadMustBeObject)));
+        assert!(matches!(
+            result,
+            Err(RequestBuildError::PayloadMustBeObject)
+        ));
     }
 }
