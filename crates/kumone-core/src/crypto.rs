@@ -5,9 +5,9 @@
 //! compatibility gates: changing any byte is a downstream protocol break.
 
 use aes::Aes128;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use cbc::Encryptor as CbcEncryptor;
-use cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyInit, KeyIvInit};
+use cipher::{BlockEncryptMut, KeyInit, KeyIvInit, block_padding::Pkcs7};
 use ecb::Encryptor as EcbEncryptor;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -54,9 +54,7 @@ pub fn eapi(api_path: &str, json_text: &str) -> EapiForm {
     let digest_input = format!("nobody{api_path}use{json_text}md5forencrypt");
     let digest = Md5::digest(digest_input.as_bytes());
     let digest_hex = hex::encode(digest);
-    let message = format!(
-        "{api_path}-36cd479b6b5-{json_text}-36cd479b6b5-{digest_hex}"
-    );
+    let message = format!("{api_path}-36cd479b6b5-{json_text}-36cd479b6b5-{digest_hex}");
     let encrypted = encrypt_ecb(message.as_bytes(), EAPI_KEY);
 
     EapiForm {
