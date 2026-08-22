@@ -7,10 +7,18 @@
 use std::collections::HashMap;
 
 use kumone_core::{
+    lyrics::{
+        LyricLine, build_lyric_request as core_build_lyric_request,
+        decode_lyrics_response as core_decode_lyrics_response,
+    },
     netease::{
         EapiContext, RequestBuildError, RequestSpec, SessionCookies,
         build_eapi_request as core_build_eapi_request,
         build_weapi_request as core_build_weapi_request,
+    },
+    playback::{
+        SongUrlData, build_song_url_request as core_build_song_url_request,
+        first_playable_url as core_first_playable_url,
     },
     search::{
         SearchTrack, build_song_search_request as core_build_song_search_request,
@@ -106,6 +114,91 @@ impl FfiSongSearchResult {
     }
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPlaybackData {
+    pub id: i64,
+    pub url: String,
+    pub bitrate: i64,
+    pub size_bytes: i64,
+    pub format: Option<String>,
+    pub level: Option<String>,
+    pub fee: i64,
+    pub duration_ms: i64,
+}
+
+impl TryFrom<SongUrlData> for FfiPlaybackData {
+    type Error = &'static str;
+
+    fn try_from(value: SongUrlData) -> Result<Self, Self::Error> {
+        let url = value.url.filter(|url| !url.is_empty()).ok_or("missing playback URL")?;
+        Ok(Self {
+            id: value.id,
+            url,
+            bitrate: value.br,
+            size_bytes: value.size,
+            format: value.format,
+            level: value.level,
+            fee: value.fee,
+            duration_ms: value.time,
+        })
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPlaybackResult {
+    pub data: Option<FfiPlaybackData>,
+    pub error: Option<String>,
+}
+
+impl FfiPlaybackResult {
+    fn failure(error: impl ToString) -> Self {
+        Self {
+            data: None,
+            error: Some(error.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLyricLine {
+    pub time_ms: i64,
+    pub text: String,
+    pub translation: Option<String>,
+    pub romaji: Option<String>,
+}
+
+impl From<LyricLine> for FfiLyricLine {
+    fn from(value: LyricLine) -> Self {
+        Self {
+            time_ms: i64::try_from(value.time_ms).unwrap_or(i64::MAX),
+            text: value.text,
+            translation: value.translation,
+            romaji: value.romaji,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLyricsResult {
+    pub lines: Vec<FfiLyricLine>,
+    pub is_instrumental: bool,
+    pub contributor: Option<String>,
+    pub translation_contributor: Option<String>,
+    pub error: Option<String>,
+}
+
+impl FfiLyricsResult {
+    fn failure(error: impl ToString) -> Self {
+        Self {
+            lines: Vec::new(),
+            is_instrumental: false,
+            contributor: None,
+            translation_contributor: None,
+            error: Some(error.to_string()),
+        }
+    }
+}
+
 fn session_cookies(values: HashMap<String, String>) -> SessionCookies {
     let mut cookies = SessionCookies::default();
     cookies.extend(values);
@@ -193,6 +286,62 @@ pub fn decode_song_search_response(body: String) -> FfiSongSearchResult {
 }
 
 #[uniffi::export]
+pub fn build_song_url_request(
+    track_id: i64,
+    level: String,
+    cookies: HashMap<String, String>,
+    request_id: String,
+    build_version: String,
+) -> FfiRequestResult {
+    let context = EapiContext::new(request_id, build_version);
+    request_result(core_build_song_url_request(
+        &[track_id],
+        &level,
+        &session_cookies(cookies),
+        &context,
+    ))
+}
+
+#[uniffi::export]
+pub fn decode_song_url_response(body: String, track_id: i64) -> FfiPlaybackResult {
+    match core_first_playable_url(&body, track_id) {
+        Ok(data) => match FfiPlaybackData::try_from(data) {
+            Ok(data) => FfiPlaybackResult {
+                data: Some(data),
+                error: None,
+            },
+            Err(error) => FfiPlaybackResult::failure(error),
+        },
+        Err(error) => FfiPlaybackResult::failure(error),
+    }
+}
+
+#[uniffi::export]
+pub fn build_lyric_request(
+    track_id: i64,
+    cookies: HashMap<String, String>,
+) -> FfiRequestResult {
+    request_result(core_build_lyric_request(
+        track_id,
+        &session_cookies(cookies),
+    ))
+}
+
+#[uniffi::export]
+pub fn decode_lyrics_response(body: String) -> FfiLyricsResult {
+    match core_decode_lyrics_response(&body) {
+        Ok(result) => FfiLyricsResult {
+            lines: result.lines.into_iter().map(Into::into).collect(),
+            is_instrumental: result.is_instrumental,
+            contributor: result.contributor,
+            translation_contributor: result.translation_contributor,
+            error: None,
+        },
+        Err(error) => FfiLyricsResult::failure(error),
+    }
+}
+
+#[uniffi::export]
 pub fn ingest_cookie_string(
     cookies: HashMap<String, String>,
     raw: String,
@@ -275,6 +424,28 @@ mod tests {
         assert_eq!(result.songs[0].id, 42);
         assert_eq!(result.songs[0].artist_names, "Artist");
         assert_eq!(result.songs[0].subtitle.as_deref(), Some("Translation"));
+    }
+
+    #[test]
+    fn ffi_playback_exposes_resolved_url() {
+        let result = decode_song_url_response(
+            r#"{"code":200,"data":[{"id":42,"url":"https://audio","br":320000,"size":123,"time":1000}]}"#
+                .to_owned(),
+            42,
+        );
+        assert!(result.error.is_none());
+        assert_eq!(result.data.expect("data").url, "https://audio");
+    }
+
+    #[test]
+    fn ffi_lyrics_exposes_parsed_lines() {
+        let result = decode_lyrics_response(
+            r#"{"code":200,"lrc":{"lyric":"[00:01.00]Hello"},"tlyric":{"lyric":"[00:01.00]你好"}}"#
+                .to_owned(),
+        );
+        assert!(result.error.is_none());
+        assert_eq!(result.lines[0].time_ms, 1000);
+        assert_eq!(result.lines[0].translation.as_deref(), Some("你好"));
     }
 
     #[test]
