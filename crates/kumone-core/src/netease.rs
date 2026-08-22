@@ -78,6 +78,11 @@ impl SessionCookies {
     }
 
     #[must_use]
+    pub fn into_values(self) -> BTreeMap<String, String> {
+        self.values
+    }
+
+    #[must_use]
     pub fn header_with_defaults(&self) -> String {
         let mut values = self.values.clone();
         values
@@ -248,17 +253,19 @@ mod tests {
     fn qr_cookie_ingestion_matches_upstream_semantics() {
         let mut cookies = SessionCookies::default();
         let count = cookies.ingest_cookie_string(
-            "MUSIC_U=music-token; Path=/;; __csrf=csrf-token; Secure;; empty=;; malformed",
+            "MUSIC_U=music-token; Path=/;; __csrf=csrf-token; Secure;; NMTID=device-cookie; HttpOnly;; empty=;; malformed",
         );
 
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
         assert!(cookies.is_logged_in());
         assert_eq!(cookies.cookie("MUSIC_U"), Some("music-token"));
         assert_eq!(cookies.cookie("__csrf"), Some("csrf-token"));
+        assert_eq!(cookies.cookie("NMTID"), Some("device-cookie"));
 
         cookies.clear_auth();
         assert!(!cookies.is_logged_in());
         assert_eq!(cookies.cookie("__csrf"), None);
+        assert_eq!(cookies.cookie("NMTID"), Some("device-cookie"));
     }
 
     #[test]
