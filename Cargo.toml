@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/kumone-core",
+    "crates/kumone-ffi",
 ]
 resolver = "2"
 
