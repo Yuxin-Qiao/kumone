@@ -42,8 +42,8 @@ jobs:
         with:
           cmdline-tools-version: 15859902
 
-      - name: Install Android 17 / API 37 SDK
-        run: sdkmanager --channel=1 "platforms;android-37" "build-tools;36.0.0"
+      - name: Install Android 17 preview compile SDK
+        run: sdkmanager --channel=1 "platforms;android-CinnamonBun" "build-tools;36.0.0"
 
       - name: Setup Gradle 9.5
         uses: gradle/actions/setup-gradle@v4
