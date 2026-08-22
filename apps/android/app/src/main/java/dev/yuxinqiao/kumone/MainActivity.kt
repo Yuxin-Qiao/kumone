@@ -49,13 +49,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import dev.yuxinqiao.kumone.core.FfiLyricLine
+import dev.yuxinqiao.kumone.core.FfiSearchTrack
 import dev.yuxinqiao.kumone.data.LyricsPage
 import dev.yuxinqiao.kumone.data.NeteaseRepository
 import dev.yuxinqiao.kumone.playback.PlaybackService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import uniffi.kumone_ffi.FfiLyricLine
-import uniffi.kumone_ffi.FfiSearchTrack
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
