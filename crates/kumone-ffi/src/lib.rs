@@ -130,7 +130,10 @@ impl TryFrom<SongUrlData> for FfiPlaybackData {
     type Error = &'static str;
 
     fn try_from(value: SongUrlData) -> Result<Self, Self::Error> {
-        let url = value.url.filter(|url| !url.is_empty()).ok_or("missing playback URL")?;
+        let url = value
+            .url
+            .filter(|url| !url.is_empty())
+            .ok_or("missing playback URL")?;
         Ok(Self {
             id: value.id,
             url,
@@ -317,10 +320,7 @@ pub fn decode_song_url_response(body: String, track_id: i64) -> FfiPlaybackResul
 }
 
 #[uniffi::export]
-pub fn build_lyric_request(
-    track_id: i64,
-    cookies: HashMap<String, String>,
-) -> FfiRequestResult {
+pub fn build_lyric_request(track_id: i64, cookies: HashMap<String, String>) -> FfiRequestResult {
     request_result(core_build_lyric_request(
         track_id,
         &session_cookies(cookies),

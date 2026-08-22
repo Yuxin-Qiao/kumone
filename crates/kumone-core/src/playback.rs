@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 
-use crate::netease::{EapiContext, RequestBuildError, RequestSpec, SessionCookies, build_eapi_request};
+use crate::netease::{
+    EapiContext, RequestBuildError, RequestSpec, SessionCookies, build_eapi_request,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,12 +70,7 @@ pub fn build_song_url_request(
     if level == "sky" {
         payload["immerseType"] = json!("c51");
     }
-    build_eapi_request(
-        "/song/enhance/player/url/v1",
-        &payload,
-        cookies,
-        context,
-    )
+    build_eapi_request("/song/enhance/player/url/v1", &payload, cookies, context)
 }
 
 pub fn decode_song_url_response(body: &str) -> Result<Vec<SongUrlData>, PlaybackDecodeError> {
@@ -128,11 +125,8 @@ mod tests {
 
     #[test]
     fn missing_url_is_explicit_error() {
-        let error = first_playable_url(
-            r#"{"code":200,"data":[{"id":42,"url":null}]}"#,
-            42,
-        )
-        .expect_err("unplayable");
+        let error = first_playable_url(r#"{"code":200,"data":[{"id":42,"url":null}]}"#, 42)
+            .expect_err("unplayable");
         assert_eq!(error, PlaybackDecodeError::NoPlayableUrl(42));
     }
 }

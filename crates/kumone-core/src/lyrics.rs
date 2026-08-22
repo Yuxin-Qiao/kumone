@@ -27,7 +27,9 @@ pub struct ParsedLyrics {
 impl ParsedLyrics {
     #[must_use]
     pub fn active_index(&self, time_ms: u64) -> Option<usize> {
-        self.lines.partition_point(|line| line.time_ms <= time_ms).checked_sub(1)
+        self.lines
+            .partition_point(|line| line.time_ms <= time_ms)
+            .checked_sub(1)
     }
 }
 
@@ -78,8 +80,8 @@ pub fn build_lyric_request(
 }
 
 pub fn decode_lyrics_response(body: &str) -> Result<ParsedLyrics, LyricsDecodeError> {
-    let response: LyricResponse = serde_json::from_str(body)
-        .map_err(|error| LyricsDecodeError::Decode(error.to_string()))?;
+    let response: LyricResponse =
+        serde_json::from_str(body).map_err(|error| LyricsDecodeError::Decode(error.to_string()))?;
     if response.code != 200 {
         return Err(LyricsDecodeError::Business {
             code: response.code,
@@ -93,18 +95,23 @@ pub fn decode_lyrics_response(body: &str) -> Result<ParsedLyrics, LyricsDecodeEr
         ..ParsedLyrics::default()
     };
 
-    let raw = response.lrc.and_then(|value| value.lyric).unwrap_or_default();
+    let raw = response
+        .lrc
+        .and_then(|value| value.lyric)
+        .unwrap_or_default();
     if raw.is_empty() {
         return Ok(output);
     }
 
     let mut main = parse_lrc(&raw);
     const INSTRUMENTAL_MARKER: &str = "纯音乐，请欣赏";
-    if main.len() <= 10 && main.iter().any(|(_, text)| text.contains(INSTRUMENTAL_MARKER)) {
+    if main.len() <= 10
+        && main
+            .iter()
+            .any(|(_, text)| text.contains(INSTRUMENTAL_MARKER))
+    {
         output.is_instrumental = true;
-        main.retain(|(_, text)| {
-            !text.contains(INSTRUMENTAL_MARKER) && !is_writer_credit(text)
-        });
+        main.retain(|(_, text)| !text.contains(INSTRUMENTAL_MARKER) && !is_writer_credit(text));
         if main.is_empty() {
             return Ok(output);
         }
@@ -176,7 +183,9 @@ fn parse_timestamp(tag: &str) -> Option<u64> {
     let (seconds, fraction) = remainder
         .split_once('.')
         .or_else(|| remainder.split_once(':'))
-        .map_or((remainder, None), |(seconds, fraction)| (seconds, Some(fraction)));
+        .map_or((remainder, None), |(seconds, fraction)| {
+            (seconds, Some(fraction))
+        });
     let seconds = seconds.parse::<u64>().ok()?;
     let fraction_ms = fraction.map_or(0, |digits| {
         let value = digits.parse::<u64>().unwrap_or(0);
@@ -221,7 +230,10 @@ fn is_writer_credit(text: &str) -> bool {
 
 fn is_empty_writer_credit(text: &str) -> bool {
     let compact = text.trim().replace(' ', "");
-    matches!(compact.as_str(), "作词:无" | "作词：无" | "作曲:无" | "作曲：无")
+    matches!(
+        compact.as_str(),
+        "作词:无" | "作词：无" | "作曲:无" | "作曲：无"
+    )
 }
 
 #[cfg(test)]
@@ -255,10 +267,9 @@ mod tests {
 
     #[test]
     fn instrumental_marker_is_preserved_as_state_not_visible_line() {
-        let parsed = decode_lyrics_response(
-            r#"{"code":200,"lrc":{"lyric":"[00:00.00]纯音乐，请欣赏"}}"#,
-        )
-        .expect("lyrics");
+        let parsed =
+            decode_lyrics_response(r#"{"code":200,"lrc":{"lyric":"[00:00.00]纯音乐，请欣赏"}}"#)
+                .expect("lyrics");
         assert!(parsed.is_instrumental);
         assert!(parsed.lines.is_empty());
     }
@@ -266,7 +277,11 @@ mod tests {
     #[test]
     fn lyric_request_matches_upstream_contract() {
         let request = build_lyric_request(42, &SessionCookies::default()).expect("request");
-        assert!(request.url.starts_with("https://music.163.com/weapi/song/lyric"));
+        assert!(
+            request
+                .url
+                .starts_with("https://music.163.com/weapi/song/lyric")
+        );
         assert!(request.body.starts_with("params="));
     }
 }
