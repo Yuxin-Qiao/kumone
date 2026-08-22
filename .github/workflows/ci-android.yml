@@ -65,3 +65,11 @@ jobs:
 
       - name: Build Android debug APK
         run: gradle -p apps/android :app:assembleDebug
+
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumone-android-debug
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
