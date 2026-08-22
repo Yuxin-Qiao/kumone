@@ -60,6 +60,20 @@ jobs:
       - name: Build optimized Windows executable
         run: cargo build --release --manifest-path apps/windows/src-tauri/Cargo.toml
 
+      - name: Enforce Windows binary size budget
+        shell: pwsh
+        run: |
+          $path = "apps/windows/src-tauri/target/release/kumone-windows.exe"
+          if (-not (Test-Path $path)) { throw "Missing optimized Windows executable: $path" }
+          $bytes = (Get-Item $path).Length
+          $mib = [math]::Round($bytes / 1MB, 2)
+          "### Windows size guard" >> $env:GITHUB_STEP_SUMMARY
+          "- Optimized EXE: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Hard budget: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          if ($bytes -gt 10MB) {
+            throw "Windows optimized executable is $mib MiB, above the 10 MiB hard budget"
+          }
+
       - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
