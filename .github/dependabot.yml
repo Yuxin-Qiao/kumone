@@ -1,15 +1,29 @@
 version: 2
 updates:
-  # Maintain GitHub Actions dependencies
+  # Maintain GitHub Actions dependencies.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Maintain the new shared Rust core during migration.
+  # Maintain the shared Rust core workspace.
   - package-ecosystem: "cargo"
     directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # The Tauri crate is intentionally isolated from the root Cargo workspace.
+  - package-ecosystem: "cargo"
+    directory: "/apps/windows/src-tauri"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Maintain the native Android application.
+  - package-ecosystem: "gradle"
+    directory: "/apps/android"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
