@@ -1,21 +1,21 @@
 package dev.yuxinqiao.kumone.data
 
 import android.content.Context
+import dev.yuxinqiao.kumone.core.FfiLyricLine
+import dev.yuxinqiao.kumone.core.FfiPlaybackData
+import dev.yuxinqiao.kumone.core.FfiRequestSpec
+import dev.yuxinqiao.kumone.core.FfiSearchTrack
+import dev.yuxinqiao.kumone.core.buildLyricRequest
+import dev.yuxinqiao.kumone.core.buildSongSearchRequest
+import dev.yuxinqiao.kumone.core.buildSongUrlRequest
+import dev.yuxinqiao.kumone.core.decodeLyricsResponse
+import dev.yuxinqiao.kumone.core.decodeSongSearchResponse
+import dev.yuxinqiao.kumone.core.decodeSongUrlResponse
+import dev.yuxinqiao.kumone.core.ingestCookieString
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import uniffi.kumone_ffi.FfiLyricLine
-import uniffi.kumone_ffi.FfiPlaybackData
-import uniffi.kumone_ffi.FfiRequestSpec
-import uniffi.kumone_ffi.FfiSearchTrack
-import uniffi.kumone_ffi.buildLyricRequest
-import uniffi.kumone_ffi.buildSongSearchRequest
-import uniffi.kumone_ffi.buildSongUrlRequest
-import uniffi.kumone_ffi.decodeLyricsResponse
-import uniffi.kumone_ffi.decodeSongSearchResponse
-import uniffi.kumone_ffi.decodeSongUrlResponse
-import uniffi.kumone_ffi.ingestCookieString
 
 /**
  * Thin Android transport around the shared Rust protocol core.
