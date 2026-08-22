@@ -1,0 +1,278 @@
+name: Downstream Windows + Android Release
+
+on:
+  push:
+    tags:
+      - "downstream-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Downstream version (for example 0.3.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Publish as a prerelease"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: downstream-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build Windows NSIS release
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+
+      - name: Derive release version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}".Trim()
+          } else {
+            $version = "${{ github.ref_name }}" -replace '^downstream-v', ''
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "A downstream version is required"
+          }
+          $tag = "downstream-v$version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+          $configPath = "apps/windows/src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.version = $version
+          $config | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding utf8
+
+      - name: Verify shared core and web behavior
+        shell: pwsh
+        run: |
+          cargo test --workspace --all-targets
+          npm test --prefix web
+
+      - name: Build Windows installer into draft GitHub Release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/windows
+          tagName: downstream-v__VERSION__
+          releaseName: "Kumone downstream v__VERSION__"
+          releaseBody: |
+            Automated Kumone downstream release.
+
+            - Windows: native Rust/Tauri 2 + system WebView2
+            - Android: native Kotlin/Compose + Media3
+            - Shared deterministic protocol logic: Rust kumone-core
+          releaseDraft: true
+          prerelease: true
+          args: --bundles nsis
+
+      - name: Enforce Windows installer size budget
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "apps/windows/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
+          if ($null -eq $installer) { throw "NSIS installer was not produced" }
+          $mib = [math]::Round($installer.Length / 1MB, 2)
+          "### Windows release size" >> $env:GITHUB_STEP_SUMMARY
+          "- NSIS installer: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Hard budget: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          if ($installer.Length -gt 10MB) {
+            throw "Windows NSIS installer is $mib MiB, above the 10 MiB hard budget"
+          }
+
+      - name: Attest Windows installer provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: apps/windows/src-tauri/target/release/bundle/nsis/*.exe
+
+  android:
+    name: Build signed Android APK + AAB
+    runs-on: ubuntu-latest
+    needs: windows
+    env:
+      VERSION: ${{ needs.windows.outputs.version }}
+      TAG: ${{ needs.windows.outputs.tag }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install stable Android SDK and NDK
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Setup Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Android Rust toolchain
+        shell: bash
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Verify shared Rust core and FFI
+        run: cargo test -p kumone-core -p kumone-ffi --all-targets
+
+      - name: Generate Kotlin UniFFI bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p kumone-ffi --release
+          rm -rf apps/android/app/build/generated/uniffi/kotlin
+          mkdir -p apps/android/app/build/generated/uniffi/kotlin
+          cargo run -p uniffi-bindgen -- generate \
+            --library target/release/libkumone_ffi.so \
+            --language kotlin \
+            --out-dir apps/android/app/build/generated/uniffi/kotlin
+
+      - name: Build arm64 Rust library for Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf apps/android/app/build/generated/uniffi/jniLibs
+          cargo ndk -t arm64-v8a \
+            -o apps/android/app/build/generated/uniffi/jniLibs \
+            build -p kumone-ffi --release
+          test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
+
+      - name: Require Android release signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name is required for an installable, update-stable Android release"
+              exit 1
+            fi
+          done
+          KEYSTORE="$RUNNER_TEMP/kumone-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK and AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p apps/android \
+            :app:lintRelease \
+            :app:testReleaseUnitTest \
+            :app:assembleRelease \
+            :app:bundleRelease \
+            -PkumoneVersion="$VERSION" \
+            -PkumoneVersionCode="${{ github.run_number }}"
+
+      - name: Verify Rust core is packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l apps/android/app/build/outputs/apk/release/app-release.apk \
+            | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+
+      - name: Prepare Android release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-android
+          cp apps/android/app/build/outputs/apk/release/app-release.apk \
+            "release-android/Kumone-$VERSION-android.apk"
+          cp apps/android/app/build/outputs/bundle/release/app-release.aab \
+            "release-android/Kumone-$VERSION-android.aab"
+          (cd release-android && sha256sum * > SHA256SUMS)
+          ls -lh release-android
+
+      - name: Enforce Android release size budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="release-android/Kumone-$VERSION-android.apk"
+          BYTES=$(stat -c%s "$APK")
+          MIB=$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+          {
+            echo "### Android release size"
+            echo "- APK: **${MIB} MiB**"
+            echo "- Hard budget: **15 MiB**"
+            echo "- Stretch target: **10 MiB**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BYTES" -gt $((15 * 1024 * 1024)) ]; then
+            echo "::error::Android release APK is ${MIB} MiB, above the 15 MiB hard budget"
+            exit 1
+          fi
+          if [ "$BYTES" -gt $((10 * 1024 * 1024)) ]; then
+            echo "::warning::Android release APK is ${MIB} MiB; above the 10 MiB stretch target"
+          fi
+
+      - name: Attest Android APK and AAB provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            release-android/*.apk
+            release-android/*.aab
+
+      - name: Upload Android assets to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "$TAG" release-android/* --clobber
+
+      - name: Finalize GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            PRERELEASE="${{ inputs.prerelease }}"
+          else
+            PRERELEASE="false"
+          fi
+          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false \
+            -F prerelease="$PRERELEASE" >/dev/null
+          echo "Published $TAG (prerelease=$PRERELEASE)" >> "$GITHUB_STEP_SUMMARY"

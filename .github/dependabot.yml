@@ -1,20 +1,41 @@
 version: 2
 updates:
-  # Maintain GitHub Actions dependencies
+  # Maintain GitHub Actions dependencies.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Maintain Windows / Linux Electron dependencies
+  # Maintain the shared Rust core workspace.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # The Tauri crate is intentionally isolated from the root Cargo workspace.
+  - package-ecosystem: "cargo"
+    directory: "/apps/windows/src-tauri"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Maintain the native Android application.
+  - package-ecosystem: "gradle"
+    directory: "/apps/android"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Maintain the legacy Windows / Linux Electron dependencies until Tauri replaces them.
   - package-ecosystem: "npm"
     directory: "/windows"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Maintain Web player dependencies
+  # Maintain Web player dependencies.
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
