@@ -62,7 +62,11 @@ pub fn score_candidate(target: &MatchTarget, candidate: &UnblockCandidate) -> Ma
         token_overlap(&target_title, &candidate_title) * 50
     };
 
-    let target_artists: Vec<String> = target.artists.iter().map(|value| normalize(value)).collect();
+    let target_artists: Vec<String> = target
+        .artists
+        .iter()
+        .map(|value| normalize(value))
+        .collect();
     let candidate_artists: Vec<String> = candidate
         .artists
         .iter()
@@ -70,9 +74,9 @@ pub fn score_candidate(target: &MatchTarget, candidate: &UnblockCandidate) -> Ma
         .collect();
     if target_artists.iter().any(|artist| {
         !artist.is_empty()
-            && candidate_artists.iter().any(|other| {
-                artist == other || artist.contains(other) || other.contains(artist)
-            })
+            && candidate_artists
+                .iter()
+                .any(|other| artist == other || artist.contains(other) || other.contains(artist))
     }) {
         score += 35;
     }
@@ -119,8 +123,16 @@ fn token_overlap(left: &str, right: &str) -> i32 {
     if left.is_empty() || right.is_empty() {
         return 0;
     }
-    let shorter = if left.len() <= right.len() { left } else { right };
-    let longer = if left.len() <= right.len() { right } else { left };
+    let shorter = if left.len() <= right.len() {
+        left
+    } else {
+        right
+    };
+    let longer = if left.len() <= right.len() {
+        right
+    } else {
+        left
+    };
     let common = shorter.chars().filter(|ch| longer.contains(*ch)).count();
     ((common * 100) / shorter.chars().count().max(1)) as i32 / 100
 }
@@ -159,7 +171,10 @@ mod tests {
                 bitrate: Some(320_000),
             },
         ];
-        assert_eq!(best_candidate(&target(), &candidates).map(|item| item.id.as_str()), Some("good"));
+        assert_eq!(
+            best_candidate(&target(), &candidates).map(|item| item.id.as_str()),
+            Some("good")
+        );
     }
 
     #[test]
