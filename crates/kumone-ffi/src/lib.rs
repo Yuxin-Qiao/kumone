@@ -172,13 +172,20 @@ mod tests {
     fn ffi_cookie_helpers_preserve_complete_cookie_jar() {
         let cookies = ingest_cookie_string(
             HashMap::new(),
-            "MUSIC_U=token; Path=/;; __csrf=csrf; Secure;; NMTID=device-cookie; HttpOnly".to_owned(),
+            "MUSIC_U=token; Path=/;; __csrf=csrf; Secure;; NMTID=device-cookie; HttpOnly"
+                .to_owned(),
         );
         assert!(is_logged_in(cookies.clone()));
-        assert_eq!(cookies.get("NMTID").map(String::as_str), Some("device-cookie"));
+        assert_eq!(
+            cookies.get("NMTID").map(String::as_str),
+            Some("device-cookie")
+        );
 
         let cleared = clear_auth_cookies(cookies);
         assert!(!is_logged_in(cleared.clone()));
-        assert_eq!(cleared.get("NMTID").map(String::as_str), Some("device-cookie"));
+        assert_eq!(
+            cleared.get("NMTID").map(String::as_str),
+            Some("device-cookie")
+        );
     }
 }
