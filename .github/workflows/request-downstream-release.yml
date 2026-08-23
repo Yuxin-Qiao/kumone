@@ -9,7 +9,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   dispatch:
@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Resolve release request
         id: request
@@ -55,6 +58,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dispatch downstream release
+        id: dispatch
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REF: ${{ steps.request.outputs.source_ref }}
@@ -63,10 +67,53 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          DISPATCHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           gh workflow run release-downstream.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f source_ref="$SOURCE_REF" \
             -f version="$VERSION" \
             -f prerelease="$PRERELEASE"
-          echo "Dispatched downstream-v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+          RUN_JSON=""
+          for _ in $(seq 1 12); do
+            RUN_JSON=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow release-downstream.yml \
+              --event workflow_dispatch \
+              --limit 10 \
+              --json databaseId,createdAt,status,conclusion,url,headSha \
+              --jq '[.[] | select(.createdAt >= "'"$DISPATCHED_AT"'")] | sort_by(.createdAt) | reverse | .[0] // empty')
+            if [[ -n "$RUN_JSON" && "$RUN_JSON" != "null" ]]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ -z "$RUN_JSON" || "$RUN_JSON" == "null" ]]; then
+            echo "::error::Release was dispatched but its workflow run could not be resolved"
+            exit 1
+          fi
+
+          mkdir -p .github/release-status
+          printf '%s\n' "$RUN_JSON" | jq \
+            --arg version "$VERSION" \
+            --arg source_ref "$SOURCE_REF" \
+            '. + {version:$version,source_ref:$source_ref}' \
+            > .github/release-status/active.json
+          RUN_ID=$(jq -r '.databaseId' .github/release-status/active.json)
+          RUN_URL=$(jq -r '.url' .github/release-status/active.json)
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "url=$RUN_URL" >> "$GITHUB_OUTPUT"
+          echo "Dispatched downstream-v$VERSION: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Persist active release run
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/release-status/active.json
+          git commit -m "ci(status): record active downstream release #${{ steps.dispatch.outputs.run_id }}"
+          git pull --rebase origin main
+          git push origin HEAD:main
