@@ -12,6 +12,9 @@ use ecb::Encryptor as EcbEncryptor;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
+// These are public NetEase protocol constants, not application credentials or
+// secret key material. In particular, WEAPI_IV is fixed by the wire protocol;
+// randomizing it would make requests incompatible with NetEase and upstream.
 const WEAPI_PRESET_KEY: &[u8; 16] = b"0CoJUm6Qyw8W8jud";
 const WEAPI_IV: &[u8; 16] = b"0102030405060708";
 const WEAPI_SECRET_KEY: &[u8; 16] = b"kumone2026abcDEF";
@@ -35,67 +38,79 @@ pub struct EapiForm {
     pub params: String,
 }
 
-/// Encrypt a UTF-8 JSON payload for a `/weapi/...` endpoint.
-#[must_use]
-pub fn weapi(json_text: &str) -> WeapiForm {
-    let first = encrypt_cbc(json_text.as_bytes(), WEAPI_PRESET_KEY, WEAPI_IV);
-    let first_base64 = BASE64.encode(first);
-    let second = encrypt_cbc(first_base64.as_bytes(), WEAPI_SECRET_KEY, WEAPI_IV);
+pub fn weapi(payload: &str) -> WeapiForm {
+    let first = aes_cbc_encrypt(payload.as_bytes(), WEAPI_PRESET_KEY, WEAPI_IV);
+    let first_b64 = BASE64.encode(first);
+    let second = aes_cbc_encrypt(first_b64.as_bytes(), WEAPI_SECRET_KEY, WEAPI_IV);
 
     WeapiForm {
         params: BASE64.encode(second),
-        enc_sec_key: WEAPI_ENC_SEC_KEY.to_owned(),
+        enc_sec_key: WEAPI_ENC_SEC_KEY.to_string(),
     }
 }
 
-/// Encrypt a UTF-8 JSON payload for an `/eapi/...` endpoint.
-#[must_use]
-pub fn eapi(api_path: &str, json_text: &str) -> EapiForm {
-    let digest_input = format!("nobody{api_path}use{json_text}md5forencrypt");
-    let digest = Md5::digest(digest_input.as_bytes());
-    let digest_hex = hex::encode(digest);
-    let message = format!("{api_path}-36cd479b6b5-{json_text}-36cd479b6b5-{digest_hex}");
-    let encrypted = encrypt_ecb(message.as_bytes(), EAPI_KEY);
+pub fn eapi(path: &str, payload: &str) -> EapiForm {
+    let message = format!("nobody{path}use{payload}md5forencrypt");
+    let digest = hex::encode(Md5::digest(message.as_bytes()));
+    let data = format!("{path}-36cd479b6b5-{payload}-36cd479b6b5-{digest}");
+    let encrypted = aes_ecb_encrypt(data.as_bytes(), EAPI_KEY);
 
     EapiForm {
         params: hex::encode_upper(encrypted),
     }
 }
 
-fn encrypt_cbc(data: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
-    CbcEncryptor::<Aes128>::new_from_slices(key, iv)
-        .expect("AES-128 key and IV constants must remain 16 bytes")
-        .encrypt_padded_vec_mut::<Pkcs7>(data)
+fn aes_cbc_encrypt(input: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
+    let mut buffer = vec![0u8; input.len() + 16];
+    buffer[..input.len()].copy_from_slice(input);
+    CbcEncryptor::<Aes128>::new(key.into(), iv.into())
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, input.len())
+        .expect("AES CBC buffer is sized for PKCS#7 padding")
+        .to_vec()
 }
 
-fn encrypt_ecb(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
-    EcbEncryptor::<Aes128>::new_from_slice(key)
-        .expect("AES-128 key constant must remain 16 bytes")
-        .encrypt_padded_vec_mut::<Pkcs7>(data)
+fn aes_ecb_encrypt(input: &[u8], key: &[u8; 16]) -> Vec<u8> {
+    let mut buffer = vec![0u8; input.len() + 16];
+    buffer[..input.len()].copy_from_slice(input);
+    EcbEncryptor::<Aes128>::new(key.into())
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, input.len())
+        .expect("AES ECB buffer is sized for PKCS#7 padding")
+        .to_vec()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    const SAMPLE_JSON: &str = r#"{"ids":"[347230]","level":"standard"}"#;
+    use super::{eapi, weapi};
 
     #[test]
     fn weapi_matches_existing_swift_and_node_vector() {
-        let result = weapi(SAMPLE_JSON);
+        let form = weapi(r#"{"s":"hello","type":1,"limit":30,"offset":0}"#);
+
         assert_eq!(
-            result.params,
-            "isn5IRF2EcZHMA6I0M7V8NMu9NZhOwdwrGUA/akbGLbhLsijcD3FnYcErglcKFR4RI9arrEFmJfbrKVjqlVYtTTfArhs4lmexwaoxGLooR4="
+            form.params,
+            "2JfcHa/FiktsfKnTJCNM5m2wPYR7n+G3H7XO0wF3jIlbSNJm3AXRE2bmS5xQj8VdcU0mB9EiO8i58rAfvSAnNg=="
         );
-        assert_eq!(result.enc_sec_key, WEAPI_ENC_SEC_KEY);
+        assert_eq!(
+            form.enc_sec_key,
+            concat!(
+                "38cef2efdbcc1cfd6a44d81620dae5d23091f50ef27e01a1b1bb7e998e0fde2d",
+                "7ab6002a9e79a3c195f661cbde80e21e6245997b11b54d28407115822f95d447",
+                "7cc06b5a77de46fab6568410abf1229abef81b4c8588f386149010d190bb0b04",
+                "f064be330bd877a4d4b99514febbdb4335b10744b13d9f7ee24d314d6e62cdc9"
+            )
+        );
     }
 
     #[test]
     fn eapi_matches_existing_swift_and_node_vector() {
-        let result = eapi("/api/song/enhance/player/url/v1", SAMPLE_JSON);
+        let form = eapi(
+            "/api/song/enhance/player/url/v1",
+            r#"{"ids":"[347230]","level":"exhigh","encodeType":"flac"}"#,
+        );
+
         assert_eq!(
-            result.params,
-            "FA90B329E9614F79E79598F37DC2EDB487F00D1BC4C9B24CD57E6C318B9073569338432CD7D98D1A3626E997A2C53121C461EE0E88D3D1BF3F42E78643807A29B83D00D24CECA2C01F229A64E4D80CBB5EEF4A69DCB79E93C1D2301D38DAC26511D81BB3F926495784500B9A0C9F7DD47E1396F5D6B610C295193B8A1FCBA1AD"
+            form.params,
+            "779B79A1802E97CED506CE4222082100BCFEA4DDC1B8E7487B7FE17DC99B134784F1828534AE752AF2BFF720DB35C41F8903903FD20F9DD9DC9F30FAE9B4B8E6210BD21762770721A9028461F00B9279052615E518234182166A8D2472BB8D7E4394F1530FA332DFE65FCB0E6C37079151742652623661036622C409E668B3DB488F4F9F8EA3B3BD1E21CB797785129722D166FB50F0753C8646316952774FE7BC4D1A51FC84A1E4689F41BD514AE8B"
         );
     }
 }
