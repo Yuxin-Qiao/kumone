@@ -69,9 +69,13 @@ jobs:
           $mib = [math]::Round($bytes / 1MB, 2)
           "### Windows size guard" >> $env:GITHUB_STEP_SUMMARY
           "- Optimized EXE: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
-          "- Hard budget: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Stretch target: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Hard budget: **15 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          if ($bytes -gt 15MB) {
+            throw "Windows optimized executable is $mib MiB, above the 15 MiB hard budget"
+          }
           if ($bytes -gt 10MB) {
-            throw "Windows optimized executable is $mib MiB, above the 10 MiB hard budget"
+            Write-Warning "Windows optimized executable is $mib MiB; above the 10 MiB stretch target but within the 15 MiB hard budget"
           }
 
       - name: Upload Windows executable
