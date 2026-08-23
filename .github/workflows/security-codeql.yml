@@ -115,7 +115,7 @@ jobs:
 
       - name: Build Kotlin application for CodeQL
         if: matrix.language == 'java-kotlin'
-        run: gradle -p apps/android :app:clean :app:assembleDebug --rerun-tasks --no-build-cache
+        run: gradle -p apps/android :app:assembleDebug --rerun-tasks --no-build-cache
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
