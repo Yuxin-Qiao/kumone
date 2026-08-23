@@ -1,7 +1,7 @@
 {
-  "run_id": 32645675589,
-  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32645675589",
+  "run_id": 32646267765,
+  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32646267765",
   "status": "completed",
-  "conclusion": "failure",
-  "head_sha": "8c18b99a4df61120ee16ce76de76b105ed4612c1"
+  "conclusion": "success",
+  "head_sha": "df29938d84be4ccc4672d7ec6831b45d5abd565f"
 }
