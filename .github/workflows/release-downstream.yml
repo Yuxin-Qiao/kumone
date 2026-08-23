@@ -12,7 +12,7 @@ on:
         type: string
         default: "refactor/rust-core-windows-android"
       version:
-        description: "Downstream version (for example 0.3.0)"
+        description: "Upstream-aligned version (for example 0.2.3)"
         required: true
         type: string
       prerelease:
@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   group: downstream-release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   windows:
@@ -54,21 +54,60 @@ jobs:
             .
             apps/windows/src-tauri
 
-      - name: Derive release version
+      - name: Derive and validate upstream-aligned release version
         id: version
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}".Trim()
+            $requestedVersion = "${{ inputs.version }}".Trim()
           } else {
-            $version = "${{ github.ref_name }}" -replace '^downstream-v', ''
+            $requestedVersion = "${{ github.ref_name }}" -replace '^downstream-v', ''
           }
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw "A downstream version is required"
+          if ([string]::IsNullOrWhiteSpace($requestedVersion)) {
+            throw "A release version is required"
           }
+
+          $sourceChangelog = Get-Content "CHANGELOG.md" -Raw
+          $sourceMatch = [regex]::Match(
+            $sourceChangelog,
+            '(?m)^##\s+([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)\s+-\s+'
+          )
+          if (-not $sourceMatch.Success) {
+            throw "Could not resolve the source version from CHANGELOG.md"
+          }
+          $sourceVersion = $sourceMatch.Groups[1].Value
+
+          $upstreamChangelog = (Invoke-WebRequest -UseBasicParsing \
+            "https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md").Content
+          $upstreamMatch = [regex]::Match(
+            $upstreamChangelog,
+            '(?m)^##\s+([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)\s+-\s+'
+          )
+          if (-not $upstreamMatch.Success) {
+            throw "Could not resolve the latest upstream version"
+          }
+          $upstreamVersion = $upstreamMatch.Groups[1].Value
+
+          "Source version: $sourceVersion"
+          "Upstream version: $upstreamVersion"
+          "Requested version: $requestedVersion"
+
+          if ($sourceVersion -ne $upstreamVersion) {
+            throw "Source ref is version $sourceVersion but upstream latest is $upstreamVersion. Sync upstream before releasing."
+          }
+          if ($requestedVersion -ne $upstreamVersion) {
+            throw "Requested version $requestedVersion does not match upstream latest $upstreamVersion"
+          }
+
+          $version = $upstreamVersion
           $tag = "downstream-v$version"
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
+
+          "### Upstream version gate" >> $env:GITHUB_STEP_SUMMARY
+          "- Source: **$sourceVersion**" >> $env:GITHUB_STEP_SUMMARY
+          "- Upstream: **$upstreamVersion**" >> $env:GITHUB_STEP_SUMMARY
+          "- Release: **$version**" >> $env:GITHUB_STEP_SUMMARY
 
           $configPath = "apps/windows/src-tauri/tauri.conf.json"
           $config = Get-Content $configPath -Raw | ConvertFrom-Json
@@ -88,13 +127,14 @@ jobs:
         with:
           projectPath: apps/windows
           tagName: downstream-v__VERSION__
-          releaseName: "Kumone downstream v__VERSION__"
+          releaseName: "Kumone v__VERSION__ (Windows + Android downstream)"
           releaseBody: |
-            Automated Kumone downstream release.
+            Downstream Windows + Android build aligned to upstream Kumone v__VERSION__.
 
             - Windows: native Rust/Tauri 2 + system WebView2
             - Android: native Kotlin/Compose + Media3
             - Shared deterministic protocol logic: Rust kumone-core
+            - Application version matches missuo/kumone upstream
           releaseDraft: true
           prerelease: true
           args: --bundles nsis
@@ -280,7 +320,7 @@ jobs:
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             PRERELEASE="${{ inputs.prerelease }}"
-          } else {
+          else
             PRERELEASE="false"
           fi
           RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
