@@ -1,4 +1,4 @@
-name: Request Upstream-Aligned Downstream Release
+name: Validate Downstream Release Request
 
 on:
   push:
@@ -8,24 +8,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: write
+  contents: read
 
 jobs:
-  dispatch:
-    name: Resolve upstream version and dispatch release
+  validate:
+    name: Validate exact-source release policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Resolve release request
-        id: request
+      - name: Validate request against source and upstream
         shell: bash
         run: |
           set -euo pipefail
+
           REQUEST_FILE=.github/release-request.json
           if [[ ! -f "$REQUEST_FILE" ]]; then
             echo "::error::Missing $REQUEST_FILE"
@@ -33,145 +32,52 @@ jobs:
           fi
 
           SOURCE_REF=$(jq -r '.source_ref // "main"' "$REQUEST_FILE")
-          PRERELEASE=$(jq -r '.prerelease // true' "$REQUEST_FILE")
           TAG_SUFFIX=$(jq -r '.tag_suffix // ""' "$REQUEST_FILE")
+          PRERELEASE=$(jq -r '.prerelease // true' "$REQUEST_FILE")
 
-          CHANGELOG=$(curl --fail --silent --show-error --location \
-            https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md)
-          VERSION=$(printf '%s\n' "$CHANGELOG" \
-            | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
-            | head -n 1)
-
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::Could not resolve the latest upstream version from missuo/kumone CHANGELOG.md"
-            exit 1
-          fi
           if [[ -n "$TAG_SUFFIX" && ! "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]]; then
             echo "::error::Invalid tag_suffix: $TAG_SUFFIX"
             exit 1
           fi
 
-          TAG="downstream-v$VERSION"
-          if [[ -n "$TAG_SUFFIX" ]]; then
-            TAG="$TAG-$TAG_SUFFIX"
-          fi
-
-          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Downstream release request"
-            echo "- Upstream: missuo/kumone"
-            echo "- Version: **$VERSION**"
-            echo "- Source ref: \`$SOURCE_REF\`"
-            echo "- Release tag: \`$TAG\`"
-            echo "- Prerelease: **$PRERELEASE**"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Prepare immutable release tag and draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_REF: ${{ steps.request.outputs.source_ref }}
-          VERSION: ${{ steps.request.outputs.version }}
-          TAG: ${{ steps.request.outputs.tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin --tags --force
           git fetch origin "$SOURCE_REF" 2>/dev/null || true
           SOURCE_SHA=$(git rev-parse "$SOURCE_REF^{commit}")
+          SOURCE_VERSION=$(git show "$SOURCE_SHA:CHANGELOG.md" \
+            | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
+            | head -n 1)
+          UPSTREAM_VERSION=$(curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md \
+            | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
+            | head -n 1)
 
-          REMOTE_TAG_SHA=$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}' | head -n 1)
-          if [[ -z "$REMOTE_TAG_SHA" ]]; then
-            git tag "$TAG" "$SOURCE_SHA"
-            git push origin "refs/tags/$TAG"
-            echo "Created immutable tag $TAG -> $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
-          else
-            LOCAL_TAG_SHA=$(git rev-list -n 1 "$TAG" 2>/dev/null || true)
-            if [[ -z "$LOCAL_TAG_SHA" ]]; then
-              git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
-              LOCAL_TAG_SHA=$(git rev-list -n 1 "$TAG")
-            fi
-            if [[ "$LOCAL_TAG_SHA" != "$SOURCE_SHA" ]]; then
-              echo "::error::Tag $TAG already exists at $LOCAL_TAG_SHA, expected $SOURCE_SHA. Published/RC tags are immutable."
-              exit 1
-            fi
+          if [[ -z "$SOURCE_VERSION" || -z "$UPSTREAM_VERSION" ]]; then
+            echo "::error::Could not resolve source/upstream version"
+            exit 1
           fi
-
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "Kumone v$VERSION (Windows + Android downstream RC)" \
-              --notes "Release candidate built from source commit $SOURCE_SHA. Application version remains exactly aligned with upstream Kumone v$VERSION." \
-              --draft \
-              --prerelease
-          fi
-
-      - name: Dispatch downstream release
-        id: dispatch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_REF: ${{ steps.request.outputs.source_ref }}
-          VERSION: ${{ steps.request.outputs.version }}
-          PRERELEASE: ${{ steps.request.outputs.prerelease }}
-          TAG_SUFFIX: ${{ steps.request.outputs.tag_suffix }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          DISPATCHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          ARGS=(
-            --repo "$GITHUB_REPOSITORY"
-            --ref main
-            -f source_ref="$SOURCE_REF"
-            -f version="$VERSION"
-            -f prerelease="$PRERELEASE"
-            -f tag_suffix="$TAG_SUFFIX"
-          )
-          gh workflow run release-downstream.yml "${ARGS[@]}"
-
-          RUN_JSON=""
-          for _ in $(seq 1 12); do
-            RUN_JSON=$(gh run list \
-              --repo "$GITHUB_REPOSITORY" \
-              --workflow release-downstream.yml \
-              --event workflow_dispatch \
-              --limit 10 \
-              --json databaseId,createdAt,status,conclusion,url,headSha \
-              --jq '[.[] | select(.createdAt >= "'"$DISPATCHED_AT"'")] | sort_by(.createdAt) | reverse | .[0] // empty')
-            if [[ -n "$RUN_JSON" && "$RUN_JSON" != "null" ]]; then
-              break
-            fi
-            sleep 2
-          done
-
-          if [[ -z "$RUN_JSON" || "$RUN_JSON" == "null" ]]; then
-            echo "::error::Release was dispatched but its workflow run could not be resolved"
+          if [[ "$SOURCE_VERSION" != "$UPSTREAM_VERSION" ]]; then
+            echo "::error::Source version $SOURCE_VERSION is not aligned with upstream $UPSTREAM_VERSION"
             exit 1
           fi
 
-          mkdir -p .github/release-status
-          printf '%s\n' "$RUN_JSON" | jq \
-            --arg version "$VERSION" \
-            --arg source_ref "$SOURCE_REF" \
-            --arg tag_suffix "$TAG_SUFFIX" \
-            '. + {version:$version,source_ref:$source_ref,tag_suffix:$tag_suffix}' \
-            > .github/release-status/active.json
-          RUN_ID=$(jq -r '.databaseId' .github/release-status/active.json)
-          RUN_URL=$(jq -r '.url' .github/release-status/active.json)
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "url=$RUN_URL" >> "$GITHUB_OUTPUT"
-          echo "Dispatched downstream v$VERSION: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+          RELEASE_TAG="downstream-v$UPSTREAM_VERSION"
+          if [[ -n "$TAG_SUFFIX" ]]; then
+            RELEASE_TAG="$RELEASE_TAG-$TAG_SUFFIX"
+          fi
 
-      - name: Persist active release run
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/release-status/active.json
-          git commit -m "ci(status): record active downstream release #${{ steps.dispatch.outputs.run_id }}"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          {
+            echo "### Downstream release policy gate"
+            echo "- Source commit: \`$SOURCE_SHA\`"
+            echo "- App version: **$SOURCE_VERSION**"
+            echo "- Upstream version: **$UPSTREAM_VERSION**"
+            echo "- Requested tag: \`$RELEASE_TAG\`"
+            echo "- Prerelease: **$PRERELEASE**"
+            echo
+            if [[ -n "$TAG_SUFFIX" ]]; then
+              echo "RC artifacts are produced by the exact-source candidate build in \`.github/workflows/rc1-verify.yml\`."
+              echo "This policy workflow intentionally does **not** create tags or Releases."
+            else
+              echo "Stable promotion is an explicit administrator action: create the immutable tag/Release, then run \`release-downstream.yml\` to build/upload/finalize from that exact source."
+            fi
+            echo
+            echo "GitHub Actions is intentionally not granted a token capable of creating tags that point at commits containing workflow changes."
+          } >> "$GITHUB_STEP_SUMMARY"
