@@ -332,8 +332,7 @@ fn select_duration_match<T>(
         .take(5)
         .find(|value| {
             let candidate_duration = duration(value);
-            candidate_duration > 0
-                && candidate_duration.abs_diff(target_duration_ms) < 5_000_u64
+            candidate_duration > 0 && candidate_duration.abs_diff(target_duration_ms) < 5_000_u64
         })
         .or_else(|| values.first())
 }
@@ -460,8 +459,7 @@ mod tests {
         assert!(request.url.contains("hash=ABC"));
         assert!(request.url.contains("album_id=7"));
         assert_eq!(
-            decode_kugou_track_response(r#"{"url":["https://audio.example/k.mp3"]}"#)
-                .as_deref(),
+            decode_kugou_track_response(r#"{"url":["https://audio.example/k.mp3"]}"#).as_deref(),
             Some("https://audio.example/k.mp3")
         );
     }
