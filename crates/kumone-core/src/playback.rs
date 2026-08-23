@@ -1,12 +1,26 @@
 //! Shared NetEase playback URL request/response behavior.
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use thiserror::Error;
 
 use crate::netease::{
     EapiContext, RequestBuildError, RequestSpec, SessionCookies, build_eapi_request,
 };
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeTimeTrialPrivilege {
+    #[serde(default)]
+    pub remain_time: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeTrialPrivilege {
+    #[serde(default)]
+    pub cannot_listen_reason: i64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +38,30 @@ pub struct SongUrlData {
     pub fee: i64,
     #[serde(default)]
     pub time: i64,
+    #[serde(default)]
+    pub code: i64,
+    #[serde(default)]
+    pub free_trial_info: Option<Value>,
+    #[serde(default)]
+    pub free_time_trial_privilege: Option<FreeTimeTrialPrivilege>,
+    #[serde(default)]
+    pub free_trial_privilege: Option<FreeTrialPrivilege>,
+}
+
+impl SongUrlData {
+    #[must_use]
+    pub fn is_trial_or_restricted(&self) -> bool {
+        self.code == 404
+            || self.free_trial_info.is_some()
+            || self
+                .free_time_trial_privilege
+                .as_ref()
+                .is_some_and(|privilege| privilege.remain_time > 0)
+            || self
+                .free_trial_privilege
+                .as_ref()
+                .is_some_and(|privilege| privilege.cannot_listen_reason == 1)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +83,7 @@ pub enum PlaybackDecodeError {
     Decode(String),
     #[error("NetEase song URL request failed with code {code}: {message}")]
     Business { code: i64, message: String },
-    #[error("NetEase returned no playback URL for track {0}")]
+    #[error("NetEase returned no full playback URL for track {0}")]
     NoPlayableUrl(i64),
 }
 
@@ -88,7 +126,11 @@ pub fn decode_song_url_response(body: &str) -> Result<Vec<SongUrlData>, Playback
 pub fn first_playable_url(body: &str, track_id: i64) -> Result<SongUrlData, PlaybackDecodeError> {
     decode_song_url_response(body)?
         .into_iter()
-        .find(|item| item.id == track_id && item.url.as_deref().is_some_and(|url| !url.is_empty()))
+        .find(|item| {
+            item.id == track_id
+                && item.url.as_deref().is_some_and(|url| !url.is_empty())
+                && !item.is_trial_or_restricted()
+        })
         .ok_or(PlaybackDecodeError::NoPlayableUrl(track_id))
 }
 
@@ -121,12 +163,27 @@ mod tests {
         assert_eq!(data[0].id, 42);
         assert_eq!(data[0].url.as_deref(), Some("https://audio"));
         assert_eq!(data[0].level.as_deref(), Some("lossless"));
+        assert!(!data[0].is_trial_or_restricted());
     }
 
     #[test]
     fn missing_url_is_explicit_error() {
         let error = first_playable_url(r#"{"code":200,"data":[{"id":42,"url":null}]}"#, 42)
             .expect_err("unplayable");
+        assert_eq!(error, PlaybackDecodeError::NoPlayableUrl(42));
+    }
+
+    #[test]
+    fn trial_url_is_not_treated_as_full_playback() {
+        let body = r#"{"code":200,"data":[{"id":42,"url":"https://trial","time":30000,"freeTrialInfo":{"start":0,"end":30}}]}"#;
+        let error = first_playable_url(body, 42).expect_err("trial should fall through to unblock");
+        assert_eq!(error, PlaybackDecodeError::NoPlayableUrl(42));
+    }
+
+    #[test]
+    fn privilege_restrictions_trigger_unblock_fallback() {
+        let body = r#"{"code":200,"data":[{"id":42,"url":"https://trial","freeTimeTrialPrivilege":{"remainTime":30}}]}"#;
+        let error = first_playable_url(body, 42).expect_err("time trial should not be accepted");
         assert_eq!(error, PlaybackDecodeError::NoPlayableUrl(42));
     }
 }
