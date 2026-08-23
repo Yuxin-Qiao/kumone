@@ -38,6 +38,7 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     'lib/client.js',
     'lib/api.js',
     'lib/unblock.js',
+    'lib/tauri-bridge.js',
     'lib/qrcode.min.js',
   ];
 
