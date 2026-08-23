@@ -48,6 +48,7 @@ import dev.yuxinqiao.kumone.core.unblockKuwoSearchRequest
 import dev.yuxinqiao.kumone.core.unblockPyncmdRequest
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -60,6 +61,7 @@ import kotlinx.coroutines.withContext
  */
 class NeteaseRepository(context: Context) {
     private val session = SessionStore(context.applicationContext)
+    private val trackCache = ConcurrentHashMap<Long, FfiSearchTrack>()
 
     fun isLoggedIn(): Boolean = coreIsLoggedIn(session.snapshot())
 
@@ -138,7 +140,7 @@ class NeteaseRepository(context: Context) {
             ?: error(requestResult.error ?: "Unable to build daily songs request")
         val decoded = decodeDailySongsResponse(execute(request))
         decoded.error?.let(::error)
-        decoded.tracks
+        rememberTracks(decoded.tracks)
     }
 
     suspend fun playlistDetail(id: Long): FfiPlaylistDetail = withContext(Dispatchers.IO) {
@@ -147,7 +149,9 @@ class NeteaseRepository(context: Context) {
             ?: error(requestResult.error ?: "Unable to build playlist request")
         val decoded = decodePlaylistDetailResponse(execute(request))
         decoded.error?.let(::error)
-        decoded.detail ?: error("NetEase returned no playlist detail")
+        val detail = decoded.detail ?: error("NetEase returned no playlist detail")
+        rememberTracks(detail.tracks)
+        detail
     }
 
     suspend fun searchSongs(query: String, limit: Long = 30, offset: Long = 0): SearchPage =
@@ -164,21 +168,45 @@ class NeteaseRepository(context: Context) {
                 ?: error(requestResult.error ?: "Unable to build search request")
             val decoded = decodeSongSearchResponse(execute(request))
             decoded.error?.let(::error)
-            SearchPage(decoded.songs, decoded.total)
+            SearchPage(rememberTracks(decoded.songs), decoded.total)
         }
 
     /**
-     * Resolve NetEase first, then mirror upstream UnblockService fallback order:
-     * pyncmd -> Kuwo -> Kugou. The provider protocol itself lives in Rust.
+     * Compatibility entry point used by the Compose player. Tracks returned by
+     * search/home/playlist APIs are cached so provider fallbacks retain title,
+     * artist and duration without duplicating those fields in UI callbacks.
      */
-    suspend fun resolvePlayback(track: FfiSearchTrack, level: String = "standard"): PlaybackResolution =
+    suspend fun resolvePlayback(trackId: Long, level: String = "standard"): PlaybackResolution =
         withContext(Dispatchers.IO) {
-            runCatching { resolveNeteasePlayback(track.id, level) }
+            val track = trackCache[trackId]
+            if (track != null) {
+                return@withContext resolvePlaybackInternal(track, level)
+            }
+
+            runCatching { resolveNeteasePlayback(trackId, level) }
                 .map { PlaybackResolution(url = it.url, source = "netease") }
                 .getOrElse { neteaseError ->
-                    resolveUnblocked(track)
-                        ?: error(neteaseError.message ?: "No playable source found")
+                    val pyncmdOnlyTarget = FfiUnblockTrack(
+                        id = trackId,
+                        name = "",
+                        artistName = "",
+                        durationMs = 0,
+                    )
+                    runCatching {
+                        unblockDecodePyncmdResponse(
+                            executeUnblock(unblockPyncmdRequest(pyncmdOnlyTarget)),
+                        )
+                    }.getOrNull()?.let { url ->
+                        return@withContext PlaybackResolution(url = url, source = "pyncmd")
+                    }
+                    error(neteaseError.message ?: "No playable source found")
                 }
+        }
+
+    suspend fun resolvePlayback(track: FfiSearchTrack, level: String = "standard"): PlaybackResolution =
+        withContext(Dispatchers.IO) {
+            trackCache[track.id] = track
+            resolvePlaybackInternal(track, level)
         }
 
     suspend fun lyrics(trackId: Long): LyricsPage = withContext(Dispatchers.IO) {
@@ -194,6 +222,14 @@ class NeteaseRepository(context: Context) {
             translationContributor = decoded.translationContributor,
         )
     }
+
+    private fun resolvePlaybackInternal(track: FfiSearchTrack, level: String): PlaybackResolution =
+        runCatching { resolveNeteasePlayback(track.id, level) }
+            .map { PlaybackResolution(url = it.url, source = "netease") }
+            .getOrElse { neteaseError ->
+                resolveUnblocked(track)
+                    ?: error(neteaseError.message ?: "No playable source found")
+            }
 
     private fun resolveNeteasePlayback(trackId: Long, level: String): FfiPlaybackData {
         val requestResult = buildSongUrlRequest(
@@ -246,6 +282,11 @@ class NeteaseRepository(context: Context) {
         }
 
         return null
+    }
+
+    private fun rememberTracks(tracks: List<FfiSearchTrack>): List<FfiSearchTrack> {
+        tracks.forEach { trackCache[it.id] = it }
+        return tracks
     }
 
     private fun execute(request: FfiRequestSpec): String {
