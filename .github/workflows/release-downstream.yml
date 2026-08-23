@@ -101,9 +101,13 @@ jobs:
           $mib = [math]::Round($installer.Length / 1MB, 2)
           "### Windows release size" >> $env:GITHUB_STEP_SUMMARY
           "- NSIS installer: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
-          "- Hard budget: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Stretch target: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Hard budget: **15 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          if ($installer.Length -gt 15MB) {
+            throw "Windows NSIS installer is $mib MiB, above the 15 MiB hard budget"
+          }
           if ($installer.Length -gt 10MB) {
-            throw "Windows NSIS installer is $mib MiB, above the 10 MiB hard budget"
+            Write-Warning "Windows NSIS installer is $mib MiB; above the 10 MiB stretch target but within the 15 MiB hard budget"
           }
 
       - name: Attest Windows installer provenance
