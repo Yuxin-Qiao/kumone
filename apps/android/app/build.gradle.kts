@@ -105,6 +105,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
 
+    // QR login only needs the encoder core, not the camera/scanner UI bundle.
+    implementation("com.google.zxing:core:3.5.4")
+
     // UniFFI 0.32 Kotlin bindings use JNA. Keep the FFI dependency isolated to
     // Android; the shared Rust core remains independent of JNA and coroutines.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
