@@ -1,0 +1,236 @@
+name: RC1 Exact-Source Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/rc1-request.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc1-exact-source-verification
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve RC1 source
+    runs-on: ubuntu-latest
+    outputs:
+      source_ref: ${{ steps.request.outputs.source_ref }}
+      version: ${{ steps.request.outputs.version }}
+      label: ${{ steps.request.outputs.label }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_REF=$(jq -r '.source_ref' .github/rc1-request.json)
+          VERSION=$(jq -r '.version' .github/rc1-request.json)
+          LABEL=$(jq -r '.label // "rc.1"' .github/rc1-request.json)
+          [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_ref must be a full commit SHA"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::invalid version"; exit 1; }
+          [[ "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::invalid label"; exit 1; }
+
+          git fetch origin "$SOURCE_REF"
+          SOURCE_VERSION=$(git show "$SOURCE_REF:CHANGELOG.md" | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
+          UPSTREAM_VERSION=$(curl --fail --silent --show-error --location https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
+          [[ "$VERSION" == "$SOURCE_VERSION" ]] || { echo "::error::requested $VERSION != source $SOURCE_VERSION"; exit 1; }
+          [[ "$VERSION" == "$UPSTREAM_VERSION" ]] || { echo "::error::requested $VERSION != upstream $UPSTREAM_VERSION"; exit 1; }
+
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          {
+            echo "### RC1 exact-source gate"
+            echo "- Source: \`$SOURCE_REF\`"
+            echo "- App version: **$VERSION**"
+            echo "- Candidate: **$LABEL**"
+            echo "- Upstream version: **$UPSTREAM_VERSION**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: RC1 Windows NSIS
+    needs: prepare
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.source_ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+      - name: Verify shared core and Web/PWA
+        shell: pwsh
+        run: |
+          cargo test --workspace --all-targets
+          npm test --prefix web
+      - name: Build NSIS
+        shell: pwsh
+        run: |
+          npm install --global @tauri-apps/cli@v2
+          tauri --version
+          $configPath = "apps/windows/src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.version = "${{ needs.prepare.outputs.version }}"
+          $config | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding utf8
+          Push-Location apps/windows
+          try { tauri build --bundles nsis } finally { Pop-Location }
+      - name: Prepare and enforce Windows package budget
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "apps/windows/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
+          if ($null -eq $installer) { throw "NSIS installer was not produced" }
+          if ($installer.Length -gt 15MB) { throw "NSIS installer exceeds 15 MiB hard budget" }
+          New-Item -ItemType Directory -Force -Path rc-windows | Out-Null
+          $out = "rc-windows/Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-windows-x64-setup.exe"
+          Copy-Item $installer.FullName $out
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $out -Leaf)" | Set-Content rc-windows/SHA256SUMS -Encoding ascii
+          $mib = [math]::Round($installer.Length / 1MB, 2)
+          "Windows RC installer: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
+      - name: Attest Windows RC provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: rc-windows/*.exe
+      - name: Upload Windows RC artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-windows
+          path: rc-windows/
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    name: RC1 Android signed APK + AAB
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      LABEL: ${{ needs.prepare.outputs.label }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_ref }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+      - name: Install Android SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Setup Gradle 9.5
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "9.5.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Setup Rust Android target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Test shared Rust core and FFI
+        run: cargo test -p kumone-core -p kumone-ffi --all-targets
+      - name: Generate UniFFI Kotlin bindings and arm64 library
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p kumone-ffi --release
+          rm -rf apps/android/app/build/generated/uniffi/kotlin
+          mkdir -p apps/android/app/build/generated/uniffi/kotlin
+          cargo run -p uniffi-bindgen -- generate \
+            --library target/release/libkumone_ffi.so \
+            --language kotlin \
+            --out-dir apps/android/app/build/generated/uniffi/kotlin
+          rm -rf apps/android/app/build/generated/uniffi/jniLibs
+          cargo ndk -t arm64-v8a \
+            -o apps/android/app/build/generated/uniffi/jniLibs \
+            build -p kumone-ffi --release
+          test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
+      - name: Verify pinned signing identity
+        shell: bash
+        run: bash scripts/ci/prepare-android-signing.sh
+      - name: Build signed APK and AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p apps/android \
+            :app:lintRelease \
+            :app:testDebugUnitTest \
+            :app:assembleRelease \
+            :app:bundleRelease \
+            -PkumoneVersion="$VERSION" \
+            -PkumoneVersionCode="${{ github.run_number }}"
+      - name: Verify Android signatures and Rust packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=apps/android/app/build/outputs/apk/release/app-release.apk
+          AAB=apps/android/app/build/outputs/bundle/release/app-release.aab
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
+          test -f "$APK"
+          test -f "$AAB"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
+          jarsigner -verify "$AAB"
+      - name: Prepare and enforce Android package budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rc-android
+          cp apps/android/app/build/outputs/apk/release/app-release.apk "rc-android/Kumone-$VERSION-$LABEL-android.apk"
+          cp apps/android/app/build/outputs/bundle/release/app-release.aab "rc-android/Kumone-$VERSION-$LABEL-android.aab"
+          (cd rc-android && sha256sum *.apk *.aab > SHA256SUMS)
+          BYTES=$(stat -c%s "rc-android/Kumone-$VERSION-$LABEL-android.apk")
+          MIB=$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+          echo "Android RC APK: **${MIB} MiB**" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BYTES" -gt $((15 * 1024 * 1024)) ]; then
+            echo "::error::Android APK exceeds 15 MiB hard budget"
+            exit 1
+          fi
+      - name: Attest Android RC provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            rc-android/*.apk
+            rc-android/*.aab
+      - name: Upload Android RC artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android
+          path: rc-android/
+          if-no-files-found: error
+          retention-days: 30
