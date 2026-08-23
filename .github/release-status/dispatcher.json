@@ -1,9 +1,9 @@
 {
   "workflow": "Request Upstream-Aligned Downstream Release",
-  "run_id": 32620953785,
-  "run_number": 5,
+  "run_id": 32621051095,
+  "run_number": 6,
   "conclusion": "success",
-  "head_sha": "6d1ada2f60714b3900b0dc9f078b1123b93b3993",
-  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32620953785",
-  "updated_at": "2026-08-23T05:41:07Z"
+  "head_sha": "125dfff6c36988e25cf1375b2a9deea73390dde4",
+  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32621051095",
+  "updated_at": "2026-08-23T05:43:26Z"
 }
