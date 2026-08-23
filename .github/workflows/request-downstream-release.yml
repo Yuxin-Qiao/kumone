@@ -32,7 +32,7 @@ jobs:
             exit 1
           fi
 
-          SOURCE_REF=$(jq -r '.source_ref // "refactor/rust-core-windows-android"' "$REQUEST_FILE")
+          SOURCE_REF=$(jq -r '.source_ref // "main"' "$REQUEST_FILE")
           PRERELEASE=$(jq -r '.prerelease // true' "$REQUEST_FILE")
 
           CHANGELOG=$(curl --fail --silent --show-error --location \
