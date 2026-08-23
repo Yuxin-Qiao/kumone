@@ -47,18 +47,15 @@ jobs:
 
           REQUEST=.github/upstream-sync-request.json
           if [[ -f "$REQUEST" ]]; then
-            TARGET_BRANCH=$(jq -r '.target_branch // "refactor/rust-core-windows-android"' "$REQUEST")
+            TARGET_BRANCH=$(jq -r '.target_branch // "main"' "$REQUEST")
           else
-            TARGET_BRANCH="refactor/rust-core-windows-android"
+            TARGET_BRANCH="main"
           fi
 
-          case "$TARGET_BRANCH" in
-            main|refactor/rust-core-windows-android) ;;
-            *)
-              echo "::error::Unsupported upstream-sync target branch: $TARGET_BRANCH"
-              exit 1
-              ;;
-          esac
+          if [[ "$TARGET_BRANCH" != "main" ]]; then
+            echo "::error::Semantic upstream sync now targets main only; got: $TARGET_BRANCH"
+            exit 1
+          fi
 
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "updated=false" >> "$GITHUB_OUTPUT"
@@ -137,7 +134,7 @@ jobs:
             printf 'Resolving %s conflict(s) using explicit ownership policy:\n' "$CONFLICT_COUNT"
             for path in "${conflicts[@]}"; do
               case "$path" in
-                Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/dependabot.yml|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|docs/architecture/*|docs/release/*|scripts/ci/*|web/lib/tauri-bridge.js|.github/workflows/ci-core.yml|.github/workflows/ci-android.yml|.github/workflows/ci-windows.yml|.github/workflows/nightly.yml|.github/workflows/security-codeql.yml|.github/workflows/dependency-review.yml|.github/workflows/release-downstream.yml)
+                Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/dependabot.yml|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|docs/architecture/*|docs/release/*|scripts/ci/*|web/lib/tauri-bridge.js|.github/workflows/ci-core.yml|.github/workflows/ci-android.yml|.github/workflows/ci-windows.yml|.github/workflows/nightly.yml|.github/workflows/security-codeql.yml|.github/workflows/dependency-review.yml|.github/workflows/release-downstream.yml|.github/workflows/request-downstream-release.yml|.github/workflows/semantic-sync-upstream.yml|.github/release-request.json|.github/upstream-sync-request.json)
                   echo "  downstream owns: $path"
                   git checkout --ours -- "$path"
                   git add -- "$path"
@@ -413,7 +410,7 @@ jobs:
           cat > /tmp/upstream-pr.md <<EOF
           ## Automated upstream compatibility report
 
-          This PR integrates **missuo/kumone v$VERSION** into the downstream branch without directly modifying the target branch.
+          This PR integrates **missuo/kumone v$VERSION** into `main` without directly modifying `main`.
 
           - Target branch: \`$TARGET_BRANCH\`
           - Automation branch: \`$SYNC_BRANCH\`
