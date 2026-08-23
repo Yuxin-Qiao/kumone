@@ -1,4 +1,4 @@
-name: Semantic Sync Upstream Into Refactor
+name: Semantic Upstream Sync
 
 on:
   schedule:
@@ -10,88 +10,146 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: semantic-upstream-sync
   cancel-in-progress: true
 
 jobs:
-  sync:
+  prepare:
+    name: Prepare ownership-aware upstream candidate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      updated: ${{ steps.sync.outputs.updated }}
+      target_branch: ${{ steps.sync.outputs.target_branch }}
+      sync_branch: ${{ steps.sync.outputs.sync_branch }}
+      version: ${{ steps.sync.outputs.version }}
+      upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
+      conflict_count: ${{ steps.sync.outputs.conflict_count }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout release control branch
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
 
-      - name: Resolve sync target
-        id: request
+      - name: Prepare semantic sync candidate
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+
           REQUEST=.github/upstream-sync-request.json
           if [[ -f "$REQUEST" ]]; then
             TARGET_BRANCH=$(jq -r '.target_branch // "refactor/rust-core-windows-android"' "$REQUEST")
           else
             TARGET_BRANCH="refactor/rust-core-windows-android"
           fi
-          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: Configure Git and fetch upstream
-        env:
-          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
-        shell: bash
-        run: |
-          set -euo pipefail
+          case "$TARGET_BRANCH" in
+            main|refactor/rust-core-windows-android) ;;
+            *)
+              echo "::error::Unsupported upstream-sync target branch: $TARGET_BRANCH"
+              exit 1
+              ;;
+          esac
+
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "conflict_count=0" >> "$GITHUB_OUTPUT"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin "$TARGET_BRANCH"
-          git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
           git remote add upstream https://github.com/missuo/kumone.git 2>/dev/null || \
             git remote set-url upstream https://github.com/missuo/kumone.git
           git fetch upstream main --tags --force
 
-      - name: Merge upstream with ownership-aware conflict resolution
-        id: merge
-        env:
-          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
-        shell: bash
-        run: |
-          set -euo pipefail
+          git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          UPSTREAM_SHORT=${UPSTREAM_SHA:0:12}
+          UPSTREAM_VERSION=$(git show upstream/main:CHANGELOG.md | \
+            sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
 
-          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          if [[ -z "$UPSTREAM_VERSION" ]]; then
+            echo "::error::Could not resolve the latest upstream version from CHANGELOG.md"
+            exit 1
+          fi
+
+          echo "version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+
           MERGE_BASE=$(git merge-base HEAD upstream/main)
-          if [[ "$UPSTREAM_HEAD" == "$MERGE_BASE" ]]; then
-            echo "updated=false" >> "$GITHUB_OUTPUT"
-            echo "Branch is already up to date with upstream/main." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$UPSTREAM_SHA" == "$MERGE_BASE" ]]; then
+            {
+              echo "### Semantic upstream sync"
+              echo "- Target: \`$TARGET_BRANCH\`"
+              echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
+              echo "- Result: already up to date"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+
+          SYNC_BRANCH="automation/upstream-v${UPSTREAM_VERSION}-${UPSTREAM_SHORT}"
+          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+          EXISTING_PR=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --base "$TARGET_BRANCH" \
+            --head "$SYNC_BRANCH" \
+            --json url \
+            --jq '.[0].url // empty')
+          if [[ -n "$EXISTING_PR" ]]; then
+            {
+              echo "### Semantic upstream sync"
+              echo "- Target: \`$TARGET_BRANCH\`"
+              echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
+              echo "- Result: an open automation PR already exists"
+              echo "- PR: $EXISTING_PR"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git checkout -B "$SYNC_BRANCH" "origin/$TARGET_BRANCH"
 
           set +e
           git merge --no-commit --no-ff upstream/main
           MERGE_STATUS=$?
           set -e
 
+          CONFLICT_COUNT=0
           if [[ "$MERGE_STATUS" -ne 0 ]]; then
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
-            if [[ "${#conflicts[@]}" -eq 0 ]]; then
+            CONFLICT_COUNT=${#conflicts[@]}
+            if [[ "$CONFLICT_COUNT" -eq 0 ]]; then
               git merge --abort || true
-              echo "::error::Merge failed without resolvable conflict paths"
+              echo "::error::Upstream merge failed without resolvable conflict paths"
               exit 1
             fi
 
-            printf 'Resolving %s conflict(s) by ownership policy:\n' "${#conflicts[@]}"
+            printf 'Resolving %s conflict(s) using explicit ownership policy:\n' "$CONFLICT_COUNT"
             for path in "${conflicts[@]}"; do
               case "$path" in
-                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|README.md|README_CN.md|.github/workflows/release.yml|Sources/Kumone/*|Sources/Kumone/**/*|AppIcon.icon/*|AppIcon.icon/**/*|Scripts/*|Scripts/**/*|ios/*|ios/**/*)
-                  echo "  upstream owns: $path"
-                  git checkout --theirs -- "$path"
-                  git add -- "$path"
-                  ;;
-                crates/*|crates/**/*|apps/windows/*|apps/windows/**/*|apps/android/*|apps/android/**/*|web/*|web/**/*|docs/architecture/*|docs/architecture/**/*|docs/release/*|docs/release/**/*|scripts/ci/*|scripts/ci/**/*)
+                Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/dependabot.yml|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|docs/architecture/*|docs/release/*|scripts/ci/*|web/lib/tauri-bridge.js|.github/workflows/ci-core.yml|.github/workflows/ci-android.yml|.github/workflows/ci-windows.yml|.github/workflows/nightly.yml|.github/workflows/security-codeql.yml|.github/workflows/dependency-review.yml|.github/workflows/release-downstream.yml)
                   echo "  downstream owns: $path"
                   git checkout --ours -- "$path"
+                  git add -- "$path"
+                  ;;
+                web/test/smoke.js)
+                  echo "::error::Shared Web smoke gate conflicted and requires semantic review: $path"
+                  git merge --abort || true
+                  exit 1
+                  ;;
+                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|README.md|README_CN.md|.github/workflows/release.yml|Sources/Kumone/*|AppIcon.icon/*|Scripts/*|ios/*|web/*)
+                  echo "  upstream owns: $path"
+                  git checkout --theirs -- "$path"
                   git add -- "$path"
                   ;;
                 *)
@@ -104,43 +162,285 @@ jobs:
           fi
 
           if git diff --name-only --diff-filter=U | grep -q .; then
-            echo "::error::Unresolved conflicts remain"
+            echo "::error::Unresolved merge conflicts remain"
             git diff --name-only --diff-filter=U
             exit 1
           fi
 
-          VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::Could not resolve merged upstream version"
+          MERGED_VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
+          if [[ "$MERGED_VERSION" != "$UPSTREAM_VERSION" ]]; then
+            echo "::error::Merged version $MERGED_VERSION does not match upstream $UPSTREAM_VERSION"
             exit 1
           fi
 
-          git commit -m "chore(sync): integrate upstream v$VERSION into downstream refactor"
+          git commit -m "chore(sync): prepare upstream v$UPSTREAM_VERSION compatibility candidate"
+          CANDIDATE_SHA=$(git rev-parse HEAD)
+
+          if git ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH"
+            git push --force-with-lease origin HEAD:"$SYNC_BRANCH"
+          else
+            git push origin HEAD:"$SYNC_BRANCH"
+          fi
+
           echo "updated=true" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "conflict_count=$CONFLICT_COUNT" >> "$GITHUB_OUTPUT"
+
+          CHANGED_FILES=$(git diff --name-only "origin/$TARGET_BRANCH...HEAD" | wc -l | tr -d ' ')
           {
-            echo "### Semantic upstream sync"
+            echo "### Semantic upstream candidate prepared"
             echo "- Target: \`$TARGET_BRANCH\`"
-            echo "- Upstream version: **$VERSION**"
-            echo "- Upstream-owned: Swift / Package / CHANGELOG / iOS"
-            echo "- Downstream-owned: Rust / Windows / Android / Web / architecture + release docs"
-            echo "- Direct upstream-to-main merge is disabled"
+            echo "- Candidate: \`$SYNC_BRANCH\`"
+            echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
+            echo "- Candidate commit: \`$CANDIDATE_SHA\`"
+            echo "- Changed files: **$CHANGED_FILES**"
+            echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
+            echo "- Target branch was **not modified**"
+            echo
+            echo "The candidate now has to pass Core/Web, Android, and Windows validation before a Draft PR can be created."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify downstream core and web after merge
-        if: steps.merge.outputs.updated == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test -p kumone-core -p kumone-ffi --all-targets
-          npm test --prefix web
+  core:
+    name: Core + Web compatibility gate
+    needs: prepare
+    if: needs.prepare.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sync_branch }}
 
-      - name: Push synchronized refactor branch
-        if: steps.merge.outputs.updated == 'true'
-        env:
-          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace --all-targets
+
+      - name: Web/PWA smoke tests
+        run: npm test --prefix web
+
+  android:
+    name: Android compatibility gate
+    needs: prepare
+    if: needs.prepare.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sync_branch }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install pinned Android SDK and NDK
         shell: bash
         run: |
           set -euo pipefail
-          git push origin HEAD:"$TARGET_BRANCH"
-          git push origin --tags
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Setup Gradle 9.5
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Setup Android Rust target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Verify shared Rust core and FFI
+        run: cargo test -p kumone-core -p kumone-ffi --all-targets
+
+      - name: Generate Kotlin UniFFI bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p kumone-ffi --release
+          rm -rf apps/android/app/build/generated/uniffi/kotlin
+          mkdir -p apps/android/app/build/generated/uniffi/kotlin
+          cargo run -p uniffi-bindgen -- generate \
+            --library target/release/libkumone_ffi.so \
+            --language kotlin \
+            --out-dir apps/android/app/build/generated/uniffi/kotlin \
+            --no-format
+
+      - name: Build arm64 Rust library
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf apps/android/app/build/generated/uniffi/jniLibs
+          cargo ndk -t arm64-v8a \
+            -o apps/android/app/build/generated/uniffi/jniLibs \
+            build -p kumone-ffi --release
+          test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
+
+      - name: Android lint and tests
+        run: gradle -p apps/android :app:lintDebug :app:testDebugUnitTest
+
+      - name: Build and inspect Android debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p apps/android :app:assembleDebug
+          APK=$(find apps/android/app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)
+          test -n "$APK"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+
+      - name: Enforce optimized Android size budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p apps/android :app:assembleRelease \
+            -PkumoneVersion="${{ needs.prepare.outputs.version }}" \
+            -PkumoneVersionCode="${{ github.run_number }}"
+          APK=$(find apps/android/app/build/outputs/apk/release -name '*.apk' -type f -print -quit)
+          test -n "$APK"
+          BYTES=$(stat -c%s "$APK")
+          MIB=$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+          echo "Android optimized APK: ${MIB} MiB"
+          if [ "$BYTES" -gt $((15 * 1024 * 1024)) ]; then
+            echo "::error::Android optimized APK is ${MIB} MiB, above the 15 MiB hard budget"
+            exit 1
+          fi
+
+  windows:
+    name: Windows compatibility gate
+    needs: prepare
+    if: needs.prepare.outputs.updated == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sync_branch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+
+      - name: Test shared Rust core
+        run: cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
+
+      - name: Test shared Web UI
+        run: npm test --prefix web
+
+      - name: Check Tauri shell
+        run: cargo check --manifest-path apps/windows/src-tauri/Cargo.toml
+
+      - name: Clippy Tauri shell
+        run: cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build optimized Windows executable
+        run: cargo build --release --manifest-path apps/windows/src-tauri/Cargo.toml
+
+      - name: Enforce Windows binary size budget
+        shell: pwsh
+        run: |
+          $path = "apps/windows/src-tauri/target/release/kumone-windows.exe"
+          if (-not (Test-Path $path)) { throw "Missing optimized Windows executable: $path" }
+          $bytes = (Get-Item $path).Length
+          $mib = [math]::Round($bytes / 1MB, 2)
+          "Windows optimized EXE: $mib MiB"
+          if ($bytes -gt 15MB) {
+            throw "Windows optimized executable is $mib MiB, above the 15 MiB hard budget"
+          }
+
+  propose:
+    name: Open validated upstream Draft PR
+    needs: [prepare, core, android, windows]
+    if: >-
+      ${{ always() &&
+          needs.prepare.outputs.updated == 'true' &&
+          needs.core.result == 'success' &&
+          needs.android.result == 'success' &&
+          needs.windows.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Create compatibility-gated Draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ needs.prepare.outputs.target_branch }}
+          SYNC_BRANCH: ${{ needs.prepare.outputs.sync_branch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+          CONFLICT_COUNT: ${{ needs.prepare.outputs.conflict_count }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXISTING_PR=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --base "$TARGET_BRANCH" \
+            --head "$SYNC_BRANCH" \
+            --json url \
+            --jq '.[0].url // empty')
+          if [[ -n "$EXISTING_PR" ]]; then
+            echo "Existing upstream sync PR: $EXISTING_PR" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cat > /tmp/upstream-pr.md <<EOF
+          ## Automated upstream compatibility report
+
+          This PR integrates **missuo/kumone v$VERSION** into the downstream branch without directly modifying the target branch.
+
+          - Target branch: \`$TARGET_BRANCH\`
+          - Automation branch: \`$SYNC_BRANCH\`
+          - Upstream commit: \`$UPSTREAM_SHA\`
+          - Ownership-resolved conflicts: **$CONFLICT_COUNT**
+          - Core + Web compatibility gate: **passed**
+          - Android Compose + Media3 + Rust gate: **passed**
+          - Windows Tauri + WebView2 gate: **passed**
+          - Validation workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          ### Ownership policy
+
+          Upstream remains authoritative for Swift/macOS/iOS, package metadata, changelog, and the existing Web/PWA implementation. Downstream remains authoritative for the Rust shared core, Windows Tauri, Android native client, release/security gates, and the Tauri bridge.
+
+          Ambiguous or unclassified merge conflicts fail closed instead of being guessed. This PR is intentionally created as a **Draft** and is never auto-merged.
+          EOF
+
+          PR_URL=$(gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base "$TARGET_BRANCH" \
+            --head "$SYNC_BRANCH" \
+            --title "chore(sync): integrate upstream v$VERSION" \
+            --body-file /tmp/upstream-pr.md \
+            --draft)
+
+          {
+            echo "### Validated upstream PR created"
+            echo "- $PR_URL"
+            echo "- No automatic merge was performed."
+          } >> "$GITHUB_STEP_SUMMARY"
