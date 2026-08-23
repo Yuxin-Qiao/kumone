@@ -1,12 +1,15 @@
 package dev.yuxinqiao.kumone.data
 
 import android.content.Context
+import dev.yuxinqiao.kumone.core.FfiKugouMatch
 import dev.yuxinqiao.kumone.core.FfiLyricLine
 import dev.yuxinqiao.kumone.core.FfiPlaybackData
 import dev.yuxinqiao.kumone.core.FfiPlaylistDetail
 import dev.yuxinqiao.kumone.core.FfiPlaylistSummary
 import dev.yuxinqiao.kumone.core.FfiRequestSpec
 import dev.yuxinqiao.kumone.core.FfiSearchTrack
+import dev.yuxinqiao.kumone.core.FfiUnblockRequest
+import dev.yuxinqiao.kumone.core.FfiUnblockTrack
 import dev.yuxinqiao.kumone.core.FfiUserProfile
 import dev.yuxinqiao.kumone.core.buildDailySongsRequest
 import dev.yuxinqiao.kumone.core.buildLyricRequest
@@ -33,6 +36,16 @@ import dev.yuxinqiao.kumone.core.decodeUserAccountResponse
 import dev.yuxinqiao.kumone.core.decodeUserPlaylistsResponse
 import dev.yuxinqiao.kumone.core.ingestCookieString
 import dev.yuxinqiao.kumone.core.isLoggedIn as coreIsLoggedIn
+import dev.yuxinqiao.kumone.core.unblockDecodeKugouSearchResponse
+import dev.yuxinqiao.kumone.core.unblockDecodeKugouTrackResponse
+import dev.yuxinqiao.kumone.core.unblockDecodeKuwoConvertResponse
+import dev.yuxinqiao.kumone.core.unblockDecodeKuwoSearchResponse
+import dev.yuxinqiao.kumone.core.unblockDecodePyncmdResponse
+import dev.yuxinqiao.kumone.core.unblockKugouSearchRequest
+import dev.yuxinqiao.kumone.core.unblockKugouTrackRequest
+import dev.yuxinqiao.kumone.core.unblockKuwoConvertRequest
+import dev.yuxinqiao.kumone.core.unblockKuwoSearchRequest
+import dev.yuxinqiao.kumone.core.unblockPyncmdRequest
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -41,8 +54,9 @@ import kotlinx.coroutines.withContext
 /**
  * Thin Android transport around the shared Rust protocol core.
  *
- * Rust owns request construction, crypto, response decoding and deterministic
- * business rules. Android owns HTTP I/O and durable cookie storage.
+ * Rust owns request construction, crypto, response decoding, unblock provider
+ * protocol and deterministic business rules. Android owns HTTP I/O and durable
+ * cookie storage.
  */
 class NeteaseRepository(context: Context) {
     private val session = SessionStore(context.applicationContext)
@@ -153,20 +167,18 @@ class NeteaseRepository(context: Context) {
             SearchPage(decoded.songs, decoded.total)
         }
 
-    suspend fun resolvePlayback(trackId: Long, level: String = "standard"): FfiPlaybackData =
+    /**
+     * Resolve NetEase first, then mirror upstream UnblockService fallback order:
+     * pyncmd -> Kuwo -> Kugou. The provider protocol itself lives in Rust.
+     */
+    suspend fun resolvePlayback(track: FfiSearchTrack, level: String = "standard"): PlaybackResolution =
         withContext(Dispatchers.IO) {
-            val requestResult = buildSongUrlRequest(
-                trackId = trackId,
-                level = level,
-                cookies = session.snapshot(),
-                requestId = requestId(),
-                buildVersion = buildVersion(),
-            )
-            val request = requestResult.request
-                ?: error(requestResult.error ?: "Unable to build playback request")
-            val decoded = decodeSongUrlResponse(execute(request), trackId)
-            decoded.error?.let(::error)
-            decoded.data ?: error("NetEase returned no playable URL")
+            runCatching { resolveNeteasePlayback(track.id, level) }
+                .map { PlaybackResolution(url = it.url, source = "netease") }
+                .getOrElse { neteaseError ->
+                    resolveUnblocked(track)
+                        ?: error(neteaseError.message ?: "No playable source found")
+                }
         }
 
     suspend fun lyrics(trackId: Long): LyricsPage = withContext(Dispatchers.IO) {
@@ -181,6 +193,59 @@ class NeteaseRepository(context: Context) {
             contributor = decoded.contributor,
             translationContributor = decoded.translationContributor,
         )
+    }
+
+    private fun resolveNeteasePlayback(trackId: Long, level: String): FfiPlaybackData {
+        val requestResult = buildSongUrlRequest(
+            trackId = trackId,
+            level = level,
+            cookies = session.snapshot(),
+            requestId = requestId(),
+            buildVersion = buildVersion(),
+        )
+        val request = requestResult.request
+            ?: error(requestResult.error ?: "Unable to build playback request")
+        val decoded = decodeSongUrlResponse(execute(request), trackId)
+        decoded.error?.let(::error)
+        return decoded.data ?: error("NetEase returned no playable URL")
+    }
+
+    private fun resolveUnblocked(track: FfiSearchTrack): PlaybackResolution? {
+        val target = FfiUnblockTrack(
+            id = track.id,
+            name = track.name,
+            artistName = track.artistNames.substringBefore(" / "),
+            durationMs = track.durationMs,
+        )
+
+        runCatching {
+            val response = executeUnblock(unblockPyncmdRequest(target))
+            unblockDecodePyncmdResponse(response)
+        }.getOrNull()?.let { url ->
+            return PlaybackResolution(url = url, source = "pyncmd")
+        }
+
+        runCatching {
+            val searchBody = executeUnblock(unblockKuwoSearchRequest(target))
+            val match = unblockDecodeKuwoSearchResponse(searchBody, target.durationMs)
+                ?: return@runCatching null
+            val convertBody = executeUnblock(unblockKuwoConvertRequest(match.rid))
+            unblockDecodeKuwoConvertResponse(convertBody)
+        }.getOrNull()?.let { url ->
+            return PlaybackResolution(url = url, source = "kuwo")
+        }
+
+        runCatching {
+            val searchBody = executeUnblock(unblockKugouSearchRequest(target))
+            val match: FfiKugouMatch = unblockDecodeKugouSearchResponse(searchBody, target.durationMs)
+                ?: return@runCatching null
+            val trackBody = executeUnblock(unblockKugouTrackRequest(match))
+            unblockDecodeKugouTrackResponse(trackBody)
+        }.getOrNull()?.let { url ->
+            return PlaybackResolution(url = url, source = "kugou")
+        }
+
+        return null
     }
 
     private fun execute(request: FfiRequestSpec): String {
@@ -207,6 +272,23 @@ class NeteaseRepository(context: Context) {
                 error("NetEase HTTP $status${body.takeIf(String::isNotBlank)?.let { ": $it" }.orEmpty()}")
             }
             body
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun executeUnblock(request: FfiUnblockRequest): String {
+        val connection = (URL(request.url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", request.userAgent)
+        }
+        return try {
+            val status = connection.responseCode
+            if (status !in 200..299) error("Unblock provider HTTP $status")
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             connection.disconnect()
         }
@@ -241,6 +323,11 @@ data class QrLoginStatus(
     val message: String?,
     val nickname: String?,
     val avatarUrl: String?,
+)
+
+data class PlaybackResolution(
+    val url: String,
+    val source: String,
 )
 
 data class SearchPage(
