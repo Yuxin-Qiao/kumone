@@ -5,6 +5,7 @@
 //! core types.
 
 pub mod account;
+pub mod unblock;
 
 use std::collections::HashMap;
 
