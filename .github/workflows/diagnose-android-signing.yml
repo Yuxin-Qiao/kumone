@@ -1,0 +1,79 @@
+name: Diagnose Android Release Signing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/android-signing-diagnostic-request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-android-release-signing
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout refactor source
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/rust-core-windows-android
+          path: source
+
+      - name: Checkout control branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: control
+
+      - name: Diagnose without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          set +e
+          OUTPUT=$(bash scripts/ci/prepare-android-signing.sh 2>&1)
+          RC=$?
+          set -e
+
+          RESULT=unknown_failure
+          if [[ "$RC" -eq 0 ]]; then
+            RESULT=success
+          elif grep -Fq 'ANDROID_KEYSTORE_BASE64 did not decode' <<<"$OUTPUT"; then
+            RESULT=base64_decode_failed
+          elif grep -Fq 'Decoded keystore does not match' <<<"$OUTPUT"; then
+            RESULT=keystore_bytes_mismatch
+          elif grep -Fq 'ANDROID_KEYSTORE_PASSWORD is incorrect or malformed' <<<"$OUTPUT"; then
+            RESULT=store_password_mismatch
+          elif grep -Fq 'ANDROID_KEY_PASSWORD is incorrect or malformed' <<<"$OUTPUT"; then
+            RESULT=key_password_mismatch
+          elif grep -Fq 'certificate fingerprint does not match' <<<"$OUTPUT"; then
+            RESULT=certificate_mismatch
+          elif grep -Fq 'release alias' <<<"$OUTPUT"; then
+            RESULT=alias_missing
+          fi
+
+          cd ../control
+          mkdir -p .github/release-status
+          jq -n \
+            --arg result "$RESULT" \
+            --arg source_ref "refactor/rust-core-windows-android" \
+            --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{result:$result,source_ref:$source_ref,checked_at:$checked_at}' \
+            > .github/release-status/android-signing-diagnostic.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/release-status/android-signing-diagnostic.json
+          git commit -m "ci(status): record Android signing diagnostic ($RESULT)" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
