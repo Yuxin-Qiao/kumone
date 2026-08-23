@@ -175,28 +175,15 @@ jobs:
             Write-Warning "Windows NSIS installer is $mib MiB; above the 10 MiB stretch target but within the 15 MiB hard budget"
           }
 
-      - name: Create or update draft release and upload Windows installer
+      - name: Upload Windows installer to existing draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
           INSTALLER: ${{ steps.windows_asset.outputs.path }}
         shell: pwsh
         run: |
-          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG `
-              --repo $env:GITHUB_REPOSITORY `
-              --target $env:SOURCE_SHA `
-              --title "Kumone v$env:VERSION (Windows + Android downstream)" `
-              --notes "Downstream Windows + Android build aligned to upstream Kumone v$env:VERSION. App version remains upstream-aligned; downstream RC state is encoded only in the release tag." `
-              --draft `
-              --prerelease
-            if ($LASTEXITCODE -ne 0) { throw "Failed to create draft release $env:TAG" }
-          }
           gh release upload $env:TAG $env:INSTALLER --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows installer to $env:TAG" }
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows installer to existing draft release $env:TAG" }
 
       - name: Attest Windows installer provenance
         uses: actions/attest@v4
