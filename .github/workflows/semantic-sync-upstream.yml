@@ -1,0 +1,133 @@
+name: Semantic Sync Upstream Into Refactor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/upstream-sync-request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve sync target
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST=.github/upstream-sync-request.json
+          if [[ ! -f "$REQUEST" ]]; then
+            echo "::error::Missing $REQUEST"
+            exit 1
+          fi
+          TARGET_BRANCH=$(jq -r '.target_branch // "refactor/rust-core-windows-android"' "$REQUEST")
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Git and fetch upstream
+        env:
+          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$TARGET_BRANCH"
+          git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          git remote add upstream https://github.com/missuo/kumone.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/missuo/kumone.git
+          git fetch upstream main --tags --force
+
+      - name: Merge upstream with ownership-aware conflict resolution
+        id: merge
+        env:
+          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          MERGE_BASE=$(git merge-base HEAD upstream/main)
+          if [[ "$UPSTREAM_HEAD" == "$MERGE_BASE" ]]; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            echo "Branch is already up to date with upstream/main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          set +e
+          git merge --no-commit --no-ff upstream/main
+          MERGE_STATUS=$?
+          set -e
+
+          if [[ "$MERGE_STATUS" -ne 0 ]]; then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            if [[ "${#conflicts[@]}" -eq 0 ]]; then
+              git merge --abort || true
+              echo "::error::Merge failed without resolvable conflict paths"
+              exit 1
+            fi
+
+            printf 'Resolving %s conflict(s) by ownership policy:\n' "${#conflicts[@]}"
+            for path in "${conflicts[@]}"; do
+              case "$path" in
+                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|README.md|README_CN.md|.github/workflows/release.yml|Sources/Kumone/*|AppIcon.icon/*|Scripts/*|docs/*|ios/*)
+                  echo "  upstream owns: $path"
+                  git checkout --theirs -- "$path"
+                  git add -- "$path"
+                  ;;
+                *)
+                  echo "::error::Unexpected conflict in downstream-owned or unclassified path: $path"
+                  git merge --abort || true
+                  exit 1
+                  ;;
+              esac
+            done
+          fi
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "::error::Unresolved conflicts remain"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+
+          VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Could not resolve merged upstream version"
+            exit 1
+          fi
+
+          git commit -m "chore(sync): integrate upstream v$VERSION into downstream refactor"
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Semantic upstream sync"
+            echo "- Target: \`$TARGET_BRANCH\`"
+            echo "- Upstream version: **$VERSION**"
+            echo "- Swift/Package/CHANGELOG conflicts: upstream wins"
+            echo "- Rust/Windows/Android/Web downstream paths: preserved"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify downstream core and web after merge
+        if: steps.merge.outputs.updated == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p kumone-core -p kumone-ffi --all-targets
+          npm test --prefix web
+
+      - name: Push synchronized refactor branch
+        if: steps.merge.outputs.updated == 'true'
+        env:
+          TARGET_BRANCH: ${{ steps.request.outputs.target_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:"$TARGET_BRANCH"
+          git push origin --tags
