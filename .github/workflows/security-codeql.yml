@@ -1,0 +1,123 @@
+name: CodeQL Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/android/**"
+      - "apps/windows/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/android/**"
+      - "apps/windows/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/**"
+  schedule:
+    - cron: "23 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: rust
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+          - language: java-kotlin
+            build-mode: manual
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - name: Setup Java for Android analysis
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK for Kotlin analysis
+        if: matrix.language == 'java-kotlin'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android SDK and NDK for Kotlin analysis
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Setup Gradle for Kotlin analysis
+        if: matrix.language == 'java-kotlin'
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "9.5.0"
+          cache-disabled: true
+
+      - name: Prepare Rust bridge for Kotlin analysis
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+          cargo build -p kumone-ffi --release
+          rm -rf apps/android/app/build/generated/uniffi/kotlin
+          mkdir -p apps/android/app/build/generated/uniffi/kotlin
+          cargo run -p uniffi-bindgen -- generate \
+            --library target/release/libkumone_ffi.so \
+            --language kotlin \
+            --out-dir apps/android/app/build/generated/uniffi/kotlin \
+            --no-format
+          rm -rf apps/android/app/build/generated/uniffi/jniLibs
+          cargo ndk -t arm64-v8a \
+            -o apps/android/app/build/generated/uniffi/jniLibs \
+            build -p kumone-ffi --release
+
+      - name: Build Kotlin application for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: gradle -p apps/android :app:assembleDebug --rerun-tasks --no-build-cache
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

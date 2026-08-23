@@ -6,17 +6,76 @@
 section the English bullets come first, followed by their Simplified Chinese
 counterparts. 段落格式：`## <版本号> - <日期>`，条目必须写成单行。
 
-## 0.1.9.1 - 2026-08-18
-
-### Added / 新增
-
-- Comprehensive multi-mode login options added for Web & PWA: Phone SMS Captcha, Phone/Email Password with client-side MD5 hashing, QR Code scan, and Cookie/MUSIC_U direct import
-- Web & PWA 新增多模式登录：支持手机验证码（60s 倒计时）、手机/邮箱密码（客户端 MD5 加密）、二维码扫码以及 Cookie / MUSIC_U 直接导入
+## 0.2.3 - 2026-08-22
 
 ### Fixed / 修复
 
-- Enhanced Web login state synchronization and automatic auth cookie cleanup on invalid sessions
-- 优化 Web 登录态同步逻辑，修复鉴权会话失效时的自动状态清理与重置机制
+- iOS playback now resumes automatically after audio interruptions (phone calls, WeChat voice messages) end; playback also pauses when headphones are unplugged
+- The artwork was clipped in iPhone landscape on the now-playing page; it now scales to the display height
+- Lock-screen artwork is now served at 1024px so the tap-to-fullscreen presentation engages
+- iOS 音频被打断（来电、微信语音等）结束后现在会自动恢复播放；拔出耳机时自动暂停
+- iPhone 横屏下播放页封面显示不全的问题；封面现随屏幕高度自适应缩放
+- 锁屏封面改为 1024px 高清图，点按全屏展示可正常触发
+
+### Added / 新增
+
+- The compact now-playing page fills the gap between the artwork and the controls with three auto-scrolling synced lyric lines; tap them (or the top-right button) for the full lyrics page
+- 紧凑播放页在封面与控制键之间新增三行自动滚动的同步歌词，点击歌词（或右上角按钮）进入全屏歌词页
+
+## 0.2.2 - 2026-08-22
+
+### Fixed / 修复
+
+- The iOS app icon never showed — the icon set contained no image; the gold-spiral icon is now rendered from the shared artwork with the same composition as macOS
+- The iOS Home Screen name showed "KumoneIOS" (`PRODUCT_DISPLAY_NAME` is not a real build setting); it now displays "Kumone" via `CFBundleDisplayName`
+- iOS 图标一直不显示的问题（图标集里没有任何图片）；现从共享素材按 macOS 相同构图渲染金色旋涡图标
+- iOS 主屏名称显示为「KumoneIOS」的问题（`PRODUCT_DISPLAY_NAME` 并非有效构建设置）；现通过 `CFBundleDisplayName` 显示为「Kumone」
+
+### Improved / 改进
+
+- The iOS bundle identifier is now `sb.moe.kumone`, distinct from the macOS app (`im.missuo.Kumone` stays unchanged so Sparkle updates keep working)
+- iOS 的 bundle ID 改为 `sb.moe.kumone`，与 macOS 区分（macOS 保持 `im.missuo.Kumone` 不变，确保 Sparkle 升级不受影响）
+
+## 0.2.1 - 2026-08-22
+
+### Added / 新增
+
+- Now Playing gains a like command: the hearted state syncs with the app and can be toggled from CarPlay / Control Center contexts
+- 系统 Now Playing 接入「喜欢」：红心状态与 App 内双向同步，可在 CarPlay / 控制中心相关场景切换
+
+### Fixed / 修复
+
+- iOS audio stopped when the app left the foreground: `INFOPLIST_KEY_UIBackgroundModes` is not a real build setting and was silently ignored, so the built Info.plist had no background-audio declaration; it now comes from a partial Info.plist merged into the generated one
+- iOS 应用退到后台后音频停止的问题：`INFOPLIST_KEY_UIBackgroundModes` 并非有效构建设置、被静默忽略，构建产物缺少后台音频声明；现改由部分 Info.plist 与自动生成内容合并提供
+
+## 0.2.0 - 2026-08-21
+
+### Added / 新增
+
+- iOS and iPadOS support: cross-platform core (KumoneCore), adaptive layouts for compact and regular widths, and an `ios/` app workspace (#5, contributed by @MikeChongCan)
+- Every release now ships an unsigned iOS IPA alongside the macOS build (sideload with your own signing)
+- The macOS build is now Universal 2 — Intel Macs are supported (#7)
+- iOS 与 iPadOS 支持：跨平台核心（KumoneCore）、紧凑/常规宽度自适应布局，以及 `ios/` 应用工程（#5，由 @MikeChongCan 贡献）
+- 每次发版现在会同时附带无签名的 iOS IPA（自行签名侧载）
+- macOS 构建改为 Universal 2，支持 Intel Mac（#7）
+
+### Fixed / 修复
+
+- Toolbar availability check missed the iOS clause, breaking the iOS build against the iOS 18 target
+- Player bar's bottom fade no longer bleeds over the sidebar's corner
+- The iOS app-shell Xcode project was silently excluded by .gitignore; it is now reconstructed via XcodeGen (`ios/project.yml`) and checked in, with the missing launch-screen key added so the app no longer letterboxes
+- The sidebar divider's resize cursor no longer leaks onto the immersive now-playing page (#6)
+- 工具栏可用性判断缺少 iOS 条件，导致 iOS 18 目标编译失败的问题
+- 播放条底部渐变不再溢出覆盖侧边栏底角
+- iOS app 壳工程曾被 .gitignore 静默排除；现改由 XcodeGen（`ios/project.yml`）生成并入库，并补上缺失的启动屏声明，App 不再上下黑边
+- 侧边栏分隔条的拖拽光标不再泄漏到沉浸播放页上（#6）
+
+### Improved / 改进
+
+- Player chrome clearance is now derived from shared layout constants instead of scattered magic numbers
+- The Home page no longer shows a sign-in card for anonymous users; the login entry lives only in the sidebar / 我的 tab
+- 播放条净空高度改由共享布局常量推导，替代分散的魔数
+- 未登录时首页不再显示登录卡片，登录入口仅保留在侧边栏 / 「我的」中
 
 ## 0.1.9 - 2026-08-17
 

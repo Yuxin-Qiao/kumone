@@ -1,0 +1,87 @@
+name: Windows CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/windows/**"
+      - "crates/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ci-windows.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/windows/**"
+      - "crates/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ci-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-tauri:
+    name: Windows Tauri shell
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+
+      - name: Test shared Rust core
+        run: cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
+
+      - name: Test shared web UI
+        run: npm test --prefix web
+
+      - name: Check Tauri shell
+        run: cargo check --manifest-path apps/windows/src-tauri/Cargo.toml
+
+      - name: Clippy Tauri shell
+        run: cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build optimized Windows executable
+        run: cargo build --release --manifest-path apps/windows/src-tauri/Cargo.toml
+
+      - name: Enforce Windows binary size budget
+        shell: pwsh
+        run: |
+          $path = "apps/windows/src-tauri/target/release/kumone-windows.exe"
+          if (-not (Test-Path $path)) { throw "Missing optimized Windows executable: $path" }
+          $bytes = (Get-Item $path).Length
+          $mib = [math]::Round($bytes / 1MB, 2)
+          "### Windows size guard" >> $env:GITHUB_STEP_SUMMARY
+          "- Optimized EXE: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Stretch target: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          "- Hard budget: **15 MiB**" >> $env:GITHUB_STEP_SUMMARY
+          if ($bytes -gt 15MB) {
+            throw "Windows optimized executable is $mib MiB, above the 15 MiB hard budget"
+          }
+          if ($bytes -gt 10MB) {
+            Write-Warning "Windows optimized executable is $mib MiB; above the 10 MiB stretch target but within the 15 MiB hard budget"
+          }
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumone-windows-tauri
+          path: apps/windows/src-tauri/target/release/kumone-windows.exe
+          if-no-files-found: error
+          retention-days: 7

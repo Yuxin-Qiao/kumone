@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/kumone-core",
+    "crates/kumone-ffi",
+    "tools/uniffi-bindgen",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.3"
+edition = "2024"
+license = "LGPL-3.0-only"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"

@@ -1,11 +1,5 @@
-#if os(macOS)
-import AppKit
-public typealias PlatformImage = NSImage
-#elseif canImport(UIKit)
-import UIKit
-public typealias PlatformImage = UIImage
-#endif
 import CryptoKit
+import Foundation
 import SwiftUI
 
 /// Two-tier (memory + disk) image cache with in-flight request coalescing.
@@ -34,12 +28,12 @@ actor ImageCache {
         }
         let task = Task<PlatformImage?, Never> { [diskURL] in
             let fileURL = diskURL.appendingPathComponent(key)
-            if let data = try? Data(contentsOf: fileURL), let image = PlatformImage.create(from: data) {
+            if let data = try? Data(contentsOf: fileURL), let image = PlatformImage(data: data) {
                 return image
             }
             guard let (data, response) = try? await URLSession.shared.data(from: url),
                   (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
-                  let image = PlatformImage.create(from: data) else { return nil }
+                  let image = PlatformImage(data: data) else { return nil }
             try? data.write(to: fileURL, options: .atomic)
             return image
         }
@@ -47,8 +41,10 @@ actor ImageCache {
         let result = await task.value
         inflight[key] = nil
         if let result {
+            let width = result.size.width
+            let height = result.size.height
             memory.setObject(result, forKey: key as NSString,
-                             cost: Int(result.size.width * result.size.height * 4))
+                             cost: Int(width * height * 4))
         }
         return result
     }
@@ -56,67 +52,6 @@ actor ImageCache {
     private static func cacheKey(for url: URL) -> String {
         let digest = Insecure.MD5.hash(data: Data(url.absoluteString.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-extension Image {
-    init(platformImage: PlatformImage) {
-        #if os(macOS)
-        self.init(nsImage: platformImage)
-        #else
-        self.init(uiImage: platformImage)
-        #endif
-    }
-}
-
-extension PlatformImage {
-    static func create(from data: Data) -> PlatformImage? {
-        #if os(macOS)
-        return NSImage(data: data)
-        #else
-        return UIImage(data: data)
-        #endif
-    }
-
-    /// Renders the image into a circle of the given point diameter.
-    /// Useful where SwiftUI clipping is unreliable (menu labels, etc.).
-    func circularCropped(diameter: CGFloat) -> PlatformImage {
-        #if os(macOS)
-        let target = NSImage(size: NSSize(width: diameter, height: diameter))
-        target.lockFocus()
-        let rect = NSRect(x: 0, y: 0, width: diameter, height: diameter)
-        NSBezierPath(ovalIn: rect).addClip()
-        let sourceAspect = size.width / max(size.height, 1)
-        var drawRect = rect
-        if sourceAspect > 1 {
-            drawRect.size.width = diameter * sourceAspect
-            drawRect.origin.x = -(drawRect.width - diameter) / 2
-        } else if sourceAspect < 1 {
-            drawRect.size.height = diameter / sourceAspect
-            drawRect.origin.y = -(drawRect.height - diameter) / 2
-        }
-        draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
-        target.unlockFocus()
-        return target
-        #else
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = self.scale
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter), format: format)
-        return renderer.image { _ in
-            let rect = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-            UIBezierPath(ovalIn: rect).addClip()
-            let sourceAspect = size.width / max(size.height, 1)
-            var drawRect = rect
-            if sourceAspect > 1 {
-                drawRect.size.width = diameter * sourceAspect
-                drawRect.origin.x = -(drawRect.width - diameter) / 2
-            } else if sourceAspect < 1 {
-                drawRect.size.height = diameter / sourceAspect
-                drawRect.origin.y = -(drawRect.height - diameter) / 2
-            }
-            self.draw(in: drawRect)
-        }
-        #endif
     }
 }
 
