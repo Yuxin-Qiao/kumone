@@ -1,6 +1,8 @@
 name: Semantic Sync Upstream Into Refactor
 
 on:
+  schedule:
+    - cron: "0 */3 * * *"
   push:
     branches: [main]
     paths:
@@ -10,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: semantic-upstream-sync
+  cancel-in-progress: true
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -17,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
 
       - name: Resolve sync target
         id: request
@@ -24,11 +31,11 @@ jobs:
         run: |
           set -euo pipefail
           REQUEST=.github/upstream-sync-request.json
-          if [[ ! -f "$REQUEST" ]]; then
-            echo "::error::Missing $REQUEST"
-            exit 1
+          if [[ -f "$REQUEST" ]]; then
+            TARGET_BRANCH=$(jq -r '.target_branch // "refactor/rust-core-windows-android"' "$REQUEST")
+          else
+            TARGET_BRANCH="refactor/rust-core-windows-android"
           fi
-          TARGET_BRANCH=$(jq -r '.target_branch // "refactor/rust-core-windows-android"' "$REQUEST")
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Configure Git and fetch upstream
@@ -77,13 +84,18 @@ jobs:
             printf 'Resolving %s conflict(s) by ownership policy:\n' "${#conflicts[@]}"
             for path in "${conflicts[@]}"; do
               case "$path" in
-                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|README.md|README_CN.md|.github/workflows/release.yml|Sources/Kumone/*|AppIcon.icon/*|Scripts/*|docs/*|ios/*)
+                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|README.md|README_CN.md|.github/workflows/release.yml|Sources/Kumone/*|Sources/Kumone/**/*|AppIcon.icon/*|AppIcon.icon/**/*|Scripts/*|Scripts/**/*|ios/*|ios/**/*)
                   echo "  upstream owns: $path"
                   git checkout --theirs -- "$path"
                   git add -- "$path"
                   ;;
+                crates/*|crates/**/*|apps/windows/*|apps/windows/**/*|apps/android/*|apps/android/**/*|web/*|web/**/*|docs/architecture/*|docs/architecture/**/*|docs/release/*|docs/release/**/*|scripts/ci/*|scripts/ci/**/*)
+                  echo "  downstream owns: $path"
+                  git checkout --ours -- "$path"
+                  git add -- "$path"
+                  ;;
                 *)
-                  echo "::error::Unexpected conflict in downstream-owned or unclassified path: $path"
+                  echo "::error::Unexpected conflict in unclassified path: $path"
                   git merge --abort || true
                   exit 1
                   ;;
@@ -110,8 +122,9 @@ jobs:
             echo "### Semantic upstream sync"
             echo "- Target: \`$TARGET_BRANCH\`"
             echo "- Upstream version: **$VERSION**"
-            echo "- Swift/Package/CHANGELOG conflicts: upstream wins"
-            echo "- Rust/Windows/Android/Web downstream paths: preserved"
+            echo "- Upstream-owned: Swift / Package / CHANGELOG / iOS"
+            echo "- Downstream-owned: Rust / Windows / Android / Web / architecture + release docs"
+            echo "- Direct upstream-to-main merge is disabled"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify downstream core and web after merge
