@@ -4,6 +4,8 @@
 //! `kumone-core`; this crate only converts UniFFI-friendly values to and from
 //! core types.
 
+pub mod account;
+
 use std::collections::HashMap;
 
 use kumone_core::{
