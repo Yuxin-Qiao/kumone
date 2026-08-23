@@ -204,10 +204,7 @@ pub fn decode_qr_key_response(body: String) -> FfiQrKeyResult {
 }
 
 #[uniffi::export]
-pub fn build_qr_check_request(
-    key: String,
-    cookies: HashMap<String, String>,
-) -> FfiRequestResult {
+pub fn build_qr_check_request(key: String, cookies: HashMap<String, String>) -> FfiRequestResult {
     match core_build_qr_check_request(&key, &session_cookies(cookies)) {
         Ok(request) => FfiRequestResult::success(request),
         Err(error) => FfiRequestResult::failure(error),
@@ -295,9 +292,7 @@ pub fn decode_personalized_playlists_response(body: String) -> FfiPlaylistsResul
 }
 
 #[uniffi::export]
-pub fn build_recommend_resource_request(
-    cookies: HashMap<String, String>,
-) -> FfiRequestResult {
+pub fn build_recommend_resource_request(cookies: HashMap<String, String>) -> FfiRequestResult {
     match core_build_recommend_resource_request(&session_cookies(cookies)) {
         Ok(request) => FfiRequestResult::success(request),
         Err(error) => FfiRequestResult::failure(error),
