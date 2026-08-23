@@ -1,10 +1,10 @@
 {
   "conclusion": "",
-  "createdAt": "2026-08-23T05:43:19Z",
-  "databaseId": 32621055714,
-  "headSha": "125dfff6c36988e25cf1375b2a9deea73390dde4",
+  "createdAt": "2026-08-23T15:44:11Z",
+  "databaseId": 32649479491,
+  "headSha": "56d243de78c3709654a1ea2bec79eebb254e69d6",
   "status": "queued",
-  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32621055714",
+  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32649479491",
   "version": "0.2.3",
-  "source_ref": "refactor/rust-core-windows-android"
+  "source_ref": "main"
 }
