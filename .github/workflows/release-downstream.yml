@@ -7,14 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: "Source branch or tag to build"
+        description: "Source branch, tag, or commit to build"
         required: false
         type: string
         default: "main"
       version:
-        description: "Upstream-aligned version (for example 0.2.3)"
+        description: "Upstream-aligned app version (for example 0.2.3)"
         required: true
         type: string
+      tag_suffix:
+        description: "Optional downstream tag suffix such as rc.1 (app version remains upstream-aligned)"
+        required: false
+        type: string
+        default: ""
       prerelease:
         description: "Publish as a prerelease"
         required: false
@@ -37,6 +42,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      source_sha: ${{ steps.version.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,11 +66,21 @@ jobs:
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $requestedVersion = "${{ inputs.version }}".Trim()
+            $tagSuffix = "${{ inputs.tag_suffix }}".Trim()
           } else {
-            $requestedVersion = "${{ github.ref_name }}" -replace '^downstream-v', ''
+            $rawTagVersion = "${{ github.ref_name }}" -replace '^downstream-v', ''
+            $tagMatch = [regex]::Match($rawTagVersion, '^([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:-(.+))?$')
+            if (-not $tagMatch.Success) {
+              throw "Tag ${{ github.ref_name }} does not match downstream-v<version>[-suffix]"
+            }
+            $requestedVersion = $tagMatch.Groups[1].Value
+            $tagSuffix = $tagMatch.Groups[2].Value
           }
           if ([string]::IsNullOrWhiteSpace($requestedVersion)) {
             throw "A release version is required"
+          }
+          if (-not [string]::IsNullOrWhiteSpace($tagSuffix) -and $tagSuffix -notmatch '^[A-Za-z0-9._-]+$') {
+            throw "Invalid tag suffix: $tagSuffix"
           }
 
           $sourceChangelog = Get-Content "CHANGELOG.md" -Raw
@@ -100,13 +116,20 @@ jobs:
 
           $version = $upstreamVersion
           $tag = "downstream-v$version"
+          if (-not [string]::IsNullOrWhiteSpace($tagSuffix)) {
+            $tag = "$tag-$tagSuffix"
+          }
+          $sourceSha = (git rev-parse HEAD).Trim()
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
+          "source_sha=$sourceSha" >> $env:GITHUB_OUTPUT
 
           "### Upstream version gate" >> $env:GITHUB_STEP_SUMMARY
           "- Source: **$sourceVersion**" >> $env:GITHUB_STEP_SUMMARY
           "- Upstream: **$upstreamVersion**" >> $env:GITHUB_STEP_SUMMARY
-          "- Release: **$version**" >> $env:GITHUB_STEP_SUMMARY
+          "- App version: **$version**" >> $env:GITHUB_STEP_SUMMARY
+          "- Release tag: **$tag**" >> $env:GITHUB_STEP_SUMMARY
+          "- Source commit: ``$sourceSha``" >> $env:GITHUB_STEP_SUMMARY
 
           $configPath = "apps/windows/src-tauri/tauri.conf.json"
           $config = Get-Content $configPath -Raw | ConvertFrom-Json
@@ -119,31 +142,28 @@ jobs:
           cargo test --workspace --all-targets
           npm test --prefix web
 
-      - name: Build Windows installer into draft GitHub Release
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/windows
-          tagName: downstream-v__VERSION__
-          releaseName: "Kumone v__VERSION__ (Windows + Android downstream)"
-          releaseBody: |
-            Downstream Windows + Android build aligned to upstream Kumone v__VERSION__.
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: npm install --global @tauri-apps/cli@v2
 
-            - Windows: native Rust/Tauri 2 + system WebView2
-            - Android: native Kotlin/Compose + Media3
-            - Shared deterministic protocol logic: Rust kumone-core
-            - Application version matches missuo/kumone upstream
-          releaseDraft: true
-          prerelease: true
-          args: --bundles nsis
+      - name: Build Windows NSIS installer
+        shell: pwsh
+        run: |
+          Push-Location apps/windows
+          try {
+            tauri build --bundles nsis
+          } finally {
+            Pop-Location
+          }
 
       - name: Enforce Windows installer size budget
+        id: windows_asset
         shell: pwsh
         run: |
           $installer = Get-ChildItem "apps/windows/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
           if ($null -eq $installer) { throw "NSIS installer was not produced" }
           $mib = [math]::Round($installer.Length / 1MB, 2)
+          "path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
           "### Windows release size" >> $env:GITHUB_STEP_SUMMARY
           "- NSIS installer: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
           "- Stretch target: **10 MiB**" >> $env:GITHUB_STEP_SUMMARY
@@ -154,6 +174,29 @@ jobs:
           if ($installer.Length -gt 10MB) {
             Write-Warning "Windows NSIS installer is $mib MiB; above the 10 MiB stretch target but within the 15 MiB hard budget"
           }
+
+      - name: Create or update draft release and upload Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+          INSTALLER: ${{ steps.windows_asset.outputs.path }}
+        shell: pwsh
+        run: |
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --target $env:SOURCE_SHA `
+              --title "Kumone v$env:VERSION (Windows + Android downstream)" `
+              --notes "Downstream Windows + Android build aligned to upstream Kumone v$env:VERSION. App version remains upstream-aligned; downstream RC state is encoded only in the release tag." `
+              --draft `
+              --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create draft release $env:TAG" }
+          }
+          gh release upload $env:TAG $env:INSTALLER --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload Windows installer to $env:TAG" }
 
       - name: Attest Windows installer provenance
         uses: actions/attest@v4
@@ -262,8 +305,6 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK"
           APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
           [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
-          # Android app-signing certificates are intentionally self-signed identities.
-          # Verify the AAB cryptographic signature without treating CA-chain warnings as failures.
           jarsigner -verify "$AAB"
 
       - name: Prepare Android release assets
