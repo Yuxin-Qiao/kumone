@@ -1,10 +1,11 @@
 {
   "conclusion": "",
-  "createdAt": "2026-08-23T15:44:11Z",
-  "databaseId": 32649479491,
-  "headSha": "56d243de78c3709654a1ea2bec79eebb254e69d6",
+  "createdAt": "2026-08-23T15:49:41Z",
+  "databaseId": 32649763589,
+  "headSha": "56c54382bf148992f08ffb13a4d215b5a3cdaaf9",
   "status": "queued",
-  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32649479491",
+  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32649763589",
   "version": "0.2.3",
-  "source_ref": "main"
+  "source_ref": "8822b36e15fd5f5846749cca32a80d5075216283",
+  "tag_suffix": "rc.1"
 }
