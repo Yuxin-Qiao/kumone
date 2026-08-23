@@ -34,6 +34,7 @@ jobs:
 
           SOURCE_REF=$(jq -r '.source_ref // "main"' "$REQUEST_FILE")
           PRERELEASE=$(jq -r '.prerelease // true' "$REQUEST_FILE")
+          TAG_SUFFIX=$(jq -r '.tag_suffix // ""' "$REQUEST_FILE")
 
           CHANGELOG=$(curl --fail --silent --show-error --location \
             https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md)
@@ -45,15 +46,21 @@ jobs:
             echo "::error::Could not resolve the latest upstream version from missuo/kumone CHANGELOG.md"
             exit 1
           fi
+          if [[ -n "$TAG_SUFFIX" && ! "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Invalid tag_suffix: $TAG_SUFFIX"
+            exit 1
+          fi
 
           echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
           {
             echo "### Downstream release request"
             echo "- Upstream: missuo/kumone"
             echo "- Version: **$VERSION**"
             echo "- Source ref: \`$SOURCE_REF\`"
+            echo "- Tag suffix: \`${TAG_SUFFIX:-<none>}\`"
             echo "- Prerelease: **$PRERELEASE**"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -64,16 +71,20 @@ jobs:
           SOURCE_REF: ${{ steps.request.outputs.source_ref }}
           VERSION: ${{ steps.request.outputs.version }}
           PRERELEASE: ${{ steps.request.outputs.prerelease }}
+          TAG_SUFFIX: ${{ steps.request.outputs.tag_suffix }}
         shell: bash
         run: |
           set -euo pipefail
           DISPATCHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          gh workflow run release-downstream.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f source_ref="$SOURCE_REF" \
-            -f version="$VERSION" \
+          ARGS=(
+            --repo "$GITHUB_REPOSITORY"
+            --ref main
+            -f source_ref="$SOURCE_REF"
+            -f version="$VERSION"
             -f prerelease="$PRERELEASE"
+            -f tag_suffix="$TAG_SUFFIX"
+          )
+          gh workflow run release-downstream.yml "${ARGS[@]}"
 
           RUN_JSON=""
           for _ in $(seq 1 12); do
@@ -99,13 +110,14 @@ jobs:
           printf '%s\n' "$RUN_JSON" | jq \
             --arg version "$VERSION" \
             --arg source_ref "$SOURCE_REF" \
-            '. + {version:$version,source_ref:$source_ref}' \
+            --arg tag_suffix "$TAG_SUFFIX" \
+            '. + {version:$version,source_ref:$source_ref,tag_suffix:$tag_suffix}' \
             > .github/release-status/active.json
           RUN_ID=$(jq -r '.databaseId' .github/release-status/active.json)
           RUN_URL=$(jq -r '.url' .github/release-status/active.json)
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "url=$RUN_URL" >> "$GITHUB_OUTPUT"
-          echo "Dispatched downstream-v$VERSION: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched downstream v$VERSION: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Persist active release run
         shell: bash
