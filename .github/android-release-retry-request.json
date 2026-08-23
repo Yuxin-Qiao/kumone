@@ -2,6 +2,6 @@
   "source_ref": "refactor/rust-core-windows-android",
   "version": "0.2.3",
   "prerelease": true,
-  "requested_at": "2026-08-23T22:08:00+08:00",
-  "retry": 3
+  "requested_at": "2026-08-23T22:39:00+08:00",
+  "retry": 4
 }
