@@ -219,7 +219,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="downstream-v$VERSION"
-          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
+          RELEASE_ID=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
+          if [ -z "$RELEASE_ID" ]; then
+            echo "::error::Could not find draft or published release for tag $TAG"
+            exit 1
+          fi
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
             -F draft=false \
             -F prerelease="$PRERELEASE" >/dev/null
