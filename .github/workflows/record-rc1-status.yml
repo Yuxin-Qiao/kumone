@@ -1,0 +1,44 @@
+name: Record RC1 Verification Status
+
+on:
+  workflow_run:
+    workflows: ["RC1 Exact-Source Verification"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    if: github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+      - name: Record result
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .github/release-status
+          jq -n \
+            --argjson run_id "$RUN_ID" \
+            --argjson run_number "$RUN_NUMBER" \
+            --arg conclusion "$CONCLUSION" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg url "$RUN_URL" \
+            --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{workflow:"RC1 Exact-Source Verification",run_id:$run_id,run_number:$run_number,conclusion:$conclusion,head_sha:$head_sha,url:$url,source_ref:"8822b36e15fd5f5846749cca32a80d5075216283",version:"0.2.3",label:"rc.1",updated_at:$updated_at}' \
+            > .github/release-status/rc1.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/release-status/rc1.json
+          git commit -m "ci(status): record RC1 verification #$RUN_NUMBER $CONCLUSION"
+          git pull --rebase origin main
+          git push origin HEAD:main
