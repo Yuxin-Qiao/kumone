@@ -8,8 +8,7 @@ use kumone_core::unblock::{
     kugou_search_request as core_kugou_search_request,
     kugou_track_request as core_kugou_track_request,
     kuwo_convert_request as core_kuwo_convert_request,
-    kuwo_search_request as core_kuwo_search_request,
-    pyncmd_request as core_pyncmd_request,
+    kuwo_search_request as core_kuwo_search_request, pyncmd_request as core_pyncmd_request,
 };
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -104,10 +103,7 @@ pub fn unblock_kuwo_search_request(track: FfiUnblockTrack) -> FfiUnblockRequest 
 }
 
 #[uniffi::export]
-pub fn unblock_decode_kuwo_search_response(
-    body: String,
-    duration_ms: i64,
-) -> Option<FfiKuwoMatch> {
+pub fn unblock_decode_kuwo_search_response(body: String, duration_ms: i64) -> Option<FfiKuwoMatch> {
     core_decode_kuwo_search_response(&body, duration_ms).map(Into::into)
 }
 
@@ -160,8 +156,16 @@ mod tests {
     #[test]
     fn ffi_keeps_provider_request_shapes_platform_neutral() {
         assert!(unblock_pyncmd_request(track()).url.contains("id=185809"));
-        assert!(unblock_kuwo_search_request(track()).url.contains("search.kuwo.cn"));
-        assert!(unblock_kugou_search_request(track()).url.contains("mobilecdn.kugou.com"));
+        assert!(
+            unblock_kuwo_search_request(track())
+                .url
+                .contains("search.kuwo.cn")
+        );
+        assert!(
+            unblock_kugou_search_request(track())
+                .url
+                .contains("mobilecdn.kugou.com")
+        );
     }
 
     #[test]
