@@ -1,3 +1,5 @@
+mod unblock;
+
 use std::{
     collections::BTreeMap,
     sync::Mutex,
@@ -164,7 +166,10 @@ async fn execute(state: &AppState, request: RequestSpec) -> Result<String, Strin
         .await
         .map_err(|error| format!("failed to read NetEase response: {error}"))?;
     if !status.is_success() {
-        return Err(format!("NetEase HTTP {status}: {}", body.chars().take(240).collect::<String>()));
+        return Err(format!(
+            "NetEase HTTP {status}: {}",
+            body.chars().take(240).collect::<String>()
+        ));
     }
     Ok(body)
 }
@@ -231,8 +236,8 @@ async fn netease_resolve_playback(
 
 #[tauri::command]
 async fn netease_lyrics(state: State<'_, AppState>, track_id: i64) -> Result<LyricsView, String> {
-    let request = build_lyric_request(track_id, &state.snapshot()?)
-        .map_err(|error| error.to_string())?;
+    let request =
+        build_lyric_request(track_id, &state.snapshot()?).map_err(|error| error.to_string())?;
     let body = execute(&state, request).await?;
     let lyrics = decode_lyrics_response(&body).map_err(|error| error.to_string())?;
     Ok(LyricsView {
@@ -281,8 +286,8 @@ async fn netease_qr_check(
 
 #[tauri::command]
 async fn netease_account(state: State<'_, AppState>) -> Result<Option<UserProfile>, String> {
-    let request = build_user_account_request(&state.snapshot()?)
-        .map_err(|error| error.to_string())?;
+    let request =
+        build_user_account_request(&state.snapshot()?).map_err(|error| error.to_string())?;
     let body = execute(&state, request).await?;
     decode_user_account_response(&body).map_err(|error| error.to_string())
 }
@@ -328,8 +333,8 @@ async fn netease_recommended_playlists(
 
 #[tauri::command]
 async fn netease_daily_songs(state: State<'_, AppState>) -> Result<Vec<SearchTrack>, String> {
-    let request = build_daily_songs_request(&state.snapshot()?)
-        .map_err(|error| error.to_string())?;
+    let request =
+        build_daily_songs_request(&state.snapshot()?).map_err(|error| error.to_string())?;
     let body = execute(&state, request).await?;
     decode_daily_songs_response(&body).map_err(|error| error.to_string())
 }
@@ -339,8 +344,8 @@ async fn netease_playlist_detail(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<PlaylistDetailView, String> {
-    let request = build_playlist_detail_request(id, &state.snapshot()?)
-        .map_err(|error| error.to_string())?;
+    let request =
+        build_playlist_detail_request(id, &state.snapshot()?).map_err(|error| error.to_string())?;
     let body = execute(&state, request).await?;
     let detail = decode_playlist_detail_response(&body).map_err(|error| error.to_string())?;
     Ok(PlaylistDetailView {
@@ -408,6 +413,7 @@ pub fn run() {
             netease_recommended_playlists,
             netease_daily_songs,
             netease_playlist_detail,
+            unblock::netease_unblock_track,
             netease_weapi,
             netease_eapi,
             netease_build_weapi_request,
