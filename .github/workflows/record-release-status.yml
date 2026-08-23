@@ -3,7 +3,7 @@ name: Record Downstream Release Status
 on:
   workflow_run:
     workflows:
-      - "Request Upstream-Aligned Downstream Release"
+      - "Validate Downstream Release Request"
       - "Downstream Windows + Android Release"
     types: [completed]
 
