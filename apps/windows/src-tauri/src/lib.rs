@@ -1,3 +1,4 @@
+mod bridge;
 mod unblock;
 
 use std::{
@@ -396,6 +397,7 @@ fn netease_build_eapi_request(
 
 pub fn run() {
     tauri::Builder::default()
+        .setup(bridge::install)
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             session_import,
