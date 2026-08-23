@@ -232,19 +232,9 @@ jobs:
             build -p kumone-ffi --release
           test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
 
-      - name: Require Android release signing secrets
+      - name: Normalize and verify pinned signing identity
         shell: bash
-        run: |
-          set -euo pipefail
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "::error::$name is required for an installable, update-stable Android release"
-              exit 1
-            fi
-          done
-          KEYSTORE="$RUNNER_TEMP/kumone-release.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
-          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+        run: bash scripts/ci/prepare-android-signing.sh
 
       - name: Build signed release APK and AAB
         shell: bash
@@ -252,18 +242,27 @@ jobs:
           set -euo pipefail
           gradle -p apps/android \
             :app:lintRelease \
-            :app:testReleaseUnitTest \
+            :app:testDebugUnitTest \
             :app:assembleRelease \
             :app:bundleRelease \
             -PkumoneVersion="$VERSION" \
             -PkumoneVersionCode="${{ github.run_number }}"
 
-      - name: Verify Rust core is packaged
+      - name: Verify APK signer, AAB signature, and packaged Rust core
         shell: bash
         run: |
           set -euo pipefail
-          unzip -l apps/android/app/build/outputs/apk/release/app-release.apk \
-            | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+          APK=apps/android/app/build/outputs/apk/release/app-release.apk
+          AAB=apps/android/app/build/outputs/bundle/release/app-release.aab
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
+          test -f "$APK"
+          test -f "$AAB"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
+          jarsigner -verify -strict "$AAB" >/dev/null
 
       - name: Prepare Android release assets
         shell: bash
