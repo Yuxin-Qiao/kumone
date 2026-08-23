@@ -10,20 +10,13 @@
 
 # Kumone
 
-**雲の音 — NetEase Cloud Music client for macOS, Windows, Linux & Web / PWA**
+**雲の音 — Native macOS client for NetEase Cloud Music**
 
-Native SwiftUI on macOS · Electron for Windows & Linux · PWA & Docker for Web (Mobile & Desktop)
+Built with SwiftUI · Talks directly to NetEase's real API · Sparkle auto-updates
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
-[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-port)
-[![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-desktop-appimage--deb)
-[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker-mobile--cross-platform)
+[![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
-
-[![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
-[![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
-[![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
-[![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
 
 <table>
   <tr>
@@ -47,78 +40,21 @@ Native SwiftUI on macOS · Electron for Windows & Linux · PWA & Docker for Web 
 - 🔐 **QR code login** — scan with the NetEase Cloud Music app; cookies are persisted locally and auto-refreshed
 - 🏠 **Home** — daily recommendations, Personal FM, Heartbeat Mode, recommended playlists, radar playlists (Personal Radar family, personalized per account), charts, new albums, recommended artists
 - 🧭 **Explore** — category playlists (curated / official / charts / mood) with infinite scrolling
-- 🎵 **Playback** — AVPlayer / MediaSession engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
+- 🎵 **Playback** — AVPlayer engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
 - 🔓 **Gray track unblocking** — native implementation of UnblockNeteaseMusic's core sources (pyncmd / Kuwo / Kugou); unavailable or trial-only tracks automatically resolve from third-party sources
 - 🖼 **Immersive now-playing page** — artwork-tinted gradient backdrop, large artwork, big synced lyrics (click the player-bar artwork to open, Esc to close)
 - 📻 **Personal FM** — immersive roaming page with trash / skip
-- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation + romanization, click to seek
-- 🪟 **Desktop lyrics (macOS / Desktop)** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
+- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation, click to seek
+- 🪟 **Desktop lyrics** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
 - 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
 - ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
 - 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center / SMTC / MPRIS / MediaSession notification (Now Playing), scrobbling, playback queue restored across launches
+- ⌨️ **System integration** — media keys / Control Center (Now Playing), scrobbling, playback queue restored across launches
 - 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
 
-## Web / PWA / Docker (Mobile & Cross-Platform)
+## Installation
 
-Run Kumone instantly in any modern browser without installation — including **iOS Safari, Android Chrome, iPadOS, Chrome, Edge, smart TVs, in-car infotainment**, or self-hosted via Docker:
-
-- 🌐 **Live Demo & PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone)
-  - 📱 **iOS**: In Safari, tap *Share → Add to Home Screen* for a full-screen, standalone app experience with no URL bars.
-  - 🤖 **Android**: In Chrome / Edge, tap *Menu → Install App / Add to Home screen*.
-- 🐳 **Run with Docker**:
-  ```bash
-  docker run -d --name kumone-web -p 3000:3000 ghcr.io/yuxin-qiao/kumone-web:latest
-  ```
-- 📦 **Docker Compose**:
-  ```yaml
-  version: '3.8'
-  services:
-    kumone-web:
-      image: ghcr.io/yuxin-qiao/kumone-web:latest
-      restart: unless-stopped
-      ports:
-        - "3000:3000"
-  ```
-
-## Windows (Electron port)
-
-This fork adds a full Windows port under [`windows/`](windows) — the Swift
-sources ported one-to-one: the weapi/eapi encryption layer is **byte-identical
-to the Swift implementation** (verified against fixed vectors), the API client,
-UnblockNeteaseMusic fallback chain and the whole UI are re-implemented in
-Electron.
-
-**Download** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1) (Windows 10/11 x64): `Kumone-Setup-0.1.9.1-x64.exe` installer or the
-portable zip. Built on a real Windows runner by
-[CI](.github/workflows/build-windows.yml).
-
-```bash
-cd windows
-npm install
-npm test             # crypto parity + live API smoke
-npm run e2e          # CDP-driven UI tests (16 assertions)
-npm run package:win  # NSIS installer
-```
-
-## Linux Desktop (AppImage & Deb)
-
-Native Linux desktop client with MPRIS media control support and system notifications.
-
-**Download** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64): `Kumone-0.1.9.1-x86_64.AppImage` or `Kumone_0.1.9.1_amd64.deb`. Built automatically by [CI](.github/workflows/build-linux.yml).
-
-```bash
-# Run AppImage
-chmod +x Kumone-0.1.9.1-x86_64.AppImage
-./Kumone-0.1.9.1-x86_64.AppImage
-
-# Or install Deb on Ubuntu/Debian
-sudo dpkg -i Kumone_0.1.9.1_amd64.deb
-```
-
-## Installation (macOS)
-
-Requires an Apple Silicon Mac running macOS 15+.
+Requires macOS 15+ (Universal: Apple Silicon and Intel).
 
 ### Homebrew
 
@@ -131,6 +67,9 @@ brew install owo-network/brew/kumone --cask
 Download the latest `Kumone-x.y.z.zip` from
 [Releases](https://github.com/missuo/kumone/releases/latest), unzip, and drag
 it into Applications.
+
+The app is signed with a Developer ID certificate and notarized by Apple, with
+built-in Sparkle automatic updates (menu bar: Kumone → Check for Updates…).
 
 ## Building
 
@@ -145,15 +84,18 @@ Scripts/compile_and_run.sh     # kill → repackage → relaunch
 ## Architecture
 
 ```
-Kumone/
-├── Sources/Kumone/     # macOS SwiftUI native implementation
-├── windows/            # Windows & Linux Electron desktop ports
-├── web/                # Web / PWA / Docker portable & mobile player
-└── .github/workflows/  # Automated multi-platform CI/CD & Upstream sync
+Sources/Kumone/
+├── Core/
+│   ├── API/            # NeteaseCrypto (weapi/eapi encryption), NeteaseClient (transport + cookies), NeteaseAPI (~50 endpoints)
+│   ├── Models/         # unified Track model (tolerates both JSON shapes), lyrics parser
+│   ├── Player/         # PlayerService (queue / shuffle / repeat / FM / URL resolution), UnblockService, NowPlayingManager
+│   └── Storage/        # AccountStore, SettingsManager, two-tier image cache
+├── DesignSystem/       # design tokens, button styles (hover scale / row highlight / chips), skeletons, cards, marquee, artwork palette
+└── Features/           # pages + player bar + immersive now-playing + lyrics/queue panels
 ```
 
 No third-party API server involved: weapi (double AES-CBC + RSA) and eapi
-(AES-ECB + MD5 digest) encryption are implemented natively, and
+(AES-ECB + MD5 digest) encryption are implemented natively in Swift, and
 requests go straight to `music.163.com` / `interface.music.163.com`.
 
 ## Credits
@@ -166,13 +108,9 @@ below, but their design and implementation ideas were referenced extensively:
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server) (LGPL-3.0-only) — third-party source endpoints and matching strategy for gray tracks (`UnblockService.swift` is an independent Swift reimplementation)
 - [LyricsX](https://github.com/ddddxxx/LyricsX) (MPL-2.0, © ddddxxx) — desktop lyrics window design reference (window configuration, screen-factor positioning; `DesktopLyrics.swift` is an independent SwiftUI implementation)
 
-## Maintainers
-
-- **Original Author**: [@missuo](https://github.com/missuo) (macOS Native Client)
-- **Maintainers**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows, Linux & Web/PWA Ports)
-
-See [MAINTAINERS.md](MAINTAINERS.md) for more information.
-
 ## License
 
-Kumone is licensed under [LGPL-3.0-only](LICENSE) (with accompanying [GPL-3.0](COPYING) text). For educational and personal use only. Music data and copyrights belong to NetEase Cloud Music and respective copyright holders. No download support, no social features.
+Licensed under [LGPL-3.0-only](LICENSE) (the [GPL-3.0](COPYING) text is
+included alongside). For learning and personal use only — all music data and
+rights belong to NetEase Cloud Music and the respective source platforms. No
+downloading, no social features.

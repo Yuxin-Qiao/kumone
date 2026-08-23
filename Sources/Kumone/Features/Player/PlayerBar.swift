@@ -20,7 +20,7 @@ struct PlayerBar: View {
         .compatGlass(interactive: true, in: Capsule())
         .overlay(Capsule().strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
         .padding(.horizontal, 16)
-        .padding(.bottom, 10)
+        .padding(.bottom, Theme.Layout.playerBarBottomMargin)
         .background(alignment: .bottom) { bottomFade }
     }
 
@@ -167,7 +167,6 @@ struct PlayerBar: View {
                 player.activePanel = player.activePanel == .lyrics ? nil : .lyrics
             }
             .help("歌词")
-            #if os(macOS)
             PlayerIconButton(
                 icon: "inset.filled.bottomthird.square", size: 13,
                 isActive: SettingsManager.shared.showDesktopLyrics
@@ -175,7 +174,6 @@ struct PlayerBar: View {
                 SettingsManager.shared.showDesktopLyrics.toggle()
             }
             .help("桌面歌词")
-            #endif
             PlayerIconButton(
                 icon: "list.bullet", size: 13,
                 isActive: player.activePanel == .queue,
@@ -191,13 +189,12 @@ struct PlayerBar: View {
     private var bottomFade: some View {
         LinearGradient(
             colors: [
-                Color.windowBackground.opacity(0),
-                Color.windowBackground.opacity(0.25),
+                Platform.windowBackgroundColor.opacity(0),
+                Platform.windowBackgroundColor.opacity(0.25),
             ],
             startPoint: .top, endPoint: .bottom
         )
         .frame(height: 50)
-        .padding(.horizontal, -16)
         .allowsHitTesting(false)
     }
 }

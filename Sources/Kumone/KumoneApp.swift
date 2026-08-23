@@ -1,18 +1,17 @@
 import SwiftUI
 
-@main
-struct KumoneApp: App {
-    #if os(macOS)
+#if os(macOS)
+public struct KumoneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    #endif
 
     @State private var player = PlayerService.shared
     @State private var account = AccountStore.shared
     @State private var settings = SettingsManager.shared
     @State private var toasts = ToastCenter.shared
 
-    var body: some Scene {
-        #if os(macOS)
+    public init() {}
+
+    public var body: some Scene {
         WindowGroup("Kumone", id: "main") {
             MainWindow()
                 .environment(player)
@@ -79,21 +78,9 @@ struct KumoneApp: App {
                 .tint(Theme.accent)
                 .preferredColorScheme(settings.appearance.colorScheme)
         }
-        #else
-        WindowGroup {
-            IOSMainView()
-                .environment(player)
-                .environment(account)
-                .environment(settings)
-                .environment(toasts)
-                .tint(Theme.accent)
-                .preferredColorScheme(settings.appearance.colorScheme)
-        }
-        #endif
     }
 }
 
-#if os(macOS)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
 

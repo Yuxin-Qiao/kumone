@@ -1,15 +1,8 @@
-#if os(macOS)
-import AppKit
-public typealias PlatformColor = NSColor
-#elseif canImport(UIKit)
-import UIKit
-public typealias PlatformColor = UIColor
-#endif
 import SwiftUI
 
 /// Design tokens: color, radius, spacing, layout metrics.
 enum Theme {
-    /// NetEase red, tuned slightly warmer.
+    /// NetEase red, tuned slightly warmer for macOS.
     static let accent = Color(red: 0.925, green: 0.286, blue: 0.286) // #EC4949
     static let accentDeep = Color(red: 0.788, green: 0.161, blue: 0.161) // #C92929
 
@@ -23,16 +16,19 @@ enum Theme {
         static let small: CGFloat = 6
         static let standard: CGFloat = 8
         static let large: CGFloat = 12
-        static let card: CGFloat = 14
         static let panel: CGFloat = 20
     }
 
     enum Layout {
-        static let contentInset: CGFloat = 20
-        static let cardSize: CGFloat = 150
+        static let contentInset: CGFloat = 24
+        static let cardSize: CGFloat = 160
         static let sidebarWidth: CGFloat = 220
         static let playerBarHeight: CGFloat = 56
-        static let miniPlayerHeight: CGFloat = 62
+        /// Gap between the floating player bar and the window's bottom edge.
+        /// Must match the bar's own `.padding(.bottom,)` in PlayerBar.
+        static let playerBarBottomMargin: CGFloat = 10
+        /// Bottom inset pages need so scrolled content clears the floating bar.
+        static var playerChromeClearance: CGFloat { playerBarHeight + playerBarBottomMargin }
         static let minWindowWidth: CGFloat = 1020
         static let minWindowHeight: CGFloat = 640
         static let defaultWindowWidth: CGFloat = 1200
@@ -40,25 +36,7 @@ enum Theme {
     }
 }
 
-extension Color {
-    static var windowBackground: Color {
-        #if os(macOS)
-        Color(nsColor: .windowBackgroundColor)
-        #else
-        Color(uiColor: .systemBackground)
-        #endif
-    }
-
-    static var secondaryWindowBackground: Color {
-        #if os(macOS)
-        Color(nsColor: .controlBackgroundColor)
-        #else
-        Color(uiColor: .secondarySystemBackground)
-        #endif
-    }
-}
-
-/// Motion tokens.
+/// Motion tokens (mirrors kaset's `AppAnimation`).
 enum AppAnimation {
     static let quick = Animation.easeOut(duration: 0.15)
     static let standard = Animation.easeInOut(duration: 0.25)
@@ -76,11 +54,17 @@ enum AppAnimation {
 }
 
 extension View {
-    /// Glass background with a graceful material fallback.
+    /// Glass background with a graceful material fallback on macOS 15.
     @ViewBuilder
     func compatGlass(interactive: Bool = false, in shape: some Shape) -> some View {
         #if os(macOS)
         if #available(macOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+        }
+        #elseif os(iOS)
+        if #available(iOS 26.0, *) {
             self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
         } else {
             self.background(.ultraThinMaterial, in: shape)

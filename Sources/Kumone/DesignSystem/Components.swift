@@ -1,19 +1,4 @@
-#if os(macOS)
-import AppKit
-#elseif canImport(UIKit)
-import UIKit
-#endif
 import SwiftUI
-
-enum AccessibilityHelper {
-    static var isReduceMotionEnabled: Bool {
-        #if os(macOS)
-        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        #else
-        return UIAccessibility.isReduceMotionEnabled
-        #endif
-    }
-}
 
 // MARK: - Skeletons
 
@@ -90,7 +75,7 @@ struct StaggeredAppearanceModifier: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : 16)
             .onAppear {
-                if AccessibilityHelper.isReduceMotionEnabled
+                if Platform.isReduceMotionEnabled
                     || AnimationCache.hasAnimated(itemID) {
                     isVisible = true
                     return
@@ -208,6 +193,7 @@ struct PlayOverlayButton: View {
     let action: () -> Void
 
     var body: some View {
+        #if os(macOS)
         Button(action: action) {
             Image(systemName: "play.fill")
                 .font(.system(size: size * 0.38, weight: .bold))
@@ -220,6 +206,9 @@ struct PlayOverlayButton: View {
         .opacity(visible ? 1 : 0)
         .scaleEffect(visible ? 1 : 0.7)
         .animation(AppAnimation.spring, value: visible)
+        #else
+        EmptyView()
+        #endif
     }
 }
 
@@ -298,7 +287,7 @@ struct MarqueeText: View {
             offset = 0
             animating = false
         }
-        guard needsMarquee, !AccessibilityHelper.isReduceMotionEnabled else { return }
+        guard needsMarquee, !Platform.isReduceMotionEnabled else { return }
         let distance = textWidth + 32
         let duration = Double(distance) / 24
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {

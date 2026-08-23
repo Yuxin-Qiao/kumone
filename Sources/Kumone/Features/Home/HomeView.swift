@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class HomeViewModel {
+    /// Shared so the loaded page survives sidebar switches (no skeleton flash).
     static let shared = HomeViewModel()
 
     enum State {
@@ -10,6 +11,8 @@ final class HomeViewModel {
         case error(String)
     }
 
+    /// The personalized radar family — global playlist IDs whose content is
+    /// generated per logged-in account (same list YesPlayMusic special-cases).
     static let radarPlaylistIDs = [
         3_136_952_023, // 私人雷达
         2_829_883_282, // 华语私人雷达
@@ -80,6 +83,7 @@ final class HomeViewModel {
         }
         radarPlaylists = Self.radarPlaylistIDs.compactMap { id in
             guard let brief = briefs[id] else { return nil }
+            // Names arrive as "今天从《…》听起|私人雷达" — split into title/subtitle.
             let parts = (brief.name ?? "").components(separatedBy: "|")
             let title = parts.count > 1 ? parts.last! : (brief.name ?? String(localized: "雷达歌单"))
             let subtitle = parts.count > 1 ? parts.dropLast().joined(separator: "|") : nil
@@ -103,7 +107,6 @@ final class HomeViewModel {
 struct HomeView: View {
     @Environment(AccountStore.self) private var account
     @Environment(PlayerService.self) private var player
-    @Environment(\.openLogin) private var openLogin
     @State private var model = HomeViewModel.shared
 
     var body: some View {
@@ -121,34 +124,34 @@ struct HomeView: View {
             }
         }
         .navigationTitle("推荐")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .task(id: account.isLoggedIn) {
             await model.load(loggedIn: account.isLoggedIn)
-        }
-        .refreshable {
-            await model.reload(loggedIn: account.isLoggedIn)
         }
     }
 
     private var loadingBody: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            SkeletonView(cornerRadius: Theme.Radius.large)
-                .frame(height: 100)
-                .padding(.horizontal, Theme.Layout.contentInset)
-
+        VStack(alignment: .leading, spacing: 32) {
+            HStack(spacing: 16) {
+                ForEach(0..<3, id: \.self) { _ in
+                    SkeletonView(cornerRadius: Theme.Radius.large)
+                        .frame(width: 230, height: 132)
+                }
+            }
             SkeletonShelf()
             SkeletonShelf()
         }
-        .padding(.vertical, 12)
+        .padding(Theme.Layout.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadedBody: some View {
-        LazyVStack(alignment: .leading, spacing: 26) {
-            featureCards
-                .padding(.top, 6)
+        LazyVStack(alignment: .leading, spacing: 34) {
+            // Anonymous users go straight to recommended playlists;
+            // the login entry lives in the sidebar / 我的 tab only.
+            if account.isLoggedIn {
+                featureCards
+                    .padding(.top, 8)
+            }
 
             if !model.recommendPlaylists.isEmpty {
                 Shelf(title: "推荐歌单") {
@@ -162,7 +165,9 @@ struct HomeView: View {
             if !model.radarPlaylists.isEmpty {
                 Shelf(title: "雷达歌单") {
                     ForEach(model.radarPlaylists) { radar in
-                        NavigationLink(value: Destination.playlist(radar.id)) {
+                        NavigationLink {
+                            PlaylistDetailView(playlistID: radar.id)
+                        } label: {
                             CoverCardBody(
                                 coverURL: radar.coverURL?.resizedImageURL(384),
                                 title: radar.title,
@@ -171,7 +176,7 @@ struct HomeView: View {
                                 playPlaylist(radar.id)
                             }
                         }
-                        .buttonStyle(.interactiveCard)
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -179,10 +184,12 @@ struct HomeView: View {
             if !model.toplists.isEmpty {
                 Shelf(title: "排行榜", seeAll: nil) {
                     ForEach(model.toplists) { toplist in
-                        NavigationLink(value: Destination.playlist(toplist.id)) {
+                        NavigationLink {
+                            PlaylistDetailView(playlistID: toplist.id)
+                        } label: {
                             toplistCard(toplist)
                         }
-                        .buttonStyle(.interactiveCard)
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -203,22 +210,22 @@ struct HomeView: View {
                 }
             }
 
-            Color.clear.frame(height: 10)
+            Color.clear.frame(height: 8)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Theme.Layout.contentInset - 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Feature cards
 
-    @ViewBuilder
     private var featureCards: some View {
-        if account.isLoggedIn {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    Spacer().frame(width: Theme.Layout.contentInset - 12)
-
-                    NavigationLink(value: Destination.daily) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                Color.clear.frame(width: max(0, Theme.Layout.contentInset - 16), height: 1)
+                if account.isLoggedIn {
+                    NavigationLink {
+                        DailySongsView()
+                    } label: {
                         FeatureCard(
                             title: "每日推荐",
                             subtitle: "根据你的口味生成",
@@ -227,7 +234,7 @@ struct HomeView: View {
                             showsDate: true
                         )
                     }
-                    .buttonStyle(.interactiveCard)
+                    .buttonStyle(.plain)
 
                     Button {
                         player.startFM()
@@ -247,68 +254,16 @@ struct HomeView: View {
                     } label: {
                         FeatureCard(
                             title: "心动模式",
-                            subtitle: "红心歌曲与相似推荐",
+                            subtitle: "你的红心歌曲和相似推荐",
                             icon: "heart.circle.fill",
                             gradient: [Color(red: 0.85, green: 0.19, blue: 0.41),
                                        Color(red: 0.98, green: 0.42, blue: 0.34)]
                         )
                     }
                     .buttonStyle(.interactiveCard)
-
-                    Spacer().frame(width: Theme.Layout.contentInset - 12)
                 }
+                Color.clear.frame(width: max(0, Theme.Layout.contentInset - 16), height: 1)
             }
-        } else {
-            // Elegant Apple Music-style login prompt banner
-            Button {
-                openLogin()
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(.white.opacity(0.18))
-                            .frame(width: 38, height: 38)
-                        Image(systemName: "music.note.house.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("登录网易云音乐")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                        Text("同步红心歌曲与每日推荐")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    Text("登录")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Theme.accentDeep)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(.white, in: Capsule())
-                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.92, green: 0.28, blue: 0.28),
-                                         Color(red: 0.78, green: 0.16, blue: 0.16)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                        )
-                        .shadow(color: Theme.accent.opacity(0.2), radius: 8, y: 3)
-                )
-            }
-            .buttonStyle(.pressable)
-            .padding(.horizontal, Theme.Layout.contentInset)
         }
     }
 
@@ -336,7 +291,9 @@ struct HomeView: View {
     // MARK: - Cards
 
     private func playlistCard(_ playlist: PlaylistSummary) -> some View {
-        NavigationLink(value: Destination.playlist(playlist.id)) {
+        NavigationLink {
+            PlaylistDetailView(playlistID: playlist.id)
+        } label: {
             CoverCardBody(
                 coverURL: playlist.coverURL?.resizedImageURL(384),
                 title: playlist.name,
@@ -346,11 +303,13 @@ struct HomeView: View {
                 playPlaylist(playlist.id)
             }
         }
-        .buttonStyle(.interactiveCard)
+        .buttonStyle(.plain)
     }
 
     private func albumCard(_ album: AlbumSummary) -> some View {
-        NavigationLink(value: Destination.album(album.id)) {
+        NavigationLink {
+            AlbumDetailView(albumID: album.id)
+        } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
                 title: album.name,
@@ -363,53 +322,48 @@ struct HomeView: View {
                 }
             }
         }
-        .buttonStyle(.interactiveCard)
+        .buttonStyle(.plain)
     }
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
-        NavigationLink(value: Destination.artist(artist.id)) {
-            VStack(spacing: 8) {
+        NavigationLink {
+            ArtistDetailView(artistID: artist.id)
+        } label: {
+            VStack(spacing: 10) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
-                    .frame(width: 110, height: 110)
+                    .frame(width: 128, height: 128)
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.1), radius: 6, y: 2)
-
                 Text(artist.name)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-            .frame(width: 120)
-            .contentShape(Rectangle())
+            .frame(width: 140)
         }
-        .buttonStyle(.interactiveCard)
+        .buttonStyle(.plain)
     }
 
     private func toplistCard(_ toplist: ToplistItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
                 CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(384))
-                    .frame(width: 138, height: 138)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
+                    .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                 Text(toplist.updateFrequency ?? "")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .padding(8)
             }
-            .frame(width: 138, height: 138)
-
+            .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
             Text(toplist.name)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }
-        .frame(width: 138, alignment: .leading)
+        .frame(width: Theme.Layout.cardSize, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -423,5 +377,118 @@ struct HomeView: View {
             }
             player.play(tracks: tracks, source: .playlist(id))
         }
+    }
+}
+
+// MARK: - Feature card
+
+struct FeatureCard: View {
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
+    let icon: String
+    var coverURL: URL?
+    var gradient: [Color] = [Color(red: 0.75, green: 0.16, blue: 0.22),
+                             Color(red: 0.95, green: 0.35, blue: 0.28)]
+    var showsDate = false
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let coverURL {
+                CachedAsyncImage(url: coverURL)
+                    .frame(width: 230, height: 132)
+                LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.68)],
+                               startPoint: .top, endPoint: .bottom)
+            } else {
+                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [.white.opacity(0.18), .clear],
+                               center: .topLeading, startRadius: 0, endRadius: 220)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                ZStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(.white)
+                    if showsDate {
+                        Text("\(Calendar.current.component(.day, from: .now))")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .offset(y: 3)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+            .padding(14)
+            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+        }
+        .frame(width: 230, height: 132)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+        )
+        .contentShape(Rectangle())
+    }
+}
+
+/// Card body without its own Button wrapper (for use inside NavigationLink).
+struct CoverCardBody: View {
+    let coverURL: URL?
+    let title: String
+    var subtitle: String?
+    var playCount: Int = 0
+    var size: CGFloat = Theme.Layout.cardSize
+    var onPlay: (() -> Void)?
+
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomLeading) {
+                CachedAsyncImage(url: coverURL)
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
+                            .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
+                    )
+                if playCount > 0 {
+                    PlayCountBadge(count: playCount)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
+                if let onPlay {
+                    PlayOverlayButton(visible: isHovering, action: onPlay)
+                        .padding(8)
+                }
+            }
+            .frame(width: size, height: size)
+
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: size, alignment: .leading)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: size, alignment: .leading)
+            }
+        }
+        .frame(width: size, alignment: .leading)
+        .contentShape(Rectangle())
+        #if os(macOS)
+        .onHover { isHovering = $0 }
+        #endif
     }
 }

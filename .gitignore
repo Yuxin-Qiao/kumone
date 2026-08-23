@@ -2,15 +2,6 @@
 .swiftpm/
 .DS_Store
 *.xcodeproj
+!ios/KumoneIOS.xcodeproj
 xcuserdata/
 DerivedData/
-
-# Electron (windows/) build artifacts
-windows/node_modules/
-windows/dist/
-windows/dist-build/
-windows/dist-installer/
-# Binary deliverables (use GitHub Releases / Actions Artifacts instead)
-*.zip
-*.exe
-*.ico.tmp

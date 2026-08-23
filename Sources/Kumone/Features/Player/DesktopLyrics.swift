@@ -166,4 +166,17 @@ private struct DesktopLyricsBox: View {
         .fixedSize()
     }
 }
+
+#else
+import SwiftUI
+
+@MainActor
+final class DesktopLyricsController {
+    static let shared = DesktopLyricsController()
+    private init() {}
+    var isVisible: Bool { false }
+    func show() {}
+    func hide() {}
+    func sync(with enabled: Bool) {}
+}
 #endif

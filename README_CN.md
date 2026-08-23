@@ -10,20 +10,13 @@
 
 # Kumone
 
-**雲の音 — 网易云音乐客户端（macOS、Windows、Linux & Web / PWA）**
+**雲の音 — 原生 macOS 网易云音乐客户端**
 
-macOS 原生 SwiftUI · Windows/Linux Electron 版 · Web / PWA / Docker 全端通用（支持手机/平板/桌面）
+SwiftUI 编写 · 直连网易云真实 API · Sparkle 自动更新
 
 [![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
-[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows11)](#windowselectron-移植版)
-[![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20Deb-FCC624?logo=linux&logoColor=black)](#linux-桌面版-appimage--deb)
-[![Web/PWA](https://img.shields.io/badge/Web%2FPWA-Online%20%26%20Docker-512BD4?logo=pwa&logoColor=white)](#web--pwa--docker-移动端全端通用)
+[![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
-
-[![Windows CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-windows.yml)
-[![Linux CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-linux.yml)
-[![Web CI](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/build-web.yml)
-[![Sync Upstream](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/Yuxin-Qiao/kumone/actions/workflows/sync-upstream.yml)
 
 <table>
   <tr>
@@ -47,75 +40,21 @@ macOS 原生 SwiftUI · Windows/Linux Electron 版 · Web / PWA / Docker 全端�
 - 🔐 **扫码登录** — 网易云 App 扫码，Cookie 本地持久化，自动续期
 - 🏠 **推荐** — 每日推荐、私人漫游、心动模式、推荐歌单、雷达歌单（私人雷达系列，按账号个性化）、排行榜、新碟上架、推荐歌手
 - 🧭 **精选** — 分类歌单（精品 / 官方 / 排行榜 / 场景分类）无限滚动
-- 🎵 **播放** — AVPlayer / MediaSession 引擎，标准 ~ Hi-Res 音质可选（黑胶 VIP 可播无损，自动回落），随机 / 单曲循环 / 列表循环，下一首播放队列，灰色歌曲识别
+- 🎵 **播放** — AVPlayer 引擎，标准 ~ Hi-Res 音质可选（黑胶 VIP 可播无损，自动回落），随机 / 单曲循环 / 列表循环，下一首播放队列，灰色歌曲识别
 - 🔓 **灰色歌曲解锁** — 原生实现 UnblockNeteaseMusic 核心音源（pyncmd / 酷我 / 酷狗），无版权或试听歌曲自动匹配第三方音源
 - 🖼 **沉浸播放页** — 封面取色渐变背景 + 大封面 + 大字同步歌词（点击播放条封面进入，Esc 退出）
 - 📻 **私人漫游** — 沉浸式 FM 页面，不喜欢 / 切歌
-- 📝 **歌词** — 侧边面板 / 全屏滚动，逐行同步 + 翻译 + 罗马音注音，点击跳转
+- 📝 **歌词** — 侧边玻璃面板，逐行同步 + 翻译，点击跳转
 - 🪟 **桌面歌词** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
 - 📚 **音乐库** — 我喜欢的音乐、创建 / 收藏的歌单、收藏专辑、关注歌手、最近播放、音乐云盘
 - ✏️ **歌单管理** — 新建 / 删除 / 收藏歌单、添加 / 移除歌曲、红心
 - 🔍 **搜索** — 综合 / 单曲 / 歌手 / 专辑 / 歌单，热搜词占位
-- ⌨️ **系统集成** — 媒体键 / 控制中心 / SMTC / MPRIS / MediaSession 通知（Now Playing）、听歌打卡、退出后恢复播放队列
+- ⌨️ **系统集成** — 媒体键 / 控制中心（Now Playing）、听歌打卡、退出后恢复播放队列
 - 🌐 **多语言** — 简体中文与英文界面，跟随系统语言；Sparkle 更新说明双语
 
-## Web / PWA / Docker (移动端与全端通用)
+## 安装
 
-可在任何现代化浏览器中即开即用（包括 **iOS Safari、Android Chrome、iPadOS、Chrome、Edge、车机/特斯拉中控屏**），零安装包负担，随开随听：
-
-- 🌐 **在线免安装体验 / PWA**: [https://yuxin-qiao.github.io/kumone](https://yuxin-qiao.github.io/kumone)
-  - 📱 **iOS 用户**: 使用 Safari 浏览器打开后，点击分享按钮并选择 **「添加到主屏幕」**，即可获得无边框、无地址栏的原生 App 全屏体验。
-  - 🤖 **Android 用户**: 使用 Chrome / Edge 浏览器打开后，点击菜单选择 **「安装应用」** 或 **「添加到主屏幕」** 即可。
-- 🐳 **Docker 一键启动**:
-  ```bash
-  docker run -d --name kumone-web -p 3000:3000 ghcr.io/yuxin-qiao/kumone-web:latest
-  ```
-- 📦 **Docker Compose 编排**:
-  ```yaml
-  version: '3.8'
-  services:
-    kumone-web:
-      image: ghcr.io/yuxin-qiao/kumone-web:latest
-      restart: unless-stopped
-      ports:
-        - "3000:3000"
-  ```
-
-## Windows（Electron 移植版）
-
-本仓库在 [`windows/`](windows) 目录下新增了完整的 Windows 移植版——Swift 源码逐文件对等移植：
-weapi/eapi 加密层与 Swift 实现**逐字节一致**（固定向量对拍验证），API 客户端、
-UnblockNeteaseMusic 解锁链与全部 UI 均以 Electron 重新实现。
-
-**下载** — [Releases → v0.1.9.1](https://github.com/Yuxin-Qiao/kumone/releases/tag/v0.1.9.1)（Windows 10/11 x64）：安装包 `Kumone-Setup-0.1.9.1-x64.exe` 或便携版 zip。
-由 [CI](.github/workflows/build-windows.yml) 在真实 Windows runner 上构建并通过全部测试。
-
-```bash
-cd windows
-npm install
-npm test             # 加密对拍 + 真实 API 冒烟
-npm run e2e          # CDP 驱动的 UI 端到端测试（16 项断言）
-npm run package:win  # NSIS 安装包
-```
-
-## Linux 桌面版 (AppImage & Deb)
-
-支持标准 Linux 桌面集成与 MPRIS 媒体键控制协议。
-
-**下载** — [Releases](https://github.com/Yuxin-Qiao/kumone/releases) (x86_64)：`Kumone-0.1.9.1-x86_64.AppImage` 或 `Kumone_0.1.9.1_amd64.deb`。由 [CI](.github/workflows/build-linux.yml) 自动构建。
-
-```bash
-# 运行 AppImage
-chmod +x Kumone-0.1.9.1-x86_64.AppImage
-./Kumone-0.1.9.1-x86_64.AppImage
-
-# 或在 Ubuntu/Debian 上安装 Deb 包
-sudo dpkg -i Kumone_0.1.9.1_amd64.deb
-```
-
-## 安装（macOS）
-
-要求 Apple Silicon Mac、macOS 15+。
+要求 macOS 15+（Universal：Apple Silicon 与 Intel 均支持）。
 
 ### Homebrew
 
@@ -127,6 +66,9 @@ brew install owo-network/brew/kumone --cask
 
 从 [Releases](https://github.com/missuo/kumone/releases/latest) 下载最新的
 `Kumone-x.y.z.zip`，解压后拖入「应用程序」。
+
+应用已使用 Developer ID 签名并通过 Apple 公证，内置 Sparkle 自动更新
+（菜单栏 Kumone → 检查更新…）。
 
 ## 构建
 
@@ -141,14 +83,17 @@ Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
 ## 架构
 
 ```
-Kumone/
-├── Sources/Kumone/     # macOS SwiftUI 原生实现
-├── windows/            # Windows & Linux Electron 桌面端实现
-├── web/                # Web / PWA / Docker 全端与移动端播放器
-└── .github/workflows/  # macOS, Windows, Linux & Web 自动化 CI/CD
+Sources/Kumone/
+├── Core/
+│   ├── API/            # NeteaseCrypto（weapi/eapi 加密）、NeteaseClient（传输 + Cookie）、NeteaseAPI（约 50 个端点）
+│   ├── Models/         # 统一 Track 模型（兼容新旧两种 JSON 格式）、歌词解析器
+│   ├── Player/         # PlayerService（队列 / 随机 / 循环 / FM / URL 解析）、UnblockService、NowPlayingManager
+│   └── Storage/        # AccountStore、SettingsManager、两级图片缓存
+├── DesignSystem/       # 设计 token、按钮样式（hover 缩放 / 行高亮 / chip）、骨架屏、卡片、跑马灯、封面取色
+└── Features/           # 各页面 + 播放条 + 沉浸播放页 + 歌词/队列面板
 ```
 
-不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生实现，请求直达 `music.163.com` / `interface.music.163.com`。
+不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生 Swift 实现，请求直达 `music.163.com` / `interface.music.163.com`。
 
 ## Credits
 
@@ -158,13 +103,6 @@ Kumone 是从零编写的 Swift 实现，未复制以下项目的代码，但深
 - [kaset](https://github.com/sozercan/kaset)（MIT，© sozercan）— UI 设计系统、动效与 SwiftPM 打包方案的参考
 - [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server)（LGPL-3.0-only）— 灰色歌曲第三方音源的接口与匹配策略参考（`UnblockService.swift` 为独立的 Swift 重新实现）
 - [LyricsX](https://github.com/ddddxxx/LyricsX)（MPL-2.0，© ddddxxx）— 桌面歌词窗口的设计参考（窗口配置、屏幕比例定位；`DesktopLyrics.swift` 为独立的 SwiftUI 实现）
-
-## 维护者 (Maintainers)
-
-- **原作者 (Original Author)**: [@missuo](https://github.com/missuo) (macOS 原生版)
-- **多平台维护者 (Maintainers)**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir) (Windows / Linux / Web 版本移植与维护)
-
-更多详情请参阅 [MAINTAINERS.md](MAINTAINERS.md)。
 
 ## 协议与说明
 

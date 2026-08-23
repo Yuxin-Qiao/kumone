@@ -99,7 +99,7 @@ struct ExploreView: View {
                                     playPlaylist(playlist.id)
                                 }
                             }
-                            .buttonStyle(.interactiveCard)
+                            .buttonStyle(.plain)
                             .staggeredAppearance(index: index % 10, id: "explore-\(playlist.id)")
                         }
                     }
@@ -125,9 +125,6 @@ struct ExploreView: View {
             }
         }
         .navigationTitle("精选")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .task {
             if model.playlists.isEmpty, model.toplists.isEmpty {
                 await model.loadMore()
@@ -206,7 +203,7 @@ struct ToplistGrid: View {
                                 in: RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.interactiveCard)
+                .buttonStyle(.plain)
             }
         }
     }

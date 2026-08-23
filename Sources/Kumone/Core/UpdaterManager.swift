@@ -38,4 +38,12 @@ struct CheckForUpdatesButton: View {
         .disabled(!updater.canCheckForUpdates)
     }
 }
+#else
+import SwiftUI
+
+struct CheckForUpdatesButton: View {
+    var body: some View {
+        EmptyView()
+    }
+}
 #endif
