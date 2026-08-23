@@ -10,7 +10,7 @@ on:
         description: "Source branch or tag to build"
         required: false
         type: string
-        default: "refactor/rust-core-windows-android"
+        default: "main"
       version:
         description: "Upstream-aligned version (for example 0.2.3)"
         required: true
