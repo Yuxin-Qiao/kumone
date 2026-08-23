@@ -51,18 +51,64 @@ jobs:
             exit 1
           fi
 
+          TAG="downstream-v$VERSION"
+          if [[ -n "$TAG_SUFFIX" ]]; then
+            TAG="$TAG-$TAG_SUFFIX"
+          fi
+
           echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           {
             echo "### Downstream release request"
             echo "- Upstream: missuo/kumone"
             echo "- Version: **$VERSION**"
             echo "- Source ref: \`$SOURCE_REF\`"
-            echo "- Tag suffix: \`${TAG_SUFFIX:-<none>}\`"
+            echo "- Release tag: \`$TAG\`"
             echo "- Prerelease: **$PRERELEASE**"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare immutable release tag and draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ steps.request.outputs.source_ref }}
+          VERSION: ${{ steps.request.outputs.version }}
+          TAG: ${{ steps.request.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin --tags --force
+          git fetch origin "$SOURCE_REF" 2>/dev/null || true
+          SOURCE_SHA=$(git rev-parse "$SOURCE_REF^{commit}")
+
+          REMOTE_TAG_SHA=$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}' | head -n 1)
+          if [[ -z "$REMOTE_TAG_SHA" ]]; then
+            git tag "$TAG" "$SOURCE_SHA"
+            git push origin "refs/tags/$TAG"
+            echo "Created immutable tag $TAG -> $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          else
+            LOCAL_TAG_SHA=$(git rev-list -n 1 "$TAG" 2>/dev/null || true)
+            if [[ -z "$LOCAL_TAG_SHA" ]]; then
+              git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+              LOCAL_TAG_SHA=$(git rev-list -n 1 "$TAG")
+            fi
+            if [[ "$LOCAL_TAG_SHA" != "$SOURCE_SHA" ]]; then
+              echo "::error::Tag $TAG already exists at $LOCAL_TAG_SHA, expected $SOURCE_SHA. Published/RC tags are immutable."
+              exit 1
+            fi
+          fi
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Kumone v$VERSION (Windows + Android downstream RC)" \
+              --notes "Release candidate built from source commit $SOURCE_SHA. Application version remains exactly aligned with upstream Kumone v$VERSION." \
+              --draft \
+              --prerelease
+          fi
 
       - name: Dispatch downstream release
         id: dispatch
