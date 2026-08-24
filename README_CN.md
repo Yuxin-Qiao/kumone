@@ -76,6 +76,12 @@ Windows 与 Android 包由本仓库的 GitHub Actions RC / Release 流水线生�
 
 下游应用版本保持与上游一致（当前 `0.2.3`），`rc.1` 只体现在候选版本标签 / artifact 名称中，不修改应用自身版本号。
 
+### iOS / iPadOS（侧载）
+
+每次发版都会附带**无签名**的 `Kumone-iOS-x.y.z.ipa`（iOS 17+）。Kumone 是非官方客户端，不会上架 App Store 或 TestFlight，请用侧载工具以自己的 Apple ID 签名安装 —— [AltStore](https://altstore.io)、[SideStore](https://sidestore.io)、[Sideloadly](https://sideloadly.io) 或 Xcode 均可。
+
+更新：iOS 应用无法自我替换。设置 → 关于 → **检查更新** 会提示是否有新版本并给出下载链接，下载新 IPA 后用同一工具重新安装即可，登录状态与设置会保留。AltStore / SideStore 也可通过 source 自动追踪发布。
+
 ## 构建
 
 ### Rust 共享核心
