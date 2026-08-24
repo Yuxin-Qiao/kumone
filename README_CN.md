@@ -10,100 +10,144 @@
 
 # Kumone
 
-**雲の音 — 原生 macOS 网易云音乐客户端**
+**雲の音 — 覆盖 macOS、Windows、Android 与 Web/PWA 的轻量网易云音乐客户端**
 
-SwiftUI 编写 · 直连网易云真实 API · Sparkle 自动更新
+macOS 原生 SwiftUI 上游 · Rust 共享核心 · Windows Tauri · Android Jetpack Compose · Web/PWA
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#构建)
-[![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![macOS](https://img.shields.io/badge/macOS-15%2B-blue?logo=apple)](#平台)
+[![Windows](https://img.shields.io/badge/Windows-NSIS-0078D4?logo=windows11)](#平台)
+[![Android](https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)](#平台)
+[![Rust](https://img.shields.io/badge/共享核心-Rust-000000?logo=rust)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
-
-<table>
-  <tr>
-    <td><img src="docs/screenshot-home.png" alt="推荐" /></td>
-    <td><img src="docs/screenshot-nowplaying.png" alt="沉浸播放页" /></td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshot-daily.png" alt="每日推荐" /></td>
-    <td><img src="docs/screenshot-lyrics.png" alt="歌词面板" /></td>
-  </tr>
-</table>
 
 </div>
 
-## 名字由来
+## 这个仓库是什么
 
-**Kumone** 取自日语 **雲の音**（*kumo no ne*，「云的声音」），缩合为一个词 —— **雲音**（假名写作 くもね，读作 *kumone*）。呼应网易「云」音乐的「云」字：从云端飘落到你耳边的音乐。
+这个 fork 保留上游原生 macOS 应用，同时增加 Windows、Android 与 Web/PWA 下游客户端和自动化发布链。跨平台部分通过 Rust 共享网易云协议、加密、播放、队列、搜索、账号与灰色歌曲解锁逻辑，避免每个平台重复实现核心业务。
+
+上游：[`missuo/kumone`](https://github.com/missuo/kumone)
+
+## 平台
+
+| 平台 | UI / 运行时 | 当前状态 |
+| --- | --- | --- |
+| macOS 15+ | SwiftUI / AVPlayer | 保留上游原生应用 |
+| Windows x64 | Tauri 2 + Rust 共享核心 + Web UI | RC 已验证，NSIS 安装包已成功产出 |
+| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | RC 已验证，已产出签名 APK + AAB |
+| Web / PWA | HTML/CSS/JavaScript + Service Worker | 已接入冒烟、PWA 与真实 API 联通测试 |
+| Linux | 共享核心 / Web/PWA 方向 CI | 实验性支持，暂不是主要打包发布目标 |
+
+### 当前下游候选版本
+
+`v0.2.3-rc.1` 已针对精确源码提交 `8822b36e15fd5f5846749cca32a80d5075216283` 完成验证。
+
+RC 验证流水线会同时构建 Windows 与 Android，检查安装包体积、Android 签名身份与 APK 内 Rust 动态库，并生成 provenance attestation。构建验证和 GitHub Release 发布被视为两个独立阶段，因此发布权限问题不会否定已经通过的平台构建。
 
 ## 功能
 
-- 🔐 **扫码登录** — 网易云 App 扫码，Cookie 本地持久化，自动续期
-- 🏠 **推荐** — 每日推荐、私人漫游、心动模式、推荐歌单、雷达歌单（私人雷达系列，按账号个性化）、排行榜、新碟上架、推荐歌手
-- 🧭 **精选** — 分类歌单（精品 / 官方 / 排行榜 / 场景分类）无限滚动
-- 🎵 **播放** — AVPlayer 引擎，标准 ~ Hi-Res 音质可选（黑胶 VIP 可播无损，自动回落），随机 / 单曲循环 / 列表循环，下一首播放队列，灰色歌曲识别
-- 🔓 **灰色歌曲解锁** — 原生实现 UnblockNeteaseMusic 核心音源（pyncmd / 酷我 / 酷狗），无版权或试听歌曲自动匹配第三方音源
-- 🖼 **沉浸播放页** — 封面取色渐变背景 + 大封面 + 大字同步歌词（点击播放条封面进入，Esc 退出）
-- 📻 **私人漫游** — 沉浸式 FM 页面，不喜欢 / 切歌
-- 📝 **歌词** — 侧边玻璃面板，逐行同步 + 翻译，点击跳转
-- 🪟 **桌面歌词** — LyricsX 风格悬浮置顶歌词（含翻译），可拖动、位置持久化，所有空间与全屏应用上可见
-- 📚 **音乐库** — 我喜欢的音乐、创建 / 收藏的歌单、收藏专辑、关注歌手、最近播放、音乐云盘
-- ✏️ **歌单管理** — 新建 / 删除 / 收藏歌单、添加 / 移除歌曲、红心
-- 🔍 **搜索** — 综合 / 单曲 / 歌手 / 专辑 / 歌单，热搜词占位
-- ⌨️ **系统集成** — 媒体键 / 控制中心（Now Playing）、听歌打卡、退出后恢复播放队列
-- 🌐 **多语言** — 简体中文与英文界面，跟随系统语言；Sparkle 更新说明双语
+- 网易云 App 扫码登录与 Cookie 持久化
+- 每日推荐、私人漫游、歌单、排行榜、专辑与歌手
+- 播放队列、随机 / 循环与音质选择
+- 同步歌词与翻译
+- 搜索、音乐库与歌单操作
+- 基于共享实现的灰色歌曲回退
+- 跨下游客户端共享 `weapi` / `eapi` 加密与请求行为
+- Web/PWA 与 Service Worker
+- 上游版本对齐校验与自动 RC 验证
+
+macOS 原生版本继续保留媒体键、控制中心、桌面歌词与 Sparkle 自动更新等平台专属能力。
 
 ## 安装
 
-要求 macOS 15+（Universal：Apple Silicon 与 Intel 均支持）。
+### macOS
 
-### Homebrew
+签名并通过公证的上游 macOS 版本：
 
 ```bash
 brew install owo-network/brew/kumone --cask
 ```
 
-### 手动下载
+上游发布页：[`missuo/kumone`](https://github.com/missuo/kumone/releases/latest)。
 
-从 [Releases](https://github.com/missuo/kumone/releases/latest) 下载最新的
-`Kumone-x.y.z.zip`，解压后拖入「应用程序」。
+### Windows / Android 下游版本
 
-应用已使用 Developer ID 签名并通过 Apple 公证，内置 Sparkle 自动更新
-（菜单栏 Kumone → 检查更新…）。
+Windows 与 Android 包由本仓库的 GitHub Actions RC / Release 流水线生成。请使用**本仓库**的 Actions 或 Releases 获取下游产物，不要把上游 macOS Release 当成 Windows/Android 下载入口。
+
+下游应用版本保持与上游一致（当前 `0.2.3`），`rc.1` 只体现在候选版本标签 / artifact 名称中，不修改应用自身版本号。
 
 ## 构建
 
-要求 macOS 15+、Xcode 26+。
+### Rust 共享核心
 
 ```bash
-swift build                    # 编译
-Scripts/build-app.sh           # 打包 .app（输出 .build/app/Kumone.app）
-Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
+cargo test --workspace --all-targets
+```
+
+### macOS
+
+需要 macOS 15+、Xcode 26+。
+
+```bash
+swift build
+Scripts/build-app.sh
+Scripts/compile_and_run.sh
+```
+
+### Windows
+
+需要 Rust、Node.js 22+ 与 Tauri CLI v2。
+
+```bash
+npm install --global @tauri-apps/cli@v2
+cd apps/windows
+tauri build --bundles nsis
+```
+
+### Android
+
+需要 JDK 17、Android SDK 36、NDK `29.0.14206865`、Gradle 9.5 与 Android Rust target。正式签名由 CI secret 提供；本地可正常执行 debug / unsigned 构建。
+
+```bash
+gradle -p apps/android :app:testDebugUnitTest :app:assembleDebug
+```
+
+### Web / PWA
+
+```bash
+npm test --prefix web
 ```
 
 ## 架构
 
-```
-Sources/Kumone/
-├── Core/
-│   ├── API/            # NeteaseCrypto（weapi/eapi 加密）、NeteaseClient（传输 + Cookie）、NeteaseAPI（约 50 个端点）
-│   ├── Models/         # 统一 Track 模型（兼容新旧两种 JSON 格式）、歌词解析器
-│   ├── Player/         # PlayerService（队列 / 随机 / 循环 / FM / URL 解析）、UnblockService、NowPlayingManager
-│   └── Storage/        # AccountStore、SettingsManager、两级图片缓存
-├── DesignSystem/       # 设计 token、按钮样式（hover 缩放 / 行高亮 / chip）、骨架屏、卡片、跑马灯、封面取色
-└── Features/           # 各页面 + 播放条 + 沉浸播放页 + 歌词/队列面板
+```text
+crates/
+├── kumone-core/        # 平台无关的加密、API、模型、搜索、播放、队列与解锁逻辑
+└── kumone-ffi/         # 提供给平台客户端的 UniFFI 共享接口
+
+apps/
+├── windows/src-tauri/  # Tauri 2 Windows 外壳与 Rust bridge
+└── android/            # Jetpack Compose / Media3 Android 客户端
+
+web/                    # Web/PWA UI，同时供 Windows 下游复用
+Sources/Kumone/         # 上游原生 macOS SwiftUI 应用
+.github/workflows/      # CI、RC 验证与下游发布自动化
 ```
 
-不依赖任何第三方 API 服务器：weapi（AES-CBC 双层 + RSA）与 eapi（AES-ECB + MD5 摘要）加密为原生 Swift 实现，请求直达 `music.163.com` / `interface.music.163.com`。
+## 发布策略
+
+- 下游应用版本必须与最新上游版本一致。
+- Windows NSIS 与 Android APK 设有 15 MiB 硬上限、10 MiB 优化目标。
+- Android 正式产物必须使用固定签名身份，并包含 arm64 Rust 动态库。
+- 下游发布前先执行 exact-source RC 验证。
+- 打包产物生成 provenance attestation。
 
 ## Credits
 
-Kumone 是从零编写的 Swift 实现，未复制以下项目的代码，但深度参考了它们的设计与实现思路，在此致谢：
+Kumone 原生 macOS 应用来自 [`missuo/kumone`](https://github.com/missuo/kumone)。原项目还参考了 YesPlayMusic、kaset、UnblockNeteaseMusic/server 与 LyricsX；完整原始致谢请见上游仓库。
 
-- [YesPlayMusic](https://github.com/qier222/YesPlayMusic)（MIT，© qier222）— 功能设计、网易云 API 端点与行为逻辑的参考
-- [kaset](https://github.com/sozercan/kaset)（MIT，© sozercan）— UI 设计系统、动效与 SwiftPM 打包方案的参考
-- [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server)（LGPL-3.0-only）— 灰色歌曲第三方音源的接口与匹配策略参考（`UnblockService.swift` 为独立的 Swift 重新实现）
-- [LyricsX](https://github.com/ddddxxx/LyricsX)（MPL-2.0，© ddddxxx）— 桌面歌词窗口的设计参考（窗口配置、屏幕比例定位；`DesktopLyrics.swift` 为独立的 SwiftUI 实现）
+本 fork 的 Rust / Windows / Android / Web 下游工作独立维护，并持续保持与上游版本对齐。
 
 ## 协议与说明
 
-本项目以 [LGPL-3.0-only](LICENSE) 协议开源（随附 [GPL-3.0](COPYING) 文本）。仅供学习交流，音乐数据与版权归网易云音乐及各音源平台所有。不支持下载、无社交功能。
+本项目以 [LGPL-3.0-only](LICENSE) 协议开源，并随附 [GPL-3.0](COPYING) 文本。音乐数据与版权归网易云音乐及相关音源平台所有，仅供学习交流与个人使用。
