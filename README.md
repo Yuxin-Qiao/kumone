@@ -10,107 +10,144 @@
 
 # Kumone
 
-**雲の音 — Native macOS client for NetEase Cloud Music**
+**雲の音 — lightweight NetEase Cloud Music client across macOS, Windows, Android and Web/PWA**
 
-Built with SwiftUI · Talks directly to NetEase's real API · Sparkle auto-updates
+Native macOS SwiftUI upstream · Rust shared core · Tauri on Windows · Jetpack Compose on Android · Web/PWA
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
-[![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
+[![macOS](https://img.shields.io/badge/macOS-15%2B-blue?logo=apple)](#platforms)
+[![Windows](https://img.shields.io/badge/Windows-NSIS-0078D4?logo=windows11)](#platforms)
+[![Android](https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)](#platforms)
+[![Rust](https://img.shields.io/badge/shared%20core-Rust-000000?logo=rust)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
-
-<table>
-  <tr>
-    <td><img src="docs/screenshot-home.png" alt="Home" /></td>
-    <td><img src="docs/screenshot-nowplaying.png" alt="Now Playing" /></td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshot-daily.png" alt="Daily Recommendations" /></td>
-    <td><img src="docs/screenshot-lyrics.png" alt="Lyrics Panel" /></td>
-  </tr>
-</table>
 
 </div>
 
-## About the Name
+## What this repository is
 
-**Kumone** comes from the Japanese **雲の音** (*kumo no ne*, "the sound of clouds"), contracted into one word — **雲音** (くもね, *kumone*). It is a nod to the "cloud" in NetEase **Cloud** Music: the music drifting down to you from the cloud.
+This fork keeps the upstream native macOS application while adding downstream platform clients and release automation. The cross-platform work intentionally shares protocol, crypto, playback, queue, search, account and unblock behavior through a Rust core instead of duplicating business logic in every UI.
+
+Upstream: [`missuo/kumone`](https://github.com/missuo/kumone)
+
+## Platforms
+
+| Platform | UI/runtime | Status |
+| --- | --- | --- |
+| macOS 15+ | SwiftUI / AVPlayer | Upstream-native application retained |
+| Windows x64 | Tauri 2 + shared Rust core + Web UI | RC build verified; NSIS installer produced |
+| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | RC build verified; signed APK + AAB produced |
+| Web / PWA | HTML/CSS/JavaScript + service worker | Smoke, PWA and live API tests wired into CI |
+| Linux | Shared core / Web/PWA-oriented downstream CI | Experimental, not a primary packaged release target yet |
+
+### Current downstream candidate
+
+`v0.2.3-rc.1` is verified from exact source commit `8822b36e15fd5f5846749cca32a80d5075216283`.
+
+The RC verification pipeline successfully builds both Windows and Android artifacts, checks package size budgets, verifies the Android signing identity and embedded Rust library, and emits provenance attestations. GitHub Release publication is kept separate from build verification so a release-permission failure cannot invalidate an otherwise good platform build.
 
 ## Features
 
-- 🔐 **QR code login** — scan with the NetEase Cloud Music app; cookies are persisted locally and auto-refreshed
-- 🏠 **Home** — daily recommendations, Personal FM, Heartbeat Mode, recommended playlists, radar playlists (Personal Radar family, personalized per account), charts, new albums, recommended artists
-- 🧭 **Explore** — category playlists (curated / official / charts / mood) with infinite scrolling
-- 🎵 **Playback** — AVPlayer engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
-- 🔓 **Gray track unblocking** — native implementation of UnblockNeteaseMusic's core sources (pyncmd / Kuwo / Kugou); unavailable or trial-only tracks automatically resolve from third-party sources
-- 🖼 **Immersive now-playing page** — artwork-tinted gradient backdrop, large artwork, big synced lyrics (click the player-bar artwork to open, Esc to close)
-- 📻 **Personal FM** — immersive roaming page with trash / skip
-- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation, click to seek
-- 🪟 **Desktop lyrics** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
-- 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
-- ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
-- 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center (Now Playing), scrobbling, playback queue restored across launches
-- 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
+- QR-code login with persisted account cookies
+- Daily recommendations, Personal FM, playlists, charts, albums and artists
+- Playback queue, shuffle / repeat modes and quality selection
+- Synced lyrics and translation support
+- Search, library and playlist operations
+- Gray-track fallback through the shared unblock implementation
+- Shared NetEase `weapi` / `eapi` crypto and request behavior across downstream clients
+- Web/PWA support with offline-capable service worker
+- Automated upstream-version gating and downstream RC verification
+
+The macOS app retains additional native-only integrations such as media keys, Control Center, desktop lyrics and Sparkle updates.
 
 ## Installation
 
-Requires macOS 15+ (Universal: Apple Silicon and Intel).
+### macOS
 
-### Homebrew
+For the signed/notarized upstream macOS build:
 
 ```bash
 brew install owo-network/brew/kumone --cask
 ```
 
-### Manual download
+Upstream releases remain available at [`missuo/kumone`](https://github.com/missuo/kumone/releases/latest).
 
-Download the latest `Kumone-x.y.z.zip` from
-[Releases](https://github.com/missuo/kumone/releases/latest), unzip, and drag
-it into Applications.
+### Windows / Android downstream builds
 
-The app is signed with a Developer ID certificate and notarized by Apple, with
-built-in Sparkle automatic updates (menu bar: Kumone → Check for Updates…).
+Windows and Android downstream packages are produced by this repository's GitHub Actions release/RC pipelines. Use this repository's **Actions** or **Releases** pages for downstream artifacts; do not use the upstream macOS release as a Windows/Android download source.
+
+RC artifacts are version-aligned with upstream (`0.2.3`); the downstream candidate marker is encoded in the release/artifact label (`rc.1`) rather than changing the application version.
 
 ## Building
+
+### Shared Rust core
+
+```bash
+cargo test --workspace --all-targets
+```
+
+### macOS
 
 Requires macOS 15+ and Xcode 26+.
 
 ```bash
-swift build                    # compile
-Scripts/build-app.sh           # package the .app (outputs .build/app/Kumone.app)
-Scripts/compile_and_run.sh     # kill → repackage → relaunch
+swift build
+Scripts/build-app.sh
+Scripts/compile_and_run.sh
+```
+
+### Windows
+
+Requires Rust, Node.js 22+ and Tauri CLI v2.
+
+```bash
+npm install --global @tauri-apps/cli@v2
+cd apps/windows
+tauri build --bundles nsis
+```
+
+### Android
+
+Requires JDK 17, Android SDK 36, NDK `29.0.14206865`, Gradle 9.5 and the Android Rust target. Release signing is supplied through CI secrets; local unsigned/debug builds can use the normal Gradle tasks.
+
+```bash
+gradle -p apps/android :app:testDebugUnitTest :app:assembleDebug
+```
+
+### Web / PWA
+
+```bash
+npm test --prefix web
 ```
 
 ## Architecture
 
-```
-Sources/Kumone/
-├── Core/
-│   ├── API/            # NeteaseCrypto (weapi/eapi encryption), NeteaseClient (transport + cookies), NeteaseAPI (~50 endpoints)
-│   ├── Models/         # unified Track model (tolerates both JSON shapes), lyrics parser
-│   ├── Player/         # PlayerService (queue / shuffle / repeat / FM / URL resolution), UnblockService, NowPlayingManager
-│   └── Storage/        # AccountStore, SettingsManager, two-tier image cache
-├── DesignSystem/       # design tokens, button styles (hover scale / row highlight / chips), skeletons, cards, marquee, artwork palette
-└── Features/           # pages + player bar + immersive now-playing + lyrics/queue panels
+```text
+crates/
+├── kumone-core/        # platform-neutral crypto, API contracts, models, search, playback, queue and unblock logic
+└── kumone-ffi/         # UniFFI-facing shared API for platform clients
+
+apps/
+├── windows/src-tauri/  # Tauri 2 Windows shell and Rust bridge
+└── android/            # Jetpack Compose / Media3 Android client
+
+web/                    # Web/PWA UI reused by the Windows downstream
+Sources/Kumone/         # native upstream macOS SwiftUI application
+.github/workflows/      # CI, RC verification and downstream release automation
 ```
 
-No third-party API server involved: weapi (double AES-CBC + RSA) and eapi
-(AES-ECB + MD5 digest) encryption are implemented natively in Swift, and
-requests go straight to `music.163.com` / `interface.music.163.com`.
+## Release policy
+
+- Downstream application versions must match the latest upstream version.
+- Windows NSIS and Android APK releases have a 15 MiB hard package budget (10 MiB stretch target).
+- Android release artifacts must use the pinned signing identity and contain the arm64 Rust library.
+- Exact-source RC verification runs before downstream publication.
+- Provenance attestations are generated for packaged release artifacts.
 
 ## Credits
 
-Kumone is written from scratch in Swift. No code was copied from the projects
-below, but their design and implementation ideas were referenced extensively:
+Kumone's original macOS application is from [`missuo/kumone`](https://github.com/missuo/kumone). The project also references ideas from YesPlayMusic, kaset, UnblockNeteaseMusic/server and LyricsX; see the upstream project for the original detailed credits.
 
-- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) (MIT, © qier222) — feature design, NetEase API endpoints and behavior
-- [kaset](https://github.com/sozercan/kaset) (MIT, © sozercan) — UI design system, motion, and SwiftPM packaging approach
-- [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server) (LGPL-3.0-only) — third-party source endpoints and matching strategy for gray tracks (`UnblockService.swift` is an independent Swift reimplementation)
-- [LyricsX](https://github.com/ddddxxx/LyricsX) (MPL-2.0, © ddddxxx) — desktop lyrics window design reference (window configuration, screen-factor positioning; `DesktopLyrics.swift` is an independent SwiftUI implementation)
+The downstream Rust/Windows/Android/Web work in this fork is maintained separately while staying upstream-version aligned.
 
 ## License
 
-Licensed under [LGPL-3.0-only](LICENSE) (the [GPL-3.0](COPYING) text is
-included alongside). For learning and personal use only — all music data and
-rights belong to NetEase Cloud Music and the respective source platforms. No
-downloading, no social features.
+Licensed under [LGPL-3.0-only](LICENSE); the [GPL-3.0](COPYING) text is included alongside. Music data and rights belong to NetEase Cloud Music and the respective source platforms. For learning and personal use only.
