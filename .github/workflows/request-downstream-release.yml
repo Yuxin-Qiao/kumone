@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   validate:
@@ -21,6 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Validate request against source and upstream
+        id: release
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +66,11 @@ jobs:
             RELEASE_TAG="$RELEASE_TAG-$TAG_SUFFIX"
           fi
 
+          echo "source_ref=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
           {
             echo "### Downstream release policy gate"
             echo "- Source commit: \`$SOURCE_SHA\`"
@@ -71,13 +78,24 @@ jobs:
             echo "- Upstream version: **$UPSTREAM_VERSION**"
             echo "- Requested tag: \`$RELEASE_TAG\`"
             echo "- Prerelease: **$PRERELEASE**"
-            echo
-            if [[ -n "$TAG_SUFFIX" ]]; then
-              echo "RC artifacts are produced by the exact-source candidate build in \`.github/workflows/rc1-verify.yml\`."
-              echo "This policy workflow intentionally does **not** create tags or Releases."
-            else
-              echo "Stable promotion is an explicit administrator action: create the immutable tag/Release, then run \`release-downstream.yml\` to build/upload/finalize from that exact source."
-            fi
-            echo
-            echo "GitHub Actions is intentionally not granted a token capable of creating tags that point at commits containing workflow changes."
+            echo "- Next step: **automatic downstream build + publication**"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch downstream release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ steps.release.outputs.source_ref }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG_SUFFIX: ${{ steps.release.outputs.tag_suffix }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release-downstream.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f source_ref="$SOURCE_REF" \
+            -f version="$VERSION" \
+            -f tag_suffix="$TAG_SUFFIX" \
+            -f prerelease="$PRERELEASE"
+          echo "Dispatched release-downstream.yml for $VERSION${TAG_SUFFIX:+-$TAG_SUFFIX}" >> "$GITHUB_STEP_SUMMARY"
