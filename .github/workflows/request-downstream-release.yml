@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -68,6 +68,7 @@ jobs:
 
           echo "source_ref=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "tag_suffix=$TAG_SUFFIX" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
@@ -78,8 +79,29 @@ jobs:
             echo "- Upstream version: **$UPSTREAM_VERSION**"
             echo "- Requested tag: \`$RELEASE_TAG\`"
             echo "- Prerelease: **$PRERELEASE**"
-            echo "- Next step: **automatic downstream build + publication**"
+            echo "- Next step: **prepare tag, then automatic downstream build + publication**"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ensure release tag exists at exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_REF: ${{ steps.release.outputs.source_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if CURRENT=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null); then
+            [[ "$CURRENT" == "$SOURCE_REF" ]] || {
+              echo "::error::$TAG already points to $CURRENT, expected $SOURCE_REF"
+              exit 1
+            }
+            echo "Tag $TAG already exists at exact source."
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" \
+              -f sha="$SOURCE_REF" >/dev/null
+            echo "Created $TAG at $SOURCE_REF."
+          fi
 
       - name: Dispatch downstream release workflow
         env:
