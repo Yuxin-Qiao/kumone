@@ -323,6 +323,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-macos, build-windows, build-linux, build-web]
     if: always() && !cancelled()
+    permissions:
+      actions: read
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -341,9 +344,10 @@ jobs:
           echo "Target Release: $TAG (Version: $VERSION)"
 
       - name: Download all platform artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: all-deliverables
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir all-deliverables
 
       - name: Consolidate deliverables
         run: |
