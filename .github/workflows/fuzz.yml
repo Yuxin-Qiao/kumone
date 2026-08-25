@@ -52,7 +52,7 @@ jobs:
         continue-on-error: true
         working-directory: fuzz
         shell: bash
-        run: cargo +nightly fuzz run search-response -- -max_total_time=120 -rss_limit_mb=2048
+        run: cargo +nightly fuzz run search_response -- -max_total_time=120 -rss_limit_mb=2048
 
       - name: Upload crash artifacts
         if: steps.lyrics.outcome == 'failure' || steps.search.outcome == 'failure'
