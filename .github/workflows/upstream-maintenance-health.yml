@@ -9,7 +9,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: upstream-maintenance-transaction
+  # Health is a monitor, not the transaction itself. Keeping a separate
+  # group prevents its safe semantic-sync dispatch from cancelling the health
+  # run that initiated it; the active-run check below still avoids duplicates.
+  group: upstream-maintenance-health
   cancel-in-progress: true
 
 jobs:
@@ -84,7 +87,7 @@ jobs:
           # the single deduplicated maintenance issue below.
           for workflow in "Core CI" "Windows CI" "Android CI" "Linux Tauri CI" "CodeQL Security Scan"; do
             run=$(gh run list --workflow "$workflow" --repo "$repo" --branch main --limit 1 \
-              --json databaseId,status,conclusion,headSha,htmlUrl,displayTitle)
+              --json databaseId,status,conclusion,headSha,url,displayTitle)
             status=$(jq -r '.[0].status // "missing"' <<< "$run")
             conclusion=$(jq -r '.[0].conclusion // ""' <<< "$run")
             if [[ "$status" == "completed" && "$conclusion" != "success" ]]; then
