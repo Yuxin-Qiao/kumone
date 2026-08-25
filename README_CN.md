@@ -107,6 +107,10 @@ npm test --prefix web
 ```
 
 Rust 与 Web 对仍存在多实现的协议行为共享 `contracts/` 中的固定 fixture。
+`npm test` 是不依赖网易云在线服务的确定性 Web/PWA gate。
+真实联网探测单独运行：`npm run test:live --prefix web -- --allow-known-external-challenge`。
+网易云反爬/限流响应（例如 `code: -462`）会记录为
+`known_external_challenge`；解析、协议和未知业务错误仍然严格失败。
 
 ### Windows
 
@@ -140,6 +144,12 @@ gradle -p apps/android :app:testDebugUnitTest :app:assembleDebug
 
 ```bash
 npm test --prefix web
+```
+
+如需运行可选的网易云 live smoke（它不是确定性 CI gate）：
+
+```bash
+npm run test:live --prefix web -- --allow-known-external-challenge
 ```
 
 ## 架构

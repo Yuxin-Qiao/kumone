@@ -42,6 +42,7 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     'lib/unblock.js',
     'lib/tauri-bridge.js',
     'lib/qrcode.min.js',
+    'test/live-service.js',
   ];
 
   const rootDir = path.resolve(__dirname, '..');
@@ -54,6 +55,22 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
     }
   }
   ok(`所有 Web / PWA 核心文件与 JS 语法校验通过 (${requiredFiles.length} 项)`);
+
+  console.log('[3] Live smoke 外部服务风控分类契约');
+  const liveService = require('./live-service');
+  assert.ok(liveService.isKnownExternalChallenge({ kind: 'business', code: -462 }),
+    'NetEase -462 verification responses must be classified as external challenges');
+  assert.ok(liveService.isKnownExternalChallenge({ kind: 'business', code: -460 }),
+    'NetEase -460 rate-limit responses must be classified as external challenges');
+  assert.ok(liveService.isKnownExternalChallenge({ kind: 'http', httpStatus: 403 }),
+    'HTTP 403 edge challenges must be classified as external challenges');
+  assert.ok(liveService.isKnownExternalChallenge({ kind: 'http', httpStatus: 429 }),
+    'HTTP 429 edge throttling must be classified as external challenges');
+  assert.ok(!liveService.isKnownExternalChallenge({ kind: 'decoding', message: '数据解析失败' }),
+    'response decoding errors must remain deterministic failures');
+  assert.ok(!liveService.isKnownExternalChallenge({ kind: 'business', code: 500 }),
+    'unknown business errors must remain deterministic failures');
+  ok('已知外部风控状态与真正解析/业务错误严格区分');
 
   console.log(`\n🎉 Web / PWA 模块冒烟测试全部通过 (共 ${passed} 项)！`);
   process.exit(0);

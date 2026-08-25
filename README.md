@@ -107,6 +107,10 @@ npm test --prefix web
 ```
 
 Rust and Web consume shared fixtures under `contracts/` for duplicated wire-protocol semantics.
+`npm test` is the deterministic Web/PWA gate and does not depend on the live NetEase service.
+The separate live probe is opt-in: `npm run test:live --prefix web -- --allow-known-external-challenge`.
+NetEase anti-bot/rate-limit responses such as `code: -462` are recorded as
+`known_external_challenge`; decoding, protocol, and unknown business errors still fail.
 
 ### Windows
 
@@ -142,6 +146,12 @@ gradle -p apps/android :app:testDebugUnitTest :app:assembleDebug
 
 ```bash
 npm test --prefix web
+```
+
+For the optional live NetEase probe (not a deterministic CI gate):
+
+```bash
+npm run test:live --prefix web -- --allow-known-external-challenge
 ```
 
 ## Architecture

@@ -165,6 +165,7 @@
       this.absorbSetCookies(res);
       if (!res.ok) {
         const err = new Error(`网络错误 (${res.status})`);
+        err.kind = 'http';
         err.httpStatus = res.status;
         throw err;
       }

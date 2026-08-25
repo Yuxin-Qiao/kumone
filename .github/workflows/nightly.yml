@@ -31,15 +31,32 @@ jobs:
         run: cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
 
       - name: Validate live NetEase API behavior
-        run: npm test --prefix web
+        env:
+          KUMONE_ALLOW_KNOWN_EXTERNAL_CHALLENGE: "1"
+          KUMONE_LIVE_STATUS_FILE: ${{ runner.temp }}/kumone-live-status.json
+        run: npm run test:live --prefix web -- --allow-known-external-challenge
 
       - name: Record success summary
-        if: success()
+        if: always()
         run: |
+          status="failed"
+          if [[ -f "$RUNNER_TEMP/kumone-live-status.json" ]]; then
+            status="$(jq -r '.status // "failed"' "$RUNNER_TEMP/kumone-live-status.json")"
+          fi
           {
-            echo "## Kumone nightly smoke passed"
+            echo "## Kumone nightly smoke: $status"
             echo
             echo "- Rust weapi/eapi golden vectors: passed"
             echo "- Web/PWA protocol tests: passed"
-            echo "- Live NetEase search/playlist/lyrics/audio/login smoke checks: passed"
+            case "$status" in
+              all_passed)
+                echo "- Live NetEase search/playlist/lyrics/audio/login smoke checks: passed"
+                ;;
+              known_external_challenge)
+                echo "- Live NetEase probe: known external challenge/rate limit (not a code regression)"
+                ;;
+              *)
+                echo "- Live NetEase probe: failed; inspect the job log"
+                ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"
