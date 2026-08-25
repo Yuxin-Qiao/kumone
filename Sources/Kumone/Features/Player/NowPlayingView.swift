@@ -27,6 +27,9 @@ struct NowPlayingView: View {
                     regularLayout(size: geo.size)
                 }
             }
+            // Pin to the screen width so an intrinsically-wide child can never
+            // stretch the ZStack and push the corner overlays off-screen.
+            .frame(width: geo.size.width)
             .overlay(alignment: .topLeading) {
                 Button {
                     close()
@@ -38,7 +41,7 @@ struct NowPlayingView: View {
                         .background(.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.pressable)
-                .padding(.top, 16)
+                .padding(.top, 20)
                 .padding(.leading, 20)
             }
             .overlay(alignment: .topTrailing) {
@@ -55,11 +58,18 @@ struct NowPlayingView: View {
                             .background(.white.opacity(0.12), in: Circle())
                     }
                     .buttonStyle(.pressable)
-                    .padding(.top, 16)
+                    .padding(.top, 20)
                     .padding(.trailing, 20)
                 }
             }
         }
+        #if os(macOS)
+        // The window toolbar is hidden while this page is up, but SwiftUI keeps
+        // reserving its safe area, which pushed the whole immersive layout —
+        // close button included — a toolbar's height down from the window top.
+        // iOS keeps its safe area: there the inset is the status bar / notch.
+        .ignoresSafeArea()
+        #endif
         .preferredColorScheme(.dark)
         .task(id: player.currentTrack?.id) {
             await loadArtwork()
@@ -226,7 +236,12 @@ struct NowPlayingView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 22) {
+        // Equal-width slots so the row always fits the screen: fixed-size
+        // buttons in a plain HStack summed wider than a phone (≈430pt with the
+        // like button), overflowing the layout and shoving the overlays and
+        // metadata off the right edge. `maxWidth: .infinity` per control makes
+        // the row scale to any width instead.
+        HStack(spacing: 0) {
             if let track = player.currentTrack {
                 let liked = account.isLiked(track.id)
                 circleButton(
@@ -235,12 +250,14 @@ struct NowPlayingView: View {
                 ) {
                     Task { await account.toggleLike(trackID: track.id) }
                 }
+                .frame(maxWidth: .infinity)
             }
 
             if player.isFMMode {
                 circleButton(icon: "trash", size: 14) {
                     player.fmTrash()
                 }
+                .frame(maxWidth: .infinity)
             } else {
                 circleButton(
                     icon: "shuffle", size: 14,
@@ -248,38 +265,30 @@ struct NowPlayingView: View {
                 ) {
                     player.toggleShuffle()
                 }
+                .frame(maxWidth: .infinity)
                 circleButton(icon: "backward.fill", size: 16) {
                     player.previous()
                 }
+                .frame(maxWidth: .infinity)
             }
 
-            Button {
-                player.togglePlayPause()
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 58, height: 58)
-                        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 21, weight: .bold))
-                        .foregroundStyle(.black.opacity(0.85))
-                        .contentTransition(.opacity)
-                }
-            }
-            .buttonStyle(.pressable)
+            playPauseButton
+                .frame(maxWidth: .infinity)
 
             circleButton(icon: "forward.fill", size: 16) {
                 player.next()
             }
+            .frame(maxWidth: .infinity)
 
             RoutePickerButton(diameter: 40, glyphSize: 15)
+                .frame(maxWidth: .infinity)
 
             if player.isFMMode {
                 Image(systemName: "wave.3.right.circle.fill")
                     .font(.system(size: 15))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(width: 40, height: 40)
+                    .frame(maxWidth: .infinity)
             } else {
                 circleButton(
                     icon: player.repeatMode == .one ? "repeat.1" : "repeat",
@@ -288,8 +297,27 @@ struct NowPlayingView: View {
                 ) {
                     player.cycleRepeatMode()
                 }
+                .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private var playPauseButton: some View {
+        Button {
+            player.togglePlayPause()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 58, height: 58)
+                    .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundStyle(.black.opacity(0.85))
+                    .contentTransition(.opacity)
+            }
+        }
+        .buttonStyle(.pressable)
     }
 
     private func circleButton(icon: String, size: CGFloat,
@@ -379,6 +407,11 @@ struct NowPlayingView: View {
             player.seek(to: line.time)
         } label: {
             VStack(alignment: .leading, spacing: 5) {
+                if settings.showLyricsRomaji, let romaji = line.romaji {
+                    Text(romaji)
+                        .font(.system(size: isActive ? 15 : 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(isActive ? 0.7 : 0.35))
+                }
                 Text(line.text.isEmpty ? "♪" : line.text)
                     .font(.system(size: isActive ? 26 : 20, weight: isActive ? .bold : .semibold))
                     .foregroundStyle(.white.opacity(isActive ? 1 : 0.45))

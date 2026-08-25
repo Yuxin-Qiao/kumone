@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "workflow": "Semantic Upstream Sync",
+  "status": "candidate",
+  "upstream_version": "0.3.5",
+  "upstream_sha": "da010f195889fbec840cc642fc4c10d175fecc33",
+  "base_sha": "c8b72044c2b8fa4308ff849c42427ef2fc3e9602",
+  "branch": "automation/upstream-v0.3.5-da010f195889-c8b72044c2b8",
+  "upstream_prerelease": false,
+  "upstream_tag_suffix": "",
+  "ownership_conflict_count": 0,
+  "ambiguous_conflicts": false,
+  "protected_apple_changes": 0,
+  "mode": "live",
+  "updated_at": "2026-08-25T17:33:12Z"
+}

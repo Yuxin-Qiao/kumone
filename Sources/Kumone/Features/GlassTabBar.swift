@@ -1,12 +1,18 @@
 #if os(iOS)
 import SwiftUI
 
-/// A floating capsule tab bar for iOS 16–25 (older systems have no Liquid
-/// Glass). It approximates it: a blurred material capsule with an edge
-/// highlight and hairline rim, and a **sliding glass lozenge** behind the
-/// active tab (matchedGeometryEffect) that reads like a real raised glass
-/// chip — brighter and more opaque than the bar itself so it lifts, the way
-/// Telegram's selected pill does.
+/// Floating tab bar for iOS 16–25 (no native Liquid Glass), modelled on
+/// Telegram's `TabBarComponent` / `LiquidLensView`:
+///   • a full-height glass capsule (56pt content + 4pt inset = 64pt), near
+///     full-width;
+///   • a sliding selection **capsule that fills the bar height**, tinted the
+///     way Telegram tints it — a faint darkening (black @ 7.5%) in light /
+///     white @ 10% in dark, not a bright chip;
+///   • items whose 23pt filled icon and 10pt semibold label share one colour:
+///     black @ 80% unselected, accent when selected;
+///   • **an interactive pill you can drag** across the tabs — the lens tracks
+///     your finger and switches tabs live, then settles with a spring on
+///     release; a plain tap slides it there instead.
 struct GlassTabBar: View {
     struct Item: Identifiable {
         let tab: IOSTab
@@ -19,98 +25,103 @@ struct GlassTabBar: View {
     @Binding var selection: IOSTab
     var onReselect: (IOSTab) -> Void = { _ in }
 
-    @Namespace private var pillNamespace
     @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(items) { item in
-                tabButton(item)
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .background { glassCapsule }
-        .overlay {
-            Capsule().strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.05)],
-                               startPoint: .top, endPoint: .bottom),
-                lineWidth: 0.7
-            )
-        }
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
-        .padding(.horizontal, 40)
-        .animation(.spring(response: 0.36, dampingFraction: 0.72), value: selection)
-    }
+    /// Finger x (in content space) while actively dragging the pill; nil at rest.
+    @State private var dragX: CGFloat?
+    @State private var isDragging = false
 
-    private func tabButton(_ item: GlassTabBar.Item) -> some View {
-        let isSelected = selection == item.tab
-        return Button {
-            if isSelected {
-                onReselect(item.tab)
-            } else {
-                selection = item.tab
-            }
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .symbolVariant(isSelected ? .fill : .none)
-                Text(item.title)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
-            }
-            .foregroundStyle(isSelected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background {
-                if isSelected {
-                    glassLozenge
-                        .matchedGeometryEffect(id: "activePill", in: pillNamespace)
+    private let innerInset: CGFloat = 4
+    private let contentHeight: CGFloat = 56
+    private let settle = Animation.spring(response: 0.35, dampingFraction: 0.82)
+
+    var body: some View {
+        GeometryReader { geo in
+            let count = max(items.count, 1)
+            let cellW = geo.size.width / CGFloat(count)
+            let selectedIndex = items.firstIndex { $0.tab == selection } ?? 0
+            let restX = cellW * (CGFloat(selectedIndex) + 0.5)
+            let pillX = isDragging
+                ? min(max(dragX ?? restX, cellW / 2), geo.size.width - cellW / 2)
+                : restX
+
+            ZStack(alignment: .leading) {
+                selectionPill
+                    .frame(width: cellW - 8, height: contentHeight)
+                    .position(x: pillX, y: geo.size.height / 2)
+
+                HStack(spacing: 0) {
+                    ForEach(items) { item in
+                        itemLabel(item)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
             .contentShape(Rectangle())
+            .gesture(dragGesture(cellW: cellW, count: count))
         }
-        .buttonStyle(.plain)
+        .frame(height: contentHeight)
+        .padding(innerInset)
+        .background { Capsule().fill(.regularMaterial) }
+        .overlay {
+            Capsule().strokeBorder(.white.opacity(colorScheme == .dark ? 0.08 : 0.22),
+                                   lineWidth: 0.5)
+        }
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.28 : 0.10), radius: 12, y: 4)
+        .padding(.horizontal, 12)
     }
 
-    /// The sliding selection lozenge — a raised glass chip. It sits on
-    /// `.regularMaterial` (more opaque than the bar's ultra-thin blur) plus a
-    /// bright, scheme-aware wash so it clearly lifts off the bar, topped with
-    /// a specular highlight and a soft drop shadow for dimension.
-    private var glassLozenge: some View {
-        let isDark = colorScheme == .dark
-        return RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(.regularMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.white.opacity(isDark ? 0.14 : 0.60))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(
-                    LinearGradient(
-                        colors: [.white.opacity(isDark ? 0.30 : 0.75), .clear],
-                        startPoint: .top, endPoint: .center
-                    )
-                )
-                .blendMode(.plusLighter)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(.white.opacity(isDark ? 0.28 : 0.65), lineWidth: 0.7)
-            )
-            .shadow(color: .black.opacity(isDark ? 0.38 : 0.14), radius: 5, y: 2)
+    private func itemLabel(_ item: GlassTabBar.Item) -> some View {
+        let isSelected = selection == item.tab
+        return VStack(spacing: 3) {
+            Image(systemName: item.icon)
+                .font(.system(size: 23, weight: .semibold))
+                .symbolVariant(.fill)
+            Text(item.title)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(isSelected
+                         ? AnyShapeStyle(Theme.accent)
+                         : AnyShapeStyle(Color.primary.opacity(0.8)))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 
-    @ViewBuilder
-    private var glassCapsule: some View {
-        ZStack {
-            Capsule().fill(.ultraThinMaterial)
-            LinearGradient(colors: [.white.opacity(0.20), .white.opacity(0.02), .clear],
-                           startPoint: .top, endPoint: .center)
-                .clipShape(Capsule())
-                .blendMode(.plusLighter)
-        }
+    /// The sliding indicator — a bar-height capsule with Telegram's faint tint.
+    private var selectionPill: some View {
+        Capsule(style: .continuous)
+            .fill(colorScheme == .dark
+                  ? Color.white.opacity(0.10)
+                  : Color.black.opacity(0.075))
+    }
+
+    private func index(for x: CGFloat, cellW: CGFloat, count: Int) -> Int {
+        min(max(Int(x / cellW), 0), count - 1)
+    }
+
+    private func dragGesture(cellW: CGFloat, count: Int) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                // Wait for a clear horizontal intent before "lifting" the pill,
+                // so a plain tap slides rather than teleporting to the finger.
+                if !isDragging && abs(value.translation.width) < 8 { return }
+                isDragging = true
+                dragX = value.location.x
+                let tab = items[index(for: value.location.x, cellW: cellW, count: count)].tab
+                if tab != selection { selection = tab }   // live switch, pill tracks finger
+            }
+            .onEnded { value in
+                let tab = items[index(for: value.location.x, cellW: cellW, count: count)].tab
+                if isDragging {
+                    withAnimation(settle) { selection = tab; dragX = nil }
+                } else if tab == selection {
+                    onReselect(tab)
+                } else {
+                    withAnimation(settle) { selection = tab }
+                }
+                isDragging = false
+            }
     }
 }
 #endif

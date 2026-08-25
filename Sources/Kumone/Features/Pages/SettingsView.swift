@@ -29,6 +29,10 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("显示歌词翻译", isOn: $settings.showLyricsTranslation)
+                Toggle("显示日文歌词罗马音", isOn: $settings.showLyricsRomaji)
+                Text("日文歌词上方显示罗马音，缺少官方罗马音时自动生成读音")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 #if os(macOS)
                 Toggle("桌面歌词", isOn: $settings.showDesktopLyrics)
                 Text("在屏幕上悬浮显示当前歌词，可拖动调整位置")
@@ -64,9 +68,7 @@ struct SettingsView: View {
                 } label: {
                     Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
                 }
-                Text(IOSUpdater.isTrollStoreAvailable
-                     ? "检测到 TrollStore：可在应用内下载并自动安装新版本"
-                     : "未检测到 TrollStore：检查更新会打开发布页，需用侧载工具重新安装（登录状态与设置保留）")
+                Text("装有 TrollStore（巨魔）可在应用内一键自动安装；否则可下载 IPA 用侧载工具重装（登录状态与设置保留）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 #endif
