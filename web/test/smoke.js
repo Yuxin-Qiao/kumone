@@ -8,19 +8,21 @@ let passed = 0;
 const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
 
 (async () => {
-  console.log('[1] Web Crypto 对拍验证');
+  console.log('[1] Shared crypto contract vectors');
   const nc = require('../lib/crypto');
-  const json = String.raw`{"a":1,"中文":"x","csrf_token":""}`;
+  const contractPath = path.resolve(__dirname, '../../contracts/crypto-vectors.json');
+  const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
+  assert.strictEqual(contract.schema_version, 1);
+  assert.ok(contract.cases.length > 0, 'crypto contract must contain cases');
 
-  const w = nc.weapi(json);
-  assert.strictEqual(w.params,
-    '/l1h2jkQoD4EUEIqo0GV8iPAF/ELo5N5dtabFdU9AXjIo6UqTRXg7VbIGmg3IpMTxeVaQbzzC3Qj3a6UpPQGwAbuUNQ7EeMTAFotyNZtxgA=');
-  assert.strictEqual(w.encSecKey.slice(0, 64),
-    '38cef2efdbcc1cfd6a44d81620dae5d23091f50ef27e01a1b1bb7e998e0fde2d');
-
-  assert.strictEqual(nc.eapi('/api/test', json).params,
-    '4DC723619A991588865191FD2F319BADEE9D82DED756FAF81718E6CE08BB71F2C4601D07128D00DB9BD72874C343B530930B71BB58E3ECC222F1E26BC6ABC97E1F900BDA20E3392CD422873B10E676D73FF8662A89B1101642C72A6BB91B2D151301E8A009DA24A4D62DDFB070D282AE');
-  ok('weapi / eapi 算法一致性校验通过');
+  for (const vector of contract.cases) {
+    const w = nc.weapi(vector.json);
+    assert.strictEqual(w.params, vector.weapi_params, `${vector.name}: weapi params`);
+    assert.strictEqual(w.encSecKey, vector.weapi_enc_sec_key, `${vector.name}: encSecKey`);
+    assert.strictEqual(nc.eapi(vector.eapi_path, vector.json).params,
+      vector.eapi_params, `${vector.name}: eapi params`);
+  }
+  ok(`Rust/Web 共享加密契约向量通过 (${contract.cases.length} 组)`);
 
   console.log('[2] Web / PWA 核心文件存在性校验');
   const requiredFiles = [
