@@ -9,7 +9,8 @@
     "gradle",
     "npm",
     "github-actions",
-    "dockerfile"
+    "dockerfile",
+    "custom.regex"
   ],
   "timezone": "Asia/Shanghai",
   "branchPrefix": "renovate/",
@@ -24,6 +25,22 @@
   "pinDigests": true,
   "platformAutomerge": false,
   "automerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep the self-hosted Renovate engine pinned and self-maintained",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/renovate\\.yml$/"
+      ],
+      "matchStrings": [
+        "renovate-version:\\s*(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "depNameTemplate": "renovate",
+      "packageNameTemplate": "ghcr.io/renovatebot/renovate",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    }
+  ],
   "packageRules": [
     {
       "description": "Mark non-major dependency updates as eligible for the deterministic bot merge gate",
@@ -85,8 +102,9 @@
   "vulnerabilityAlerts": {
     "enabled": true,
     "addLabels": [
-      "security",
-      "automerge-safe"
-    ]
+      "security"
+    ],
+    "minimumReleaseAge": null,
+    "prCreation": "immediate"
   }
 }
