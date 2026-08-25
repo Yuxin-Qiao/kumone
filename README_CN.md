@@ -89,6 +89,10 @@ Apple 平台发布请查看 [`missuo/kumone`](https://github.com/missuo/kumone/r
 - `Kumone-0.2.5-android.aab`
 - SHA-256 校验文件
 
+stable Release 仍然必须精确对齐当前上游版本。如果上游在某个已验证的 main
+提交发布前继续前进，发布 workflow 只允许该历史源码以明确的
+`downstream-v<version>-rc.*` prerelease 验证；源码 SHA 仍不可变，stable 不会被覆盖。
+
 Phase 2 合并后，后续上游对齐 Release 还会自动生成：
 
 - `Kumone-<version>-linux-x86_64.AppImage`

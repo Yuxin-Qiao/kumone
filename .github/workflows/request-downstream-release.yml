@@ -73,12 +73,20 @@ jobs:
             echo "::error::Could not resolve source/upstream version"
             exit 1
           }
-          [[ "$SOURCE_VERSION" == "$UPSTREAM_VERSION" ]] || {
-            echo "::error::Source version $SOURCE_VERSION is not aligned with upstream $UPSTREAM_VERSION"
-            exit 1
-          }
+          if [[ "$SOURCE_VERSION" != "$UPSTREAM_VERSION" ]]; then
+            [[ "$PRERELEASE" == "true" && "$TAG_SUFFIX" =~ ^rc[._-] ]] || {
+              echo "::error::A source version behind upstream requires prerelease=true and an explicit rc tag suffix"
+              exit 1
+            }
+            LATEST_VERSION=$(printf '%s\n%s\n' "$SOURCE_VERSION" "$UPSTREAM_VERSION" | sort -V | tail -n 1)
+            [[ "$LATEST_VERSION" == "$UPSTREAM_VERSION" ]] || {
+              echo "::error::Source version $SOURCE_VERSION is newer than upstream $UPSTREAM_VERSION"
+              exit 1
+            }
+            echo "::warning::Preparing historical source $SOURCE_VERSION as prerelease $TAG_SUFFIX while upstream is $UPSTREAM_VERSION"
+          fi
 
-          RELEASE_TAG="downstream-v$UPSTREAM_VERSION"
+          RELEASE_TAG="downstream-v$SOURCE_VERSION"
           [[ -z "$TAG_SUFFIX" ]] || RELEASE_TAG="$RELEASE_TAG-$TAG_SUFFIX"
 
           echo "source_ref=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
@@ -92,6 +100,7 @@ jobs:
             echo "- Source trust: **main ancestor verified**"
             echo "- App version: **$SOURCE_VERSION**"
             echo "- Upstream version: **$UPSTREAM_VERSION**"
+            echo "- Version policy: **historical source allowed only for explicit rc prerelease; stable releases remain exact-upstream gated**"
             echo "- Requested tag: \`$RELEASE_TAG\`"
             echo "- Prerelease: **$PRERELEASE**"
             echo "- Next step: **automatic downstream build + publication**"

@@ -89,6 +89,11 @@ The currently published 0.2.5 stable release contains:
 - `Kumone-0.2.5-android.aab`
 - SHA-256 checksum files
 
+Stable releases remain pinned to the current upstream version. When upstream advances
+before a previously verified main commit is published, the release workflows allow
+that historical source only as an explicit `downstream-v<version>-rc.*` prerelease;
+the source SHA remains immutable and the stable release is never replaced.
+
 Future upstream-aligned releases built by the Phase 2 pipeline additionally produce:
 
 - `Kumone-<version>-linux-x86_64.AppImage`
