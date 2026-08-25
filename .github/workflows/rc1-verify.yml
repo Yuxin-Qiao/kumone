@@ -18,33 +18,72 @@ jobs:
     name: Resolve RC1 source
     runs-on: ubuntu-latest
     outputs:
-      source_ref: ${{ steps.request.outputs.source_ref }}
+      source_sha: ${{ steps.request.outputs.source_sha }}
       version: ${{ steps.request.outputs.version }}
       label: ${{ steps.request.outputs.label }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
       - id: request
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_REF=$(jq -r '.source_ref' .github/rc1-request.json)
+          SOURCE_SHA=$(jq -r '.source_ref' .github/rc1-request.json)
           VERSION=$(jq -r '.version' .github/rc1-request.json)
           LABEL=$(jq -r '.label // "rc.1"' .github/rc1-request.json)
-          [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_ref must be a full commit SHA"; exit 1; }
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::invalid version"; exit 1; }
-          [[ "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::invalid label"; exit 1; }
 
-          git fetch origin "$SOURCE_REF"
-          SOURCE_VERSION=$(git show "$SOURCE_REF:CHANGELOG.md" | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::source_ref must be a full commit SHA"
+            exit 1
+          }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
+            echo "::error::invalid version"
+            exit 1
+          }
+          [[ "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || {
+            echo "::error::invalid label"
+            exit 1
+          }
+
+          git fetch --no-tags origin main
+          git cat-file -e "$SOURCE_SHA^{commit}" 2>/dev/null || {
+            echo "::error::source_ref is not a commit available in this repository"
+            exit 1
+          }
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main || {
+            echo "::error::RC1 source must already be part of main history"
+            exit 1
+          }
+
+          SOURCE_VERSION=$(git show "$SOURCE_SHA:CHANGELOG.md" | \
+            sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
           UPSTREAM_VERSION=$(curl --fail --silent --show-error --location \
             https://raw.githubusercontent.com/missuo/kumone/main/CHANGELOG.md \
             | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
-          [[ "$VERSION" == "$SOURCE_VERSION" ]] || { echo "::error::requested $VERSION != source $SOURCE_VERSION"; exit 1; }
-          [[ "$VERSION" == "$UPSTREAM_VERSION" ]] || { echo "::error::requested $VERSION != upstream $UPSTREAM_VERSION"; exit 1; }
+          [[ "$VERSION" == "$SOURCE_VERSION" ]] || {
+            echo "::error::requested $VERSION != source $SOURCE_VERSION"
+            exit 1
+          }
+          [[ "$VERSION" == "$UPSTREAM_VERSION" ]] || {
+            echo "::error::requested $VERSION != upstream $UPSTREAM_VERSION"
+            exit 1
+          }
 
-          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### RC1 exact-source verification"
+            echo "- Source: \`$SOURCE_SHA\`"
+            echo "- Source trust: **main ancestor verified**"
+            echo "- Version: **$VERSION**"
+            echo "- Label: **$LABEL**"
+            echo "- Build caches for exact-source jobs: **disabled**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   windows:
     name: RC1 Windows NSIS
@@ -57,15 +96,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified main-history source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          workspaces: |
-            .
-            apps/windows/src-tauri
       - name: Verify shared gates
         run: |
           cargo test --workspace --all-targets
@@ -112,7 +157,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified main-history source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -122,11 +178,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential curl file libayatana-appindicator3-dev libssl-dev \
             librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          workspaces: |
-            .
-            apps/windows/src-tauri
       - name: Verify shared gates and build Linux packages
         shell: bash
         run: |
@@ -136,12 +187,20 @@ jobs:
           cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
           npm install --global @tauri-apps/cli@v2
           python3 - <<'PY'
-          import json
+          import re
           from pathlib import Path
-          p = Path('apps/windows/src-tauri/tauri.conf.json')
-          d = json.loads(p.read_text())
-          d['version'] = '${{ needs.prepare.outputs.version }}'
-          p.write_text(json.dumps(d, indent=2) + '\n')
+          p = Path("apps/windows/src-tauri/tauri.conf.json")
+          text = p.read_text(encoding="utf-8")
+          text, n = re.subn(
+              r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)',
+              r'\g<1>${{ needs.prepare.outputs.version }}\g<2>',
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if n != 1:
+              raise SystemExit("Could not set Tauri version")
+          p.write_text(text, encoding="utf-8")
           PY
           (cd apps/windows && tauri build --bundles appimage,deb,rpm)
       - name: Prepare Linux RC
@@ -156,7 +215,10 @@ jobs:
             source=$(find apps/windows/src-tauri/target/release/bundle -type f -name "$1" -print -quit)
             test -n "$source" || { echo "::error::Missing $1"; exit 1; }
             bytes=$(stat -c%s "$source")
-            [ "$bytes" -le $((25 * 1024 * 1024)) ] || { echo "::error::$1 exceeds 25 MiB"; exit 1; }
+            [ "$bytes" -le $((25 * 1024 * 1024)) ] || {
+              echo "::error::$1 exceeds 25 MiB"
+              exit 1
+            }
             cp "$source" "rc-linux/$2"
           }
           copy_one '*.AppImage' "Kumone-$VERSION-$LABEL-linux-x86_64.AppImage"
@@ -194,7 +256,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified main-history source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -211,7 +284,7 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
         with:
           gradle-version: "9.5.0"
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+          cache-disabled: true
       - name: Setup Rust Android target
         run: |
           rustup target add aarch64-linux-android
@@ -226,7 +299,8 @@ jobs:
           mkdir -p apps/android/app/build/generated/uniffi/kotlin
           cargo run -p uniffi-bindgen -- generate --library target/release/libkumone_ffi.so \
             --language kotlin --out-dir apps/android/app/build/generated/uniffi/kotlin --no-format
-          cargo ndk -t arm64-v8a -o apps/android/app/build/generated/uniffi/jniLibs build -p kumone-ffi --release
+          cargo ndk -t arm64-v8a -o apps/android/app/build/generated/uniffi/jniLibs \
+            build -p kumone-ffi --release
           bash scripts/ci/prepare-android-signing.sh
           gradle -p apps/android :app:lintRelease :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease \
             -PkumoneVersion="$VERSION" -PkumoneVersionCode="${{ github.run_number }}"
@@ -239,10 +313,15 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
-          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | \
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | \
+            tr -d ':' | tr '[:lower:]' '[:upper:]')
           [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
           jarsigner -verify "$AAB"
-          [ "$(stat -c%s "$APK")" -le $((15 * 1024 * 1024)) ] || { echo "::error::Android APK exceeds 15 MiB"; exit 1; }
+          [ "$(stat -c%s "$APK")" -le $((15 * 1024 * 1024)) ] || {
+            echo "::error::Android APK exceeds 15 MiB"
+            exit 1
+          }
           mkdir -p rc-android
           cp "$APK" "rc-android/Kumone-$VERSION-$LABEL-android.apk"
           cp "$AAB" "rc-android/Kumone-$VERSION-$LABEL-android.aab"
