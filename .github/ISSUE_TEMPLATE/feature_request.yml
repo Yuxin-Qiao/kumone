@@ -6,18 +6,37 @@ body:
   - type: markdown
     attributes:
       value: |
-        欢迎为 Kumone 提出任何功能建议与设计想法！
+        欢迎为 Kumone 提出功能建议。iOS/iPadOS 由上游项目维护，本下游仓库重点维护 Windows、Android、Linux 与 Web/PWA。
 
   - type: dropdown
     id: platform
     attributes:
       label: 涉及的平台 (Target Platform)
       options:
-        - "全平台通用 (All Platforms)"
-        - "macOS"
-        - "Windows"
-        - "Linux"
-        - "Web / PWA"
+        - "全下游平台通用 (Windows / Android / Linux / Web)"
+        - "macOS (upstream-aligned)"
+        - "Windows (Tauri 2 + Rust)"
+        - "Android (Jetpack Compose + Rust)"
+        - "Linux (Tauri 2 + Rust)"
+        - "Web / PWA / Docker"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能区域 (Area)
+      options:
+        - "安装 / 更新"
+        - "登录 / 账号"
+        - "播放 / 队列"
+        - "搜索"
+        - "歌词"
+        - "灰色歌曲 / Unblock"
+        - "界面 / 交互"
+        - "性能 / 资源占用"
+        - "开发 / 自动化"
+        - "其他"
     validations:
       required: true
 
@@ -25,7 +44,7 @@ body:
     id: feature
     attributes:
       label: 功能诉求描述 (Feature Description)
-      description: 您希望增加什么新特性？它能解决什么痛点？
+      description: 您希望增加什么新特性？它能解决什么问题？
     validations:
       required: true
 
@@ -33,6 +52,6 @@ body:
     id: alternatives
     attributes:
       label: 备选方案或参考 (Alternatives & References)
-      description: 您考虑过哪些替代方案，或是否有其他开源播放器的交互可供参考？
+      description: 您考虑过哪些替代方案，或是否有其他开源播放器的实现可供参考？
     validations:
       required: false
