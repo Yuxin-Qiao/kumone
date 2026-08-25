@@ -84,7 +84,7 @@ jobs:
 
       - name: Ensure release tag exists at exact source
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           SOURCE_REF: ${{ steps.release.outputs.source_ref }}
         shell: bash
