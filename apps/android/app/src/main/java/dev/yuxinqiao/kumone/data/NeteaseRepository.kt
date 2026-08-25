@@ -48,6 +48,7 @@ import dev.yuxinqiao.kumone.core.unblockKuwoSearchRequest
 import dev.yuxinqiao.kumone.core.unblockPyncmdRequest
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,13 +61,21 @@ import kotlinx.coroutines.withContext
  * cookie storage.
  */
 class NeteaseRepository(context: Context) {
-    private val session = SessionStore(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val session = SessionStore(appContext)
+    private val diagnostics = DiagnosticsStore(appContext)
     private val trackCache = ConcurrentHashMap<Long, FfiSearchTrack>()
 
     fun isLoggedIn(): Boolean = coreIsLoggedIn(session.snapshot())
 
     fun logout() {
         session.replace(clearAuthCookies(session.snapshot()))
+    }
+
+    fun exportDiagnostics(): String {
+        val file = File(appContext.filesDir, "diagnostics.json")
+        file.writeText(diagnostics.json(), Charsets.UTF_8)
+        return file.absolutePath
     }
 
     suspend fun beginQrLogin(): QrLoginSession = withContext(Dispatchers.IO) {
@@ -223,13 +232,44 @@ class NeteaseRepository(context: Context) {
         )
     }
 
-    private fun resolvePlaybackInternal(track: FfiSearchTrack, level: String): PlaybackResolution =
-        runCatching { resolveNeteasePlayback(track.id, level) }
-            .map { PlaybackResolution(url = it.url, source = "netease") }
-            .getOrElse { neteaseError ->
-                resolveUnblocked(track)
-                    ?: error(neteaseError.message ?: "No playable source found")
-            }
+    /** Read-only GitHub Release check. Android delegates installation to the
+     * system/browser; it never attempts to bypass package-signature policy. */
+    suspend fun latestRelease(): ReleaseInfo = withContext(Dispatchers.IO) {
+        val connection = (URL("https://api.github.com/repos/Yuxin-Qiao/kumone/releases/latest")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "Kumone Android updater")
+        }
+        try {
+            val status = connection.responseCode
+            val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) error("Release check HTTP $status")
+            val json = org.json.JSONObject(body)
+            ReleaseInfo(
+                version = json.optString("tag_name").removePrefix("downstream-v"),
+                url = json.optString("html_url"),
+            )
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun resolvePlaybackInternal(track: FfiSearchTrack, level: String): PlaybackResolution {
+        var lastError: Throwable? = null
+        listOf(level, "lossless", "exhigh", "standard").distinct().forEach { candidate ->
+            runCatching { resolveNeteasePlayback(track.id, candidate) }
+                .onSuccess { resolved ->
+                    return PlaybackResolution(url = resolved.url, source = "netease")
+                }
+                .onFailure { lastError = it }
+        }
+        return resolveUnblocked(track)
+            ?: error(lastError?.message ?: "No playable source found")
+    }
 
     private fun resolveNeteasePlayback(trackId: Long, level: String): FfiPlaybackData {
         val requestResult = buildSongUrlRequest(
@@ -290,6 +330,24 @@ class NeteaseRepository(context: Context) {
     }
 
     private fun execute(request: FfiRequestSpec): String {
+        var attempt = 0
+        while (true) {
+            try {
+                return executeOnce(request)
+            } catch (error: Throwable) {
+                diagnostics.record(error.message.orEmpty())
+                val message = error.message.orEmpty()
+                val retryable = message.contains("HTTP 408") || message.contains("HTTP 429") ||
+                    message.contains("HTTP 500") || message.contains("HTTP 502") ||
+                    message.contains("HTTP 503") || message.contains("timed out", ignoreCase = true)
+                if (!retryable || attempt >= 1) throw error
+                attempt += 1
+                Thread.sleep(350L)
+            }
+        }
+    }
+
+    private fun executeOnce(request: FfiRequestSpec): String {
         val connection = (URL(request.url).openConnection() as HttpURLConnection).apply {
             requestMethod = request.method
             connectTimeout = 15_000
@@ -383,6 +441,11 @@ data class LyricsPage(
     val translationContributor: String?,
 )
 
+data class ReleaseInfo(
+    val version: String,
+    val url: String,
+)
+
 private class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("netease-session", Context.MODE_PRIVATE)
 
@@ -395,4 +458,34 @@ private class SessionStore(context: Context) {
             values.forEach { (key, value) -> putString(key, value) }
         }.apply()
     }
+}
+
+private class DiagnosticsStore(context: Context) {
+    private val preferences = context.getSharedPreferences("kumone-diagnostics", Context.MODE_PRIVATE)
+    private val versionName = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull().orEmpty()
+
+    fun record(message: String) {
+        preferences.edit()
+            .putLong("request_count", preferences.getLong("request_count", 0L) + 1L)
+            .putString("last_error", message.take(240))
+            .apply()
+    }
+
+    fun json(): String = org.json.JSONObject()
+        .put("schema_version", 1)
+        .put("product", "kumone")
+        .put("platform", "android")
+        .put("app_version", versionName)
+        .put("privacy", org.json.JSONObject().put("redacted", true).put("network_upload", false))
+        .put(
+            "events",
+            org.json.JSONArray().put(
+                org.json.JSONObject()
+                    .put("request_count", preferences.getLong("request_count", 0L))
+                    .put("last_error", preferences.getString("last_error", null)),
+            ),
+        )
+        .toString(2)
 }

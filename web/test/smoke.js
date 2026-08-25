@@ -54,6 +54,11 @@ const ok = (name) => { passed++; console.log(`  ✓ ${name}`); };
       execSync(`node -c "${p}"`);
     }
   }
+  const tauriBridge = fs.readFileSync(path.join(rootDir, 'lib/tauri-bridge.js'), 'utf8');
+  assert.ok(tauriBridge.includes("checkForUpdate: () => call('check_for_update')"),
+    'Tauri bridge must expose the update check command to the settings view');
+  assert.ok(tauriBridge.includes("exportDiagnostics: () => call('diagnostics_export')"),
+    'Tauri bridge must expose local diagnostics export to the settings view');
   ok(`所有 Web / PWA 核心文件与 JS 语法校验通过 (${requiredFiles.length} 项)`);
 
   console.log('[3] Live smoke 外部服务风控分类契约');

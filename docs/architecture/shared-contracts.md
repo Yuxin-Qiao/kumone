@@ -24,6 +24,10 @@ The following semantics belong in `kumone-core` for downstream native clients:
 - LRC, translation and romaji parsing
 - playback queue/state transitions
 - gray-track / unblock behavior
+- stable error classification for authentication, QR expiry, rate limits,
+  region restrictions, external challenges and unplayable URLs
+- UI state, package-budget, diagnostics and update metadata contracts in
+  `contracts/`
 
 Platform-native media engines remain native: AVPlayer on Apple platforms, Media3 on Android, and the appropriate Web/Tauri integration for Web/desktop.
 
@@ -32,6 +36,11 @@ Platform-native media engines remain native: AVPlayer on Apple platforms, Media3
 `contracts/` contains language-neutral fixtures for behavior that still has multiple implementations. `contracts/crypto-vectors.json` is consumed by both Rust tests and Web smoke tests, so protocol changes cannot silently diverge between those implementations.
 
 Add new fixtures when a behavior is duplicated across implementation boundaries. Prefer moving reusable downstream logic into `kumone-core` over adding more duplicate fixtures.
+
+Desktop session cookies are persisted only inside the platform app-data
+directory.  Diagnostics exports are local, redacted and never uploaded by
+default.  Update manifests carry HTTPS URLs and SHA-256 digests; missing
+trusted signatures fail closed and disable automatic installation.
 
 ## CI policy
 

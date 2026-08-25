@@ -179,17 +179,28 @@
     async songURL(ids, level = 'standard') {
       const list = Array.isArray(ids) ? ids : [ids];
       return Promise.all(list.map(async (id) => {
-        try {
-          return await call('netease_resolve_playback', {
-            trackId: Number(id),
-            level,
-          });
-        } catch (_) {
-          // Existing player logic treats a missing URL as the signal to invoke
-          // Unblock. Returning a stable placeholder keeps that behavior intact.
-          return { id: Number(id), url: null, code: 404 };
+        const levels = [...new Set([level, 'lossless', 'exhigh', 'standard'])];
+        for (const candidateLevel of levels) {
+          try {
+            return await call('netease_resolve_playback', {
+              trackId: Number(id),
+              level: candidateLevel,
+            });
+          } catch (_) {
+            // A restricted/trial URL at one quality is not a terminal error;
+            // try the next shared-core quality before Unblock runs.
+          }
         }
+        // Existing player logic treats a missing URL as the signal to invoke
+        // Unblock. Returning a stable placeholder keeps that behavior intact.
+        return { id: Number(id), url: null, code: 404 };
       }));
+    },
+    async checkForUpdate() {
+      return call('check_for_update');
+    },
+    async exportDiagnostics() {
+      return call('diagnostics_export');
     },
   });
   window.NeteaseAPI = api;
@@ -216,5 +227,7 @@
   window.KumoneTauri = Object.freeze({
     invoke: call,
     persistSession,
+    checkForUpdate: () => call('check_for_update'),
+    exportDiagnostics: () => call('diagnostics_export'),
   });
 })();

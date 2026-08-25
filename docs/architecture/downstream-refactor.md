@@ -153,7 +153,8 @@ Required gates:
 - SHA256 checksums for release assets where applicable
 - GitHub artifact attestations for Windows NSIS installers and Android APK/AAB files
 - Android signing keys only through repository Actions secrets
-- future Windows Authenticode signing only through protected secrets
+- Windows Authenticode signing only through protected secrets; release notes
+  always state the configured/unsigned result
 
 Artifact attestation requires `id-token: write` and `attestations: write` in the release workflow. No signing key, attestation credential or long-lived cloud credential is committed to the repository.
 
@@ -164,7 +165,9 @@ Windows:
 - Tauri NSIS installer built on a Windows GitHub-hosted runner
 - GitHub artifact attestation for the installer
 - optional future portable package
-- future updater metadata/signatures
+- updater metadata/signatures are generated as `latest.json` from
+  `contracts/update-manifest.schema.json`; they are checksum-backed and fail
+  closed when trusted signing material is absent.
 
 Android:
 
@@ -193,7 +196,7 @@ ANDROID_KEY_PASSWORD
 
 `ANDROID_KEYSTORE_BASE64` is the Base64 representation of the release/upload keystore. The keystore and passwords must never be committed to the repository.
 
-Windows package signing is intentionally separate from the first Tauri migration milestone. Add a trusted Windows code-signing certificate in GitHub Secrets before treating the Windows release channel as production-grade; unsigned CI/preview builds may trigger SmartScreen warnings.
+Windows package signing is intentionally separate from the first Tauri migration milestone. Add a trusted Windows code-signing certificate in GitHub Secrets before treating the Windows release channel as production-grade; unsigned CI/preview builds may trigger SmartScreen warnings. The release workflow records `Authenticode verified` or `unsigned (certificate secrets not configured)` in release notes.
 
 ## Versioning
 

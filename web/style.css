@@ -1,5 +1,22 @@
 /* Kumone Web — 1:1 Port of macOS Swift Design System (Theme.swift) */
 :root {
+  /* Shared ui-state contract aliases used by Web, Tauri and Android. */
+  --ui-color-background: #0f1115;
+  --ui-color-surface: #171a21;
+  --ui-color-surface-elevated: #202530;
+  --ui-color-accent: #8ab4ff;
+  --ui-color-text-primary: #f4f6fb;
+  --ui-color-text-secondary: #aab2c0;
+  --ui-color-text-muted: #717b8d;
+  --ui-color-error: #ff8c8c;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-lg: 16px;
   --accent: #EC4949;
   --accent-deep: #C92929;
   --accent-light: #F85B5B;

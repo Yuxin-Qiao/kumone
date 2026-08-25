@@ -2,6 +2,7 @@
 
 pub mod account;
 pub mod crypto;
+pub mod errors;
 pub mod lyrics;
 pub mod netease;
 pub mod playback;

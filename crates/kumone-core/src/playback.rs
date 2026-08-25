@@ -111,6 +111,20 @@ pub fn build_song_url_request(
     build_eapi_request("/song/enhance/player/url/v1", &payload, cookies, context)
 }
 
+/// Ordered quality fallback used by all clients.  A server may advertise a
+/// trial/restricted URL at a requested quality; callers should retry lower
+/// qualities before invoking an external unblock provider.
+#[must_use]
+pub fn quality_fallbacks(requested: &str) -> Vec<&str> {
+    let mut levels = Vec::with_capacity(4);
+    for level in [requested, "lossless", "exhigh", "standard"] {
+        if !levels.contains(&level) {
+            levels.push(level);
+        }
+    }
+    levels
+}
+
 pub fn decode_song_url_response(body: &str) -> Result<Vec<SongUrlData>, PlaybackDecodeError> {
     let response: SongUrlResponse = serde_json::from_str(body)
         .map_err(|error| PlaybackDecodeError::Decode(error.to_string()))?;
@@ -185,5 +199,17 @@ mod tests {
         let body = r#"{"code":200,"data":[{"id":42,"url":"https://trial","freeTimeTrialPrivilege":{"remainTime":30}}]}"#;
         let error = first_playable_url(body, 42).expect_err("time trial should not be accepted");
         assert_eq!(error, PlaybackDecodeError::NoPlayableUrl(42));
+    }
+
+    #[test]
+    fn quality_fallbacks_are_deterministic_and_deduplicated() {
+        assert_eq!(
+            quality_fallbacks("lossless"),
+            vec!["lossless", "exhigh", "standard"]
+        );
+        assert_eq!(
+            quality_fallbacks("standard"),
+            vec!["standard", "lossless", "exhigh"]
+        );
     }
 }

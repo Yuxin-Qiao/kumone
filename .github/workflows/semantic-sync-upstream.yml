@@ -459,6 +459,7 @@ jobs:
       - name: Version consistency and protected Apple boundary
         run: |
           python3 scripts/ci/sync-downstream-version.py --check
+          python3 scripts/ci/validate-contracts.py
           python3 Scripts/ci/validate-upstream-candidate.py \
             --base-sha "${{ needs.prepare.outputs.base_sha }}" \
             --candidate-sha "${{ needs.prepare.outputs.candidate_sha }}" \
@@ -517,7 +518,9 @@ jobs:
           rustup target add aarch64-linux-android
           cargo +stable install cargo-ndk --version 4.1.2 --locked
       - name: Verify shared Rust core and FFI
-        run: cargo test -p kumone-core -p kumone-ffi --all-targets
+        run: |
+          cargo test -p kumone-core -p kumone-ffi --all-targets
+          python3 scripts/ci/validate-contracts.py
       - name: Generate Kotlin bindings and arm64 Rust library
         shell: bash
         run: |
@@ -573,6 +576,7 @@ jobs:
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
           npm test --prefix web
+          python3 scripts/ci/validate-contracts.py
       - name: Check and clippy Tauri shell
         run: |
           cargo check --manifest-path apps/windows/src-tauri/Cargo.toml
@@ -615,13 +619,14 @@ jobs:
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential curl file libayatana-appindicator3-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
+          sudo apt-get install -y --no-install-recommends build-essential curl file libayatana-appindicator3-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm squashfs-tools wget
       - name: Shared and Tauri gates
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
           npm test --prefix web
           cargo check --manifest-path apps/windows/src-tauri/Cargo.toml
           cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+          python3 scripts/ci/validate-contracts.py
           npm install --global @tauri-apps/cli@v2
       - name: Build Linux bundles
         working-directory: apps/windows
@@ -633,10 +638,11 @@ jobs:
           count=0
           while IFS= read -r -d '' pkg; do
             count=$((count + 1)); bytes=$(stat -c%s "$pkg")
-            case "$pkg" in *.AppImage) limit_mib=90 ;; *.deb|*.rpm) limit_mib=25 ;; *) echo "::error::Unexpected Linux package: $pkg"; exit 1 ;; esac
+            case "$pkg" in *.AppImage) limit_mib=80 ;; *.deb|*.rpm) limit_mib=25 ;; *) echo "::error::Unexpected Linux package: $pkg"; exit 1 ;; esac
             [ "$bytes" -le $((limit_mib * 1024 * 1024)) ] || { echo "::error::$(basename "$pkg") exceeds ${limit_mib} MiB"; exit 1; }
           done < <(find apps/windows/src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0)
           [ "$count" -ge 3 ] || { echo "::error::Expected AppImage, deb and rpm"; exit 1; }
+          bash scripts/ci/report-appimage-size.sh "$(find apps/windows/src-tauri/target/release/bundle -type f -name '*.AppImage' -print -quit)" "$GITHUB_STEP_SUMMARY"
 
   auto_merge:
     name: Strict policy, Ready and squash merge
