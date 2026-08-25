@@ -35,7 +35,7 @@ jobs:
 
           SOURCE_REF=$(jq -r '.source_ref // "main"' "$REQUEST_FILE")
           TAG_SUFFIX=$(jq -r '.tag_suffix // ""' "$REQUEST_FILE")
-          PRERELEASE=$(jq -r '.prerelease // true' "$REQUEST_FILE")
+          PRERELEASE=$(jq -r 'if has("prerelease") then .prerelease else true end' "$REQUEST_FILE")
 
           if [[ -n "$TAG_SUFFIX" && ! "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]]; then
             echo "::error::Invalid tag_suffix: $TAG_SUFFIX"
