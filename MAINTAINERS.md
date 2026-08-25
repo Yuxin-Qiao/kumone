@@ -14,7 +14,9 @@ This document lists the maintainers and key contributors for the **Kumone** proj
 
 ## Areas of Responsibility
 
-- **macOS Native Client**: [@missuo](https://github.com/missuo) (Upstream macOS SwiftUI core)
-- **Windows & Linux Electron Client**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir)
-- **Web / PWA / Docker Client**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir)
-- **CI/CD & Upstream Synchronization**: [@Yuxin-Qiao](https://github.com/Yuxin-Qiao), [@ksingir](https://github.com/ksingir)
+- **Apple clients (macOS / iOS / iPadOS)**: upstream-owned SwiftUI implementation; downstream does not maintain a separate iOS release pipeline.
+- **Windows & Linux desktop**: shared downstream Tauri 2 + Rust desktop shell in `apps/windows/src-tauri/`; the historical Electron desktop tree is retired.
+- **Android client**: downstream Jetpack Compose + Media3 + Rust/UniFFI implementation in `apps/android/`.
+- **Shared Rust core & protocol contracts**: `crates/`, `contracts/` and the UniFFI boundary.
+- **Web / PWA / Docker Client**: upstream-aligned Web implementation plus downstream contract tests and Tauri bridge.
+- **CI/CD, compatibility feedback & upstream synchronization**: GitHub Actions, structured Issue triage, compatibility reporting and exact-source release automation.
