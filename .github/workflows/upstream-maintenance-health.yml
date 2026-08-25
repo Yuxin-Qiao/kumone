@@ -36,6 +36,7 @@ jobs:
           repo="$GITHUB_REPOSITORY"
           attention=0
           reasons=()
+          active_sync=0
           main_sha=$(gh api "repos/$repo/git/ref/heads/main" --jq '.object.sha')
           upstream_sha=$(gh api "repos/missuo/kumone/commits/main" --jq '.sha')
           main_changelog=$(gh api "repos/$repo/contents/CHANGELOG.md?ref=main" --jq '.content' | tr -d '\n' | base64 --decode)
@@ -103,6 +104,7 @@ jobs:
               echo "Semantic sync is already active; no duplicate dispatch."
             else
               GH_TOKEN="$WORKFLOW_TOKEN" gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
+              active_sync=1
             fi
           fi
 
@@ -178,16 +180,43 @@ jobs:
               "- Health run: $GITHUB_SERVER_URL/$repo/actions/runs/$GITHUB_RUN_ID" \
               "" "Self-healing was attempted where safe. The system remains fail-closed; no user bug was closed." \
               > "$RUNNER_TEMP/health-issue.md"
-            issue=$(GH_TOKEN="$ISSUE_TOKEN" gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
-              --json number --jq '.[0].number // empty')
-            if [[ -n "$issue" ]]; then
-              GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$issue" --repo "$repo" \
+            automation_issues=$(GH_TOKEN="$ISSUE_TOKEN" gh api --paginate \
+              "repos/$repo/issues?state=all&per_page=100" \
+              --jq '.[] | select(.title == "[automation] upstream maintenance needs attention") | [.number, .state] | @tsv' \
+              | sort -n -k1,1)
+            canonical_issue=$(head -n 1 <<< "$automation_issues" | cut -f1)
+            canonical_state=$(head -n 1 <<< "$automation_issues" | cut -f2)
+            if [[ -n "$canonical_issue" ]]; then
+              if [[ "$canonical_state" == "closed" ]]; then
+                GH_TOKEN="$ISSUE_TOKEN" gh api --method PATCH "repos/$repo/issues/$canonical_issue" \
+                  -f state=open >/dev/null
+              fi
+              while IFS=$'\t' read -r duplicate_issue duplicate_state; do
+                [[ -z "$duplicate_issue" || "$duplicate_issue" == "$canonical_issue" ]] && continue
+                if [[ "$duplicate_state" == "open" ]]; then
+                  GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$duplicate_issue" --repo "$repo" \
+                    --body "Superseded by canonical automation incident #$canonical_issue; retaining one maintenance Issue." >/dev/null
+                  GH_TOKEN="$ISSUE_TOKEN" gh api --method PATCH "repos/$repo/issues/$duplicate_issue" \
+                    -f state=closed >/dev/null
+                fi
+              done <<< "$automation_issues"
+              GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$canonical_issue" --repo "$repo" \
                 --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
             else
               GH_TOKEN="$ISSUE_TOKEN" gh issue create --repo "$repo" --title "$issue_title" \
                 --label "automation/maintenance" \
                 --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
             fi
+            exit 0
+          fi
+
+          # Do not close an incident in the small window after this monitor
+          # dispatches a semantic transaction. The transaction may still fail
+          # closed and must be able to reopen the same canonical Issue.
+          active_sync_now=$(gh run list --workflow semantic-sync-upstream.yml --repo "$repo" \
+            --limit 10 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued")] | length')
+          if [[ "$active_sync" -gt 0 || "$active_sync_now" -gt 0 ]]; then
+            echo "Maintenance health: semantic sync is active; incident closure deferred." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 

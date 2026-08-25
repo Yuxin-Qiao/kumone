@@ -823,10 +823,28 @@ jobs:
           EOF
           gh label create "automation/maintenance" --repo "$GITHUB_REPOSITORY" --color F9D0C4 \
             --description "Automated maintenance incident" --force >/dev/null 2>&1 || true
-          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search '"[automation] upstream maintenance needs attention" in:title' --json number --jq '.[0].number // empty')
-          if [[ -n "$issue" ]]; then
-            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/maintenance-incident.md" >/dev/null
+          automation_issues=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
+            --jq '.[] | select(.title == "[automation] upstream maintenance needs attention") | [.number, .state] | @tsv' \
+            | sort -n -k1,1)
+          canonical_issue=$(head -n 1 <<< "$automation_issues" | cut -f1)
+          canonical_state=$(head -n 1 <<< "$automation_issues" | cut -f2)
+          if [[ -n "$canonical_issue" ]]; then
+            if [[ "$canonical_state" == "closed" ]]; then
+              gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$canonical_issue" \
+                -f state=open >/dev/null
+            fi
+            while IFS=$'\t' read -r duplicate_issue duplicate_state; do
+              [[ -z "$duplicate_issue" || "$duplicate_issue" == "$canonical_issue" ]] && continue
+              if [[ "$duplicate_state" == "open" ]]; then
+                gh issue comment "$duplicate_issue" --repo "$GITHUB_REPOSITORY" \
+                  --body "Superseded by canonical automation incident #$canonical_issue; retaining one maintenance Issue." >/dev/null
+                gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$duplicate_issue" \
+                  -f state=closed >/dev/null
+              fi
+            done <<< "$automation_issues"
+            gh issue comment "$canonical_issue" --repo "$GITHUB_REPOSITORY" \
+              --body-file "$RUNNER_TEMP/maintenance-incident.md" >/dev/null
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "[automation] upstream maintenance needs attention" \
               --label "automation/maintenance" --body-file "$RUNNER_TEMP/maintenance-incident.md" >/dev/null
