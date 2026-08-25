@@ -3,6 +3,19 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const {
+  isKnownExternalChallenge,
+  describeExternalChallenge,
+} = require('./live-service');
+
+const allowKnownExternalChallenge = process.argv.includes('--allow-known-external-challenge')
+  || process.env.KUMONE_ALLOW_KNOWN_EXTERNAL_CHALLENGE === '1';
+const liveStatusFile = process.env.KUMONE_LIVE_STATUS_FILE;
+
+function writeLiveStatus(status, details = {}) {
+  if (!liveStatusFile) return;
+  fs.writeFileSync(liveStatusFile, `${JSON.stringify({ status, ...details }, null, 2)}\n`);
+}
 
 const webDir = path.resolve(__dirname, '..');
 
@@ -168,8 +181,28 @@ function pass(title) {
   });
 
   console.log(`\n🎉 全部 Web & PWA 测试顺利通过 (共 ${totalPassed} 项测试全部 PASS)！\n`);
+  writeLiveStatus('all_passed', { passed: totalPassed });
   process.exit(0);
 })().catch((err) => {
+  if (isKnownExternalChallenge(err)) {
+    const description = describeExternalChallenge(err);
+    writeLiveStatus('known_external_challenge', {
+      signal: description,
+      passed: totalPassed,
+    });
+    console.warn(`\n⚠️ KNOWN_EXTERNAL_CHALLENGE: ${description}`);
+    console.warn('Live NetEase probing stopped; deterministic Web/PWA gates remain authoritative.');
+    if (allowKnownExternalChallenge) {
+      process.exit(0);
+    }
+  }
+  writeLiveStatus('failed', {
+    error: err && err.message ? err.message : String(err),
+    kind: err && err.kind,
+    code: err && err.code,
+    httpStatus: err && err.httpStatus,
+    passed: totalPassed,
+  });
   console.error('\n❌ 测试失败:', err);
   process.exit(1);
 });

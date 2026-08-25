@@ -1,8 +1,8 @@
 //! NetEase Cloud Music request encryption shared by Windows and Android.
 //!
 //! This module intentionally mirrors the upstream Swift implementation in
-//! `Sources/Kumone/Core/API/NeteaseCrypto.swift`. The fixed vectors below are
-//! compatibility gates: changing any byte is a downstream protocol break.
+//! `Sources/Kumone/Core/API/NeteaseCrypto.swift`. Shared vectors under
+//! `contracts/` are compatibility gates for every downstream implementation.
 
 use aes::Aes128;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -80,20 +80,51 @@ fn encrypt_ecb(data: &[u8], key: &[u8; 16]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    const SAMPLE_JSON: &str = r#"{"ids":"[347230]","level":"standard"}"#;
+    #[derive(Debug, serde::Deserialize)]
+    struct ContractFile {
+        schema_version: u32,
+        cases: Vec<ContractCase>,
+    }
 
-    #[test]
-    fn weapi_matches_existing_swift_and_node_vector() {
-        let result = weapi(SAMPLE_JSON);
-        assert_eq!(
-            result.params,
-            "isn5IRF2EcZHMA6I0M7V8NMu9NZhOwdwrGUA/akbGLbhLsijcD3FnYcErglcKFR4RI9arrEFmJfbrKVjqlVYtTTfArhs4lmexwaoxGLooR4="
-        );
-        assert_eq!(result.enc_sec_key, WEAPI_ENC_SEC_KEY);
+    #[derive(Debug, serde::Deserialize)]
+    struct ContractCase {
+        name: String,
+        json: String,
+        eapi_path: String,
+        weapi_params: String,
+        weapi_enc_sec_key: String,
+        eapi_params: String,
     }
 
     #[test]
-    fn eapi_matches_existing_swift_and_node_vector() {
+    fn shared_crypto_contract_vectors_match() {
+        let fixture: ContractFile =
+            serde_json::from_str(include_str!("../../../contracts/crypto-vectors.json"))
+                .expect("valid shared crypto contract fixture");
+        assert_eq!(fixture.schema_version, 1);
+        assert!(!fixture.cases.is_empty());
+
+        for case in fixture.cases {
+            let weapi_result = weapi(&case.json);
+            assert_eq!(
+                weapi_result.params, case.weapi_params,
+                "{} weapi",
+                case.name
+            );
+            assert_eq!(
+                weapi_result.enc_sec_key, case.weapi_enc_sec_key,
+                "{} encSecKey",
+                case.name
+            );
+
+            let eapi_result = eapi(&case.eapi_path, &case.json);
+            assert_eq!(eapi_result.params, case.eapi_params, "{} eapi", case.name);
+        }
+    }
+
+    #[test]
+    fn player_url_vector_remains_protocol_compatible() {
+        const SAMPLE_JSON: &str = r#"{"ids":"[347230]","level":"standard"}"#;
         let result = eapi("/api/song/enhance/player/url/v1", SAMPLE_JSON);
         assert_eq!(
             result.params,

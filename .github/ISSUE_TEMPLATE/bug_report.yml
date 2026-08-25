@@ -1,23 +1,23 @@
 name: 🐛 Bug 报告 (Bug Report)
-description: 提交程序错误、闪退或功能异常反馈
+description: 提交程序错误、闪退、安装或兼容性问题
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        感谢提交 Bug 报告！请尽可能详尽地描述问题，以便快速定位与修复。
+        感谢提交 Bug 报告。Kumone 的下游客户端通过 CI 自动发布，真实设备兼容性主要依赖社区反馈；请尽量完整填写环境信息。
 
   - type: dropdown
     id: platform
     attributes:
       label: 发生问题的平台 (Platform)
-      description: 请选择您运行 Kumone 的操作系统或客户端类型
       options:
-        - "macOS (SwiftUI 原生版)"
-        - "Windows (Electron 桌面版)"
-        - "Linux (AppImage / Deb)"
-        - "Web / PWA / Docker (全端/移动端网页版)"
+        - "macOS (SwiftUI 原生版 / upstream)"
+        - "Windows (Tauri 2 + Rust)"
+        - "Android (Jetpack Compose + Rust)"
+        - "Linux (Tauri 2 + Rust)"
+        - "Web / PWA / Docker"
     validations:
       required: true
 
@@ -25,7 +25,73 @@ body:
     id: version
     attributes:
       label: 客户端版本号 (App Version)
-      placeholder: 例如 v0.2.0
+      description: 请填写实际运行的 Kumone 版本。
+      placeholder: 例如 0.2.5
+    validations:
+      required: true
+
+  - type: input
+    id: os_version
+    attributes:
+      label: 操作系统版本 (OS Version)
+      placeholder: 例如 Windows 11 24H2 / Android 16 / Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: CPU 架构 (Architecture)
+      options:
+        - "x86_64 / x64"
+        - "arm64 / aarch64"
+        - "其他 / 不确定"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: 安装包 / 使用方式 (Package)
+      options:
+        - "Windows NSIS (.exe)"
+        - "Android APK (.apk)"
+        - "Android AAB / Play-compatible bundle"
+        - "Linux AppImage"
+        - "Linux Debian package (.deb)"
+        - "Linux RPM (.rpm)"
+        - "Web / PWA / Docker"
+        - "macOS upstream build"
+        - "其他 / 不确定"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 受影响功能 (Area)
+      options:
+        - "安装 / 启动 / 更新"
+        - "登录 / 账号"
+        - "播放 / 队列"
+        - "搜索"
+        - "歌词"
+        - "灰色歌曲 / Unblock"
+        - "界面 / 交互"
+        - "性能 / 资源占用"
+        - "其他"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 严重程度 (Severity)
+      options:
+        - "Crash / 无法启动"
+        - "Blocker / 核心功能不可用"
+        - "Degraded / 功能可用但明显异常"
+        - "Minor / 轻微问题"
     validations:
       required: true
 
@@ -33,8 +99,8 @@ body:
     id: description
     attributes:
       label: 问题描述 (Bug Description)
-      description: 请清晰描述发生的具体异常或预期外的行为
-      placeholder: 在点击……时，播放器出现……
+      description: 请说明实际行为与预期行为。
+      placeholder: 在点击……时，实际出现……；预期应该……
     validations:
       required: true
 
@@ -42,18 +108,17 @@ body:
     id: reproduce
     attributes:
       label: 重现步骤 (Steps to Reproduce)
-      description: 请列出能稳定重现该问题的步骤
       placeholder: |
-        1. 打开发现页
-        2. 点击每日推荐
-        3. 播放第一首歌曲
+        1. 打开 Kumone
+        2. ……
+        3. ……
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: logs
     attributes:
       label: 日志或报错截图 (Logs & Screenshots)
-      description: 可粘贴控制台输出、错误提示或拖入截图
+      description: 可粘贴控制台输出、错误信息或拖入截图。请先删除账号凭据、Cookie、Token 等敏感信息。
     validations:
       required: false

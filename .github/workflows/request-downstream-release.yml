@@ -20,6 +20,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate request against source and upstream
         id: release
@@ -28,22 +29,38 @@ jobs:
           set -euo pipefail
 
           REQUEST_FILE=.github/release-request.json
-          if [[ ! -f "$REQUEST_FILE" ]]; then
+          [[ -f "$REQUEST_FILE" ]] || {
             echo "::error::Missing $REQUEST_FILE"
             exit 1
-          fi
+          }
 
-          SOURCE_REF=$(jq -r '.source_ref // "main"' "$REQUEST_FILE")
+          SOURCE_SHA=$(jq -r '.source_ref // empty' "$REQUEST_FILE")
           TAG_SUFFIX=$(jq -r '.tag_suffix // ""' "$REQUEST_FILE")
           PRERELEASE=$(jq -r 'if has("prerelease") then .prerelease else true end' "$REQUEST_FILE")
 
-          if [[ -n "$TAG_SUFFIX" && ! "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::source_ref must be a full 40-character commit SHA"
+            exit 1
+          }
+          [[ -z "$TAG_SUFFIX" || "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]] || {
             echo "::error::Invalid tag_suffix: $TAG_SUFFIX"
             exit 1
-          fi
+          }
+          [[ "$PRERELEASE" == "true" || "$PRERELEASE" == "false" ]] || {
+            echo "::error::prerelease must be boolean"
+            exit 1
+          }
 
-          git fetch origin "$SOURCE_REF" 2>/dev/null || true
-          SOURCE_SHA=$(git rev-parse "$SOURCE_REF^{commit}")
+          git fetch --no-tags origin main
+          git cat-file -e "$SOURCE_SHA^{commit}" 2>/dev/null || {
+            echo "::error::source_ref is not a commit available in this repository"
+            exit 1
+          }
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main || {
+            echo "::error::Release source must already be part of main history"
+            exit 1
+          }
+
           SOURCE_VERSION=$(git show "$SOURCE_SHA:CHANGELOG.md" \
             | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
             | head -n 1)
@@ -52,19 +69,17 @@ jobs:
             | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
             | head -n 1)
 
-          if [[ -z "$SOURCE_VERSION" || -z "$UPSTREAM_VERSION" ]]; then
+          [[ -n "$SOURCE_VERSION" && -n "$UPSTREAM_VERSION" ]] || {
             echo "::error::Could not resolve source/upstream version"
             exit 1
-          fi
-          if [[ "$SOURCE_VERSION" != "$UPSTREAM_VERSION" ]]; then
+          }
+          [[ "$SOURCE_VERSION" == "$UPSTREAM_VERSION" ]] || {
             echo "::error::Source version $SOURCE_VERSION is not aligned with upstream $UPSTREAM_VERSION"
             exit 1
-          fi
+          }
 
           RELEASE_TAG="downstream-v$UPSTREAM_VERSION"
-          if [[ -n "$TAG_SUFFIX" ]]; then
-            RELEASE_TAG="$RELEASE_TAG-$TAG_SUFFIX"
-          fi
+          [[ -z "$TAG_SUFFIX" ]] || RELEASE_TAG="$RELEASE_TAG-$TAG_SUFFIX"
 
           echo "source_ref=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
@@ -74,6 +89,7 @@ jobs:
           {
             echo "### Downstream release policy gate"
             echo "- Source commit: \`$SOURCE_SHA\`"
+            echo "- Source trust: **main ancestor verified**"
             echo "- App version: **$SOURCE_VERSION**"
             echo "- Upstream version: **$UPSTREAM_VERSION**"
             echo "- Requested tag: \`$RELEASE_TAG\`"

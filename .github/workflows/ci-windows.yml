@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   windows-tauri:
-    name: Windows Tauri shell
+    name: Windows Tauri desktop shell
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,7 +57,7 @@ jobs:
       - name: Enforce Windows binary size budget
         shell: pwsh
         run: |
-          $path = "apps/windows/src-tauri/target/release/kumone-windows.exe"
+          $path = "apps/windows/src-tauri/target/release/kumone-desktop.exe"
           if (-not (Test-Path $path)) { throw "Missing optimized Windows executable: $path" }
           $bytes = (Get-Item $path).Length
           $mib = [math]::Round($bytes / 1MB, 2)
@@ -75,7 +75,7 @@ jobs:
       - name: Upload Windows executable
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: kumone-windows-tauri
-          path: apps/windows/src-tauri/target/release/kumone-windows.exe
+          name: kumone-desktop-windows
+          path: apps/windows/src-tauri/target/release/kumone-desktop.exe
           if-no-files-found: error
           retention-days: 7

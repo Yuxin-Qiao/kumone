@@ -6,10 +6,14 @@ on:
   push:
     branches: [main]
     paths:
+      - "CHANGELOG.md"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "crates/**"
+      - "apps/windows/src-tauri/tauri.conf.json"
+      - "apps/android/app/build.gradle.kts"
+      - "scripts/ci/sync-downstream-version.py"
       - ".github/workflows/ci-core.yml"
   workflow_dispatch:
 
@@ -26,6 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify downstream version consistency
+        run: python3 scripts/ci/sync-downstream-version.py --check
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2

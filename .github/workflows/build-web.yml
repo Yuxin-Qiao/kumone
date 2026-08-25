@@ -2,8 +2,8 @@ name: Build & Deploy Web (PWA & Docker)
 
 on:
   push:
-    branches: [main, master]
-    tags: ["v*", "web-v*"]
+    branches: [main]
+    tags: ["downstream-v*"]
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
   packages: write
@@ -24,42 +24,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
-      - name: Smoke test Web / PWA
-        run: node web/test/smoke.js
+      - name: Smoke test Web / PWA and shared contracts
+        run: npm test --prefix web
 
-      - name: Generate static latest.json update metadata
-        run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.2.0")
-          VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v|windows-v|linux-v)//')
-          node -e '
-            const fs = require("fs");
-            const version = process.env.VERSION || "0.2.0";
-            const tag = process.env.LATEST_TAG || "v0.2.0";
-            const meta = {
-              version: version,
-              tag: tag,
-              releaseUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/tag/${tag}`,
-              updatedAt: new Date().toISOString(),
-              downloads: {
-                macos: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}.zip`,
-                windows: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-Setup-${version}-x64.exe`,
-                linuxAppImage: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone-${version}-x86_64.AppImage`,
-                linuxDeb: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${tag}/Kumone_${version}_amd64.deb`
-              }
-            };
-            fs.writeFileSync("web/latest.json", JSON.stringify(meta, null, 2), "utf-8");
-            console.log("Generated web/latest.json:", meta);
-          '
+      - name: Resolve latest published downstream release
         env:
-          VERSION: ${{ env.VERSION }}
-          LATEST_TAG: ${{ env.LATEST_TAG }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("downstream-v")))][0]' \
+            > "$RUNNER_TEMP/downstream-release.json"
+          test "$(jq -r '.tag_name // empty' "$RUNNER_TEMP/downstream-release.json")" != ""
 
-      - name: Upload Web Artifact
+      - name: Generate download metadata from real Release assets
+        run: python3 scripts/ci/generate-web-release-metadata.py "$RUNNER_TEMP/downstream-release.json" web/latest.json
+
+      - name: Upload Web artifact
         uses: actions/upload-artifact@v7
         with:
           name: Kumone-Web-PWA
@@ -71,14 +57,13 @@ jobs:
           enablement: true
         continue-on-error: true
 
-      - name: Upload Pages Artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
           path: web
         continue-on-error: true
 
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v5
         continue-on-error: true
 

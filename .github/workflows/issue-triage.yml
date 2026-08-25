@@ -1,37 +1,118 @@
-name: Issue Triage & Auto Labeler
+name: Issue Triage & Compatibility Labels
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, reopened]
+  workflow_dispatch:
 
 permissions:
   issues: write
 
 jobs:
   triage:
+    if: github.event_name == 'issues'
     runs-on: ubuntu-latest
     steps:
-      - name: Triage issue platform labels
+      - name: Ensure managed labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ensure_label() {
+            local name="$1" color="$2" description="$3"
+            gh label create "$name" --repo "$GITHUB_REPOSITORY" --color "$color" --description "$description" 2>/dev/null || true
+          }
+
+          ensure_label "platform:macos" "000000" "macOS upstream-aligned client"
+          ensure_label "platform:windows" "0078D4" "Windows Tauri client"
+          ensure_label "platform:android" "3DDC84" "Android Compose client"
+          ensure_label "platform:linux" "FCC624" "Linux Tauri client"
+          ensure_label "platform:web" "1F6FEB" "Web, PWA or Docker"
+          ensure_label "arch:x64" "6F42C1" "x86_64 / x64"
+          ensure_label "arch:arm64" "6F42C1" "arm64 / aarch64"
+          ensure_label "package:nsis" "5319E7" "Windows NSIS installer"
+          ensure_label "package:apk" "3DDC84" "Android APK"
+          ensure_label "package:aab" "3DDC84" "Android AAB"
+          ensure_label "package:appimage" "FCC624" "Linux AppImage"
+          ensure_label "package:deb" "FCC624" "Linux Debian package"
+          ensure_label "package:rpm" "FCC624" "Linux RPM package"
+          ensure_label "package:web" "1F6FEB" "Web / PWA / Docker"
+          ensure_label "area:install" "D4C5F9" "Install, launch or update"
+          ensure_label "area:login" "D4C5F9" "Login or account"
+          ensure_label "area:playback" "D4C5F9" "Playback or queue"
+          ensure_label "area:search" "D4C5F9" "Search"
+          ensure_label "area:lyrics" "D4C5F9" "Lyrics"
+          ensure_label "area:unblock" "D4C5F9" "Gray-track / unblock"
+          ensure_label "area:ui" "D4C5F9" "UI or interaction"
+          ensure_label "area:performance" "D4C5F9" "Performance or resource usage"
+          ensure_label "area:automation" "D4C5F9" "Development or automation"
+          ensure_label "severity:crash" "B60205" "Crash or cannot start"
+          ensure_label "severity:blocker" "D93F0B" "Core feature blocked"
+          ensure_label "severity:degraded" "FBCA04" "Feature degraded"
+          ensure_label "severity:minor" "C2E0C6" "Minor issue"
+
+      - name: Classify issue from structured form fields
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
         run: |
+          set -euo pipefail
+          BODY=$(printf '%s\n' "$ISSUE_BODY")
           LABELS=()
-          if echo "$ISSUE_BODY" | grep -iq "macOS"; then
-            LABELS+=("platform:macos")
-          fi
-          if echo "$ISSUE_BODY" | grep -iq "Windows"; then
-            LABELS+=("platform:windows")
-          fi
-          if echo "$ISSUE_BODY" | grep -iq "Linux"; then
-            LABELS+=("platform:linux")
-          fi
-          if echo "$ISSUE_BODY" | grep -iq "Web / PWA" || echo "$ISSUE_BODY" | grep -iq "Docker" || echo "$ISSUE_BODY" | grep -iq "网页版"; then
-            LABELS+=("platform:web")
+
+          add() {
+            local candidate="$1"
+            for existing in "${LABELS[@]:-}"; do
+              [[ "$existing" == "$candidate" ]] && return 0
+            done
+            LABELS+=("$candidate")
+          }
+
+          grep -Eiq 'macOS' <<<"$BODY" && add "platform:macos"
+          grep -Eiq 'Windows' <<<"$BODY" && add "platform:windows"
+          grep -Eiq 'Android' <<<"$BODY" && add "platform:android"
+          grep -Eiq 'Linux|Ubuntu|Fedora|Debian|AppImage|RPM' <<<"$BODY" && add "platform:linux"
+          grep -Eiq 'Web / PWA|Web/PWA|Docker|网页版' <<<"$BODY" && add "platform:web"
+
+          grep -Eiq 'x86_64|x64' <<<"$BODY" && add "arch:x64"
+          grep -Eiq 'arm64|aarch64' <<<"$BODY" && add "arch:arm64"
+
+          grep -Eiq 'NSIS|\.exe' <<<"$BODY" && add "package:nsis"
+          grep -Eiq 'Android APK|\.apk' <<<"$BODY" && add "package:apk"
+          grep -Eiq 'Android AAB|\.aab' <<<"$BODY" && add "package:aab"
+          grep -Eiq 'AppImage' <<<"$BODY" && add "package:appimage"
+          grep -Eiq 'Debian package|\.deb' <<<"$BODY" && add "package:deb"
+          grep -Eiq 'RPM|\.rpm' <<<"$BODY" && add "package:rpm"
+          grep -Eiq 'Web / PWA|Web/PWA|Docker' <<<"$BODY" && add "package:web"
+
+          grep -Eiq '安装 / 启动 / 更新|安装 / 更新' <<<"$BODY" && add "area:install"
+          grep -Eiq '登录 / 账号' <<<"$BODY" && add "area:login"
+          grep -Eiq '播放 / 队列' <<<"$BODY" && add "area:playback"
+          grep -Eiq '^搜索$|### .*搜索|\n搜索\n' <<<"$BODY" && add "area:search" || true
+          grep -Eiq '歌词' <<<"$BODY" && add "area:lyrics"
+          grep -Eiq 'Unblock|灰色歌曲' <<<"$BODY" && add "area:unblock"
+          grep -Eiq '界面 / 交互' <<<"$BODY" && add "area:ui"
+          grep -Eiq '性能 / 资源占用' <<<"$BODY" && add "area:performance"
+          grep -Eiq '开发 / 自动化' <<<"$BODY" && add "area:automation"
+
+          grep -Eiq 'Crash / 无法启动' <<<"$BODY" && add "severity:crash"
+          grep -Eiq 'Blocker / 核心功能不可用' <<<"$BODY" && add "severity:blocker"
+          grep -Eiq 'Degraded / 功能可用但明显异常' <<<"$BODY" && add "severity:degraded"
+          grep -Eiq 'Minor / 轻微问题' <<<"$BODY" && add "severity:minor"
+
+          VERSION=$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' <<<"$BODY" | head -n 1 || true)
+          if [[ -n "$VERSION" ]]; then
+            VERSION_LABEL="version:$VERSION"
+            gh label create "$VERSION_LABEL" --repo "$GITHUB_REPOSITORY" --color "BFDADC" --description "Reported on Kumone $VERSION" 2>/dev/null || true
+            add "$VERSION_LABEL"
           fi
 
-          for label in "${LABELS[@]}"; do
-            echo "Adding label: $label"
-            gh issue edit "$ISSUE_NUMBER" --add-label "$label" || true
-          done
+          if [[ "${#LABELS[@]}" -gt 0 ]]; then
+            printf 'Applying labels: %s\n' "${LABELS[*]}"
+            for label in "${LABELS[@]}"; do
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "$label"
+            done
+          fi
