@@ -1,6 +1,12 @@
 name: Rust nightly fuzz
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
   schedule:
     - cron: '20 4 * * *'
   workflow_dispatch:
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rust-nightly-fuzz
+  group: rust-nightly-fuzz-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,10 +28,9 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout trusted main
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
           persist-credentials: false
 
       - name: Install nightly Rust and cargo-fuzz
