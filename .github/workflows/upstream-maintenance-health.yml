@@ -26,6 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           ISSUE_TOKEN: ${{ github.token }}
+          WORKFLOW_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +73,7 @@ jobs:
                 if [[ "$active_sync" -gt 0 ]]; then
                   echo "Semantic sync is already active; no duplicate dispatch."
                 else
-                  gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
+                  GH_TOKEN="$WORKFLOW_TOKEN" gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
                 fi
               fi
             fi
@@ -91,7 +92,7 @@ jobs:
               reasons+=("$workflow latest main run concluded $conclusion")
               run_id=$(jq -r '.[0].databaseId // empty' <<< "$run")
               if [[ -n "$run_id" ]]; then
-                gh run rerun "$run_id" --repo "$repo" --failed >/dev/null 2>&1 || true
+                GH_TOKEN="$WORKFLOW_TOKEN" gh run rerun "$run_id" --repo "$repo" --failed >/dev/null 2>&1 || true
               fi
             elif [[ "$status" == "missing" ]]; then
               attention=1
@@ -120,7 +121,7 @@ jobs:
             if [[ "$(jq -r '.tag // empty' <<< "$latest_content")" != "$stable_tag" ]]; then
               attention=1
               reasons+=("web/latest.json does not point at $stable_tag")
-              gh workflow run build-web.yml --repo "$repo" --ref main >/dev/null 2>&1 || true
+              GH_TOKEN="$WORKFLOW_TOKEN" gh workflow run build-web.yml --repo "$repo" --ref main >/dev/null 2>&1 || true
             fi
           fi
 
