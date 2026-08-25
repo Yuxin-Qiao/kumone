@@ -51,34 +51,58 @@ jobs:
           pr_count=$(jq 'length' <<< "$automation_prs")
           candidate_sha=""
           stale_pr=0
+          candidate_refresh=0
           if [[ "$pr_count" -gt 0 ]]; then
             candidate_sha=$(jq -r '.[0].head.sha' <<< "$automation_prs")
-            while IFS= read -r base_sha; do
-              [[ "$base_sha" == "$main_sha" ]] || stale_pr=1
-            done < <(jq -r '.[].base.sha' <<< "$automation_prs")
+            while IFS= read -r pr; do
+              base_sha=$(jq -r '.base.sha' <<< "$pr")
+              body=$(jq -r '.body // ""' <<< "$pr")
+              title=$(jq -r '.title // ""' <<< "$pr")
+              if [[ "$base_sha" != "$main_sha" ]]; then
+                stale_pr=1
+                candidate_refresh=1
+              fi
+              # A candidate for an older upstream must not block a newer
+              # upstream dispatch. The SHA and version are immutable PR
+              # metadata, so this check is read-only and preserves manual PRs.
+              if [[ -n "$upstream_sha" && "$body" != *"Upstream commit: `$upstream_sha`"* ]] ||
+                 [[ -n "$upstream_version" && "$title" != *"upstream v$upstream_version"* ]]; then
+                candidate_refresh=1
+              fi
+            done < <(jq -c '.[]' <<< "$automation_prs")
             if [[ "$pr_count" -gt 1 ]]; then
               stale_pr=1
+              candidate_refresh=1
               reasons+=("more than one open automation upstream PR")
             fi
             if [[ "$stale_pr" -eq 1 ]]; then
               attention=1
               reasons+=("open automation candidate is not based on current main")
             fi
+            if [[ "$candidate_refresh" -eq 1 && "$stale_pr" -eq 0 ]]; then
+              attention=1
+              reasons+=("open automation candidate is for an older upstream revision")
+            fi
           fi
 
-          # If upstream moved beyond the current package and no current
-          # candidate exists, rebuild it. A run already in flight is left alone.
-          if [[ -n "$main_version" && -n "$upstream_version" && "$main_version" != "$upstream_version" ]]; then
-            if [[ "$(printf '%s\n%s\n' "$main_version" "$upstream_version" | sort -V | tail -n 1)" == "$upstream_version" && "$main_version" != "$upstream_version" ]]; then
-              if [[ "$pr_count" -eq 0 ]]; then
-                active_sync=$(gh run list --workflow semantic-sync-upstream.yml --repo "$repo" \
-                  --limit 10 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued")] | length')
-                if [[ "$active_sync" -gt 0 ]]; then
-                  echo "Semantic sync is already active; no duplicate dispatch."
-                else
-                  GH_TOKEN="$WORKFLOW_TOKEN" gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
-                fi
-              fi
+          # If upstream moved beyond the current package, rebuild when there
+          # is no candidate or when the existing candidate is stale. A stale
+          # base also needs rebuilding when the version string is unchanged
+          # (for example, a patch commit or a main-only merge). A run already
+          # in flight is left alone. The semantic transaction will close only
+          # stale Draft PRs and preserve non-draft/manual work.
+          upstream_ahead=0
+          if [[ -n "$main_version" && -n "$upstream_version" && "$main_version" != "$upstream_version" && \
+            "$(printf '%s\n%s\n' "$main_version" "$upstream_version" | sort -V | tail -n 1)" == "$upstream_version" ]]; then
+            upstream_ahead=1
+          fi
+          if [[ "$candidate_refresh" -eq 1 || ( "$upstream_ahead" -eq 1 && "$pr_count" -eq 0 ) ]]; then
+            active_sync=$(gh run list --workflow semantic-sync-upstream.yml --repo "$repo" \
+              --limit 10 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued")] | length')
+            if [[ "$active_sync" -gt 0 ]]; then
+              echo "Semantic sync is already active; no duplicate dispatch."
+            else
+              GH_TOKEN="$WORKFLOW_TOKEN" gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
             fi
           fi
 
@@ -112,7 +136,12 @@ jobs:
             reasons+=("latest downstream release workflow failed")
           fi
           status_tag=$(jq -r '.tag // empty' <<< "$status_content")
-          if [[ -n "$stable_tag" && -n "$status_tag" && "$status_tag" != "$stable_tag" ]]; then
+          status_prerelease=$(jq -r '.prerelease // ""' <<< "$status_content")
+          # release.json records the latest release transaction, which may be
+          # a successful RC while stable remains the published Web target.
+          # Compare tags only for a stable transaction; RC status is valid and
+          # must not create a false maintenance incident.
+          if [[ -n "$stable_tag" && -n "$status_tag" && "$status_prerelease" != "true" && "$status_tag" != "$stable_tag" ]]; then
             attention=1
             reasons+=("release-status tag $status_tag does not match latest stable $stable_tag")
           fi
