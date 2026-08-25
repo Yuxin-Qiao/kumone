@@ -472,7 +472,7 @@ jobs:
     steps:
       - name: Create compatibility-gated Draft PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TARGET_BRANCH: ${{ needs.prepare.outputs.target_branch }}
           SYNC_BRANCH: ${{ needs.prepare.outputs.sync_branch }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -502,7 +502,7 @@ jobs:
           cat > /tmp/upstream-pr.md <<EOF
           ## Automated upstream compatibility report
 
-          This PR integrates **missuo/kumone v$VERSION** into `main` without directly modifying `main`.
+          This PR integrates **missuo/kumone v$VERSION** into \`main\` without directly modifying \`main\`.
 
           - Upstream commit: \`$UPSTREAM_SHA\`
           - Validated candidate: \`$CANDIDATE_SHA\`
