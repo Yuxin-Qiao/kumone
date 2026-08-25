@@ -45,7 +45,7 @@ jobs:
       source_sha: ${{ steps.meta.outputs.source_sha }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
@@ -112,11 +112,11 @@ jobs:
     needs: prepare
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -166,7 +166,7 @@ jobs:
           subject-path: release-windows/*.exe
 
       - name: Store Windows release asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: downstream-windows
           path: release-windows/
@@ -184,7 +184,7 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
@@ -297,7 +297,7 @@ jobs:
             release-android/*.aab
 
       - name: Store Android release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: downstream-android
           path: release-android/
@@ -320,13 +320,13 @@ jobs:
       GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
     steps:
       - name: Download Windows assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: downstream-windows
           path: publish-assets/windows
 
       - name: Download Android assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: downstream-android
           path: publish-assets/android
