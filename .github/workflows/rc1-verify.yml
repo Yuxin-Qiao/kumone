@@ -302,6 +302,9 @@ jobs:
         run: |
           rustup target add aarch64-linux-android
           cargo +stable install cargo-ndk --version 4.1.2 --locked
+      - name: Verify pinned Android signing identity
+        shell: bash
+        run: bash scripts/ci/prepare-android-signing.sh
       - name: Generate UniFFI and build signed Android release
         shell: bash
         run: |
@@ -314,7 +317,6 @@ jobs:
             --language kotlin --out-dir apps/android/app/build/generated/uniffi/kotlin --no-format
           cargo ndk -t arm64-v8a -o apps/android/app/build/generated/uniffi/jniLibs \
             build -p kumone-ffi --release
-          bash scripts/ci/prepare-android-signing.sh
           gradle -p apps/android :app:lintRelease :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease \
             -PkumoneVersion="$VERSION" -PkumoneVersionCode="${{ github.run_number }}"
       - name: Verify and prepare Android RC
