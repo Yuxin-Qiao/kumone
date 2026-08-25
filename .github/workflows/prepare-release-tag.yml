@@ -1,0 +1,59 @@
+name: Prepare Downstream Release Tag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/tag-request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate and create release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST=.github/tag-request.json
+          [[ -f "$REQUEST" ]] || { echo "::error::Missing $REQUEST"; exit 1; }
+
+          TAG=$(jq -r '.tag // ""' "$REQUEST")
+          SOURCE_REF=$(jq -r '.source_ref // ""' "$REQUEST")
+
+          [[ "$TAG" =~ ^downstream-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$ ]] || {
+            echo "::error::Invalid downstream release tag: $TAG"; exit 1;
+          }
+          [[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::source_ref must be a full commit SHA"; exit 1;
+          }
+
+          git cat-file -e "$SOURCE_REF^{commit}"
+
+          if CURRENT=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null); then
+            [[ "$CURRENT" == "$SOURCE_REF" ]] || {
+              echo "::error::$TAG already points to $CURRENT, expected $SOURCE_REF"; exit 1;
+            }
+            echo "Tag $TAG already exists at $SOURCE_REF."
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" \
+              -f sha="$SOURCE_REF" >/dev/null
+            echo "Created tag $TAG at $SOURCE_REF."
+          fi
+
+          {
+            echo "### Release tag ready"
+            echo "- Tag: \`$TAG\`"
+            echo "- Source: \`$SOURCE_REF\`"
+          } >> "$GITHUB_STEP_SUMMARY"
