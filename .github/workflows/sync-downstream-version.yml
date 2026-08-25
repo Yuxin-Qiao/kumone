@@ -1,0 +1,48 @@
+name: Sync Downstream Version
+
+on:
+  push:
+    branches:
+      - "automation/upstream-v*"
+    paths:
+      - "CHANGELOG.md"
+      - "Cargo.toml"
+      - "apps/windows/src-tauri/tauri.conf.json"
+      - "apps/android/app/build.gradle.kts"
+      - "scripts/ci/sync-downstream-version.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-downstream-version-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Synchronize package versions from CHANGELOG
+        run: python3 scripts/ci/sync-downstream-version.py
+
+      - name: Commit synchronized versions when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "Version metadata already synchronized." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml apps/windows/src-tauri/tauri.conf.json apps/android/app/build.gradle.kts
+          git commit -m "build: sync downstream package version to $VERSION"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+          echo "Synchronized downstream package metadata to **$VERSION**." >> "$GITHUB_STEP_SUMMARY"
