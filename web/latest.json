@@ -1,0 +1,14 @@
+{
+  "version": "0.2.5",
+  "tag": "downstream-v0.2.5",
+  "releaseUrl": "https://github.com/Yuxin-Qiao/kumone/releases/tag/downstream-v0.2.5",
+  "publishedAt": "2026-08-25T02:45:04Z",
+  "assets": {
+    "Kumone-0.2.5-android.aab": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/Kumone-0.2.5-android.aab",
+    "Kumone-0.2.5-android.apk": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/Kumone-0.2.5-android.apk",
+    "Kumone-0.2.5-windows-x64-setup.exe": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/Kumone-0.2.5-windows-x64-setup.exe",
+    "SHA256SUMS": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/SHA256SUMS",
+    "SHA256SUMS-android": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/SHA256SUMS-android",
+    "SHA256SUMS-windows": "https://github.com/Yuxin-Qiao/kumone/releases/download/downstream-v0.2.5/SHA256SUMS-windows"
+  }
+}
