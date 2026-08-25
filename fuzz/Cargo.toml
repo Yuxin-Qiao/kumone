@@ -1,0 +1,29 @@
+[package]
+name = "kumone-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+kumone-core = { path = "../crates/kumone-core" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "lyrics"
+path = "fuzz_targets/lyrics.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "search-response"
+path = "fuzz_targets/search_response.rs"
+test = false
+doc = false
+bench = false
