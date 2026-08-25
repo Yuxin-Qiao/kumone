@@ -63,10 +63,19 @@ jobs:
           HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.head_sha }}
           HTML_URL: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.html_url || inputs.html_url }}
           UPDATED_AT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.updated_at || inputs.updated_at }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .github/release-status
+
+          if [[ "$WORKFLOW_NAME" == "Downstream Windows + Linux + Android Release" && "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+            existing_run=$(jq -r '.run_id // empty' .github/release-status/release.json 2>/dev/null || true)
+            if [[ "$existing_run" == "$RUN_ID" ]]; then
+              echo "Release publish already recorded exact run $RUN_ID; preserving its source/version metadata." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
 
           if [[ "$WORKFLOW_NAME" == "Downstream Windows + Linux + Android Release" ]]; then
             REQUEST=.github/release-request.json

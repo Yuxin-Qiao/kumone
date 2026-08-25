@@ -166,11 +166,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-    env:
-      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    # This job deliberately has no signing secrets. It only builds an
+    # unsigned artifact; the isolated windows-sign job handles the optional
+    # certificate after the source code has finished executing.
     steps:
       - uses: actions/checkout@v7
         with:
@@ -211,32 +209,6 @@ jobs:
           $config | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding utf8
           Push-Location apps/windows
           try { tauri build --bundles nsis } finally { Pop-Location }
-      - name: Optionally Authenticode-sign Windows installer
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64) -or
-              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            "- Windows signing: **unsigned (certificate secrets not configured)**" >> $env:GITHUB_STEP_SUMMARY
-            exit 0
-          }
-
-          $installer = Get-ChildItem "apps/windows/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
-          if ($null -eq $installer) { throw "NSIS installer was not produced" }
-          $pfx = Join-Path $env:RUNNER_TEMP "kumone-windows-signing.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
-          try {
-            $kits = ${env:ProgramFiles(x86)}
-            $signtool = Get-ChildItem "$kits\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-              Sort-Object FullName -Descending | Select-Object -First 1
-            if ($null -eq $signtool) { throw "signtool.exe not found on runner" }
-            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
-            & $signtool.FullName verify /pa /v $installer.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
-          } finally {
-            if (Test-Path $pfx) { Remove-Item $pfx -Force }
-          }
-          "- Windows signing: **Authenticode verified**" >> $env:GITHUB_STEP_SUMMARY
       - name: Prepare Windows asset and enforce budget
         shell: pwsh
         run: |
@@ -244,17 +216,75 @@ jobs:
           if ($null -eq $installer) { throw "NSIS installer was not produced" }
           $mib = [math]::Round($installer.Length / 1MB, 2)
           if ($installer.Length -gt 15MB) { throw "Windows installer exceeds 15 MiB hard budget ($mib MiB)" }
+          New-Item -ItemType Directory -Force -Path release-windows-build | Out-Null
+          $out = "release-windows-build/Kumone-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe"
+          Copy-Item $installer.FullName $out
+          "Windows NSIS: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
+      - name: Store unsigned Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: downstream-windows-build
+          path: release-windows-build/
+          if-no-files-found: error
+          retention-days: 30
+
+  windows-sign:
+    name: Sign or explicitly mark Windows NSIS
+    needs: [prepare, windows]
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      # No checkout and no repository scripts run in this secret-bearing job.
+      - uses: actions/download-artifact@v8
+        with:
+          name: downstream-windows-build
+          path: signed-input
+      - name: Apply optional Authenticode signature and prepare final asset
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "signed-input" -Filter *.exe -Recurse | Select-Object -First 1
+          if ($null -eq $installer) { throw "Unsigned Windows installer artifact is missing" }
           New-Item -ItemType Directory -Force -Path release-windows | Out-Null
           $out = "release-windows/Kumone-${{ needs.prepare.outputs.version }}-windows-x64-setup.exe"
           Copy-Item $installer.FullName $out
+          $signed = $false
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64) -and
+              -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            $pfx = Join-Path $env:RUNNER_TEMP "kumone-windows-signing.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+            try {
+              $kits = ${env:ProgramFiles(x86)}
+              $signtool = Get-ChildItem "$kits\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1
+              if ($null -eq $signtool) { throw "signtool.exe not found on runner" }
+              & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $out
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+              & $signtool.FullName verify /pa /v $out
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
+              $signed = $true
+            } finally {
+              if (Test-Path $pfx) { Remove-Item $pfx -Force }
+            }
+          }
+          if ($signed) {
+            "Windows signing: **Authenticode verified**" | Set-Content release-windows/WINDOWS-SIGNING-STATUS.md -Encoding utf8
+          } else {
+            "Windows signing: **unsigned fallback** (Authenticode certificate secrets are not configured)" | Set-Content release-windows/WINDOWS-SIGNING-STATUS.md -Encoding utf8
+          }
           $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path $out -Leaf)" | Set-Content release-windows/SHA256SUMS-windows -Encoding ascii
-          "Windows NSIS: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
-      - name: Attest Windows provenance
+      - name: Attest final Windows provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: release-windows/*.exe
-      - name: Store Windows release asset
+      - name: Store final Windows release asset
         uses: actions/upload-artifact@v7
         with:
           name: downstream-windows
@@ -369,19 +399,13 @@ jobs:
           retention-days: 30
 
   android:
-    name: Build signed Android APK + AAB
+    name: Build unsigned Android APK + AAB
     needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -414,6 +438,19 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
         with:
           gradle-version: "9.5.0"
+      - name: Create ephemeral build-only Android signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/unsigned-build.jks" \
+            -storepass changeit -keypass changeit -alias build-only -keyalg RSA -keysize 2048 \
+            -validity 1 -dname "CN=Kumone build-only"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/unsigned-build.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=changeit"
+            echo "ANDROID_KEY_ALIAS=build-only"
+            echo "ANDROID_KEY_PASSWORD=changeit"
+          } >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Setup Android Rust target
         shell: bash
@@ -440,10 +477,7 @@ jobs:
             -o apps/android/app/build/generated/uniffi/jniLibs \
             build -p kumone-ffi --release
           test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
-      - name: Verify pinned signing identity
-        shell: bash
-        run: bash scripts/ci/prepare-android-signing.sh
-      - name: Build signed release APK and AAB
+      - name: Build unsigned release APK and AAB
         shell: bash
         run: |
           set -euo pipefail
@@ -454,23 +488,15 @@ jobs:
             :app:bundleRelease \
             -PkumoneVersion="$VERSION" \
             -PkumoneVersionCode="${{ github.run_number }}"
-      - name: Verify signatures, Rust packaging, and package budget
+      - name: Verify Rust packaging and package budget
         shell: bash
         run: |
           set -euo pipefail
           APK=apps/android/app/build/outputs/apk/release/app-release.apk
           AAB=apps/android/app/build/outputs/bundle/release/app-release.aab
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
           test -f "$APK"
           test -f "$AAB"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | \
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | \
-            tr -d ':' | tr '[:lower:]' '[:upper:]')
-          [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
-          jarsigner -verify "$AAB"
           BYTES=$(stat -c%s "$APK")
           MIB=$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
           if [ "$BYTES" -gt $((15 * 1024 * 1024)) ]; then
@@ -478,21 +504,99 @@ jobs:
             exit 1
           fi
           echo "Android APK: **${MIB} MiB**" >> "$GITHUB_STEP_SUMMARY"
-      - name: Prepare Android release assets
+      - name: Prepare unsigned Android build artifact
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p release-android-build
+          cp apps/android/app/build/outputs/apk/release/app-release.apk "release-android-build/Kumone-$VERSION-android-unsigned.apk"
+          cp apps/android/app/build/outputs/bundle/release/app-release.aab "release-android-build/Kumone-$VERSION-android-unsigned.aab"
+      - name: Store unsigned Android build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: downstream-android-build
+          path: release-android-build/
+          if-no-files-found: error
+          retention-days: 30
+
+  android-sign:
+    name: Sign Android APK + AAB in isolated job
+    needs: [prepare, android]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      # No checkout and no repository code execute in this secret-bearing job.
+      - uses: actions/download-artifact@v8
+        with:
+          name: downstream-android-build
+          path: unsigned-input
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android build tools only
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: false
+          packages: "build-tools;36.0.0"
+      - name: Verify pinned signing identity and sign artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is required for a signed Android release"; exit 1; }
+          done
+          EXPECTED_KEYSTORE_SHA256="679cd8d890491caa93c96e8672699e6083c228e1c5087309432442375c370d9b"
+          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
+          KEY_ALIAS="${ANDROID_KEY_ALIAS:-kumone-release}"
+          KEYSTORE="$RUNNER_TEMP/kumone-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode --ignore-garbage > "$KEYSTORE"
+          [[ -s "$KEYSTORE" ]] || { echo "::error::Android keystore did not decode"; exit 1; }
+          actual_keystore_sha256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
+          [[ "$actual_keystore_sha256" == "$EXPECTED_KEYSTORE_SHA256" ]] || { echo "::error::Android keystore bytes do not match the pinned identity"; exit 1; }
+          keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > "$RUNNER_TEMP/keytool.txt" 2>&1 || {
+            echo "::error::Android keystore password or alias is invalid"; exit 1;
+          }
+          actual_cert_sha256=$(sed -n 's/^[[:space:]]*SHA256: //p' "$RUNNER_TEMP/keytool.txt" | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          [[ "$actual_cert_sha256" == "$EXPECTED_CERT_SHA256" ]] || { echo "::error::Android certificate fingerprint does not match the pinned identity"; exit 1; }
+          APK_IN=$(find unsigned-input -name '*android-unsigned.apk' -type f -print -quit)
+          AAB_IN=$(find unsigned-input -name '*android-unsigned.aab' -type f -print -quit)
+          [[ -n "$APK_IN" && -n "$AAB_IN" ]] || { echo "::error::Unsigned Android artifacts are missing"; exit 1; }
           mkdir -p release-android
-          cp apps/android/app/build/outputs/apk/release/app-release.apk "release-android/Kumone-$VERSION-android.apk"
-          cp apps/android/app/build/outputs/bundle/release/app-release.aab "release-android/Kumone-$VERSION-android.aab"
+          APK_OUT="release-android/Kumone-$VERSION-android.apk"
+          AAB_OUT="release-android/Kumone-$VERSION-android.aab"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$ANDROID_KEY_PASSWORD" --out "$APK_OUT" "$APK_IN"
+          cp "$AAB_IN" "$RUNNER_TEMP/kumone-unsigned.aab"
+          zip -q -d "$RUNNER_TEMP/kumone-unsigned.aab" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.DSA' >/dev/null 2>&1 || true
+          jarsigner -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+            -signedjar "$AAB_OUT" "$RUNNER_TEMP/kumone-unsigned.aab" "$KEY_ALIAS" >/dev/null
+          "$APKSIGNER" verify --verbose --print-certs "$APK_OUT" >/dev/null
+          jarsigner -verify "$AAB_OUT" >/dev/null
+          unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+          BYTES=$(stat -c%s "$APK_OUT")
+          [ "$BYTES" -le $((15 * 1024 * 1024)) ] || { echo "::error::Android APK exceeds 15 MiB"; exit 1; }
           (cd release-android && sha256sum *.apk *.aab > SHA256SUMS-android)
-      - name: Attest Android provenance
+          echo "Android signing identity verified: $actual_cert_sha256" >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest signed Android provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             release-android/*.apk
             release-android/*.aab
-      - name: Store Android release assets
+      - name: Store signed Android release assets
         uses: actions/upload-artifact@v7
         with:
           name: downstream-android
@@ -502,7 +606,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [prepare, windows, linux, android]
+    needs: [prepare, windows-sign, linux, android-sign]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -558,14 +662,25 @@ jobs:
           fi
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; replacing assets."
-          else
-            FLAGS=(--repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Kumone v$VERSION — Windows + Linux + Android")
-            if [[ "$PRERELEASE" == "true" ]]; then FLAGS+=(--prerelease); fi
-            gh release create "$TAG" "${FLAGS[@]}" --notes "Automated downstream release aligned with upstream Kumone v$VERSION. Windows, Linux and Android artifacts passed automated tests, package-size and provenance gates; Android is signed, and Windows is Authenticode-signed when signing secrets are configured. Real-device compatibility is validated through structured community feedback after publication."
+            echo "::error::Release $TAG already exists; refusing to overwrite an existing release"
+            exit 1
           fi
+          TAG_LINES=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          if [[ -n "$TAG_LINES" ]]; then
+            echo "::error::Tag $TAG already exists; refusing to overwrite an existing tag"
+            exit 1
+          fi
+          WINDOWS_STATUS=$(find publish-assets/windows -name 'WINDOWS-SIGNING-STATUS.md' -type f -print -quit)
+          if [[ -n "$WINDOWS_STATUS" ]]; then
+            WINDOWS_STATUS_TEXT=$(cat "$WINDOWS_STATUS")
+          else
+            WINDOWS_STATUS_TEXT="Windows signing status was not emitted by the signing gate"
+          fi
+          FLAGS=(--repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Kumone v$VERSION — Windows + Linux + Android")
+          if [[ "$PRERELEASE" == "true" ]]; then FLAGS+=(--prerelease); fi
+          gh release create "$TAG" "${FLAGS[@]}" --notes "Automated downstream release aligned with upstream Kumone v$VERSION. Windows, Linux and Android artifacts passed automated tests, package-size and provenance gates; Android is signed.\n\n$WINDOWS_STATUS_TEXT\n\nReal-device compatibility is validated through structured community feedback after publication."
 
-          gh release upload "$TAG" publish-assets/final/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" publish-assets/final/* --repo "$GITHUB_REPOSITORY"
 
           RELEASE_ID=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
@@ -579,11 +694,39 @@ jobs:
             -F draft=false \
             -F prerelease="$PRERELEASE" >/dev/null
 
+          # Persist the exact dispatch metadata. This avoids interpreting an
+          # older manual release-request.json when workflow_run records status.
+          mkdir -p "$RUNNER_TEMP/release-status"
+          jq -n \
+            --arg workflow "Downstream Windows + Linux + Android Release" \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_number "$GITHUB_RUN_NUMBER" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg status "completed" \
+            --arg conclusion "success" \
+            --arg head_sha "$GITHUB_SHA" \
+            --arg source_ref "$SOURCE_SHA" \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --argjson prerelease "$PRERELEASE" \
+            --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{workflow:$workflow,run_id:$run_id,run_number:$run_number,run_attempt:$run_attempt,status:$status,conclusion:$conclusion,head_sha:$head_sha,source_ref:$source_ref,version:$version,tag:$tag,prerelease:$prerelease,url:$url,updated_at:$updated_at}' \
+            > "$RUNNER_TEMP/release-status/release.json"
+          for path in .github/release-status/release.json .github/release-status/active.json; do
+            file_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$path?ref=main" --jq '.sha' 2>/dev/null || true)
+            args=(--method PUT "repos/$GITHUB_REPOSITORY/contents/$path" \
+              -f message="ci(status): record downstream release $TAG" \
+              -f content="$(base64 < "$RUNNER_TEMP/release-status/release.json")" -f branch=main)
+            [[ -z "$file_sha" ]] || args+=( -f sha="$file_sha" )
+            gh api "${args[@]}" >/dev/null
+          done
+
           {
             echo "### Published"
             echo "- Release: **$TAG**"
             echo "- Source: \`$SOURCE_SHA\`"
             echo "- Windows + Linux + Android assets uploaded"
-            echo "- Existing tag target verified when present"
+            echo "- Existing tag/release overwrite: **refused**"
             echo "- No maintainer-side real-device gate"
           } >> "$GITHUB_STEP_SUMMARY"

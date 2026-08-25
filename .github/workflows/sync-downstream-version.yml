@@ -1,4 +1,4 @@
-name: Sync Downstream Version
+name: Verify Candidate Normalization
 
 on:
   push:
@@ -9,58 +9,35 @@ on:
       - "Cargo.toml"
       - "apps/windows/**"
       - "apps/android/**"
-      - "windows/**"
       - "contracts/**"
-      - "scripts/ci/sync-downstream-version.py"
-      - ".github/workflows/release.yml"
-      - ".github/workflows/build-windows.yml"
-      - ".github/workflows/build-linux.yml"
+      - "scripts/ci/**"
       - ".github/workflows/sync-downstream-version.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
+# Candidate branches are immutable once gates begin. The semantic sync
+# transaction performs normalization before it publishes the branch; this
+# workflow is a read-only sentinel and can never move the candidate SHA.
 concurrency:
-  group: sync-downstream-version-${{ github.ref }}
+  group: candidate-normalization-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  sync:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
-
-      - name: Enforce downstream desktop layout
-        shell: bash
+          persist-credentials: false
+      - name: Verify downstream layout and versions without mutation
         run: |
           set -euo pipefail
-          rm -rf windows
-          rm -f .github/workflows/release.yml .github/workflows/build-windows.yml
-
-      - name: Synchronize package versions from CHANGELOG
-        run: python3 scripts/ci/sync-downstream-version.py
-
-      - name: Commit downstream normalization when needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet && [[ -z "$(git status --porcelain)" ]]; then
-            echo "Downstream layout and versions already normalized." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "build: normalize downstream desktop for $VERSION"
-          git push origin HEAD:"${GITHUB_REF_NAME}"
-          {
-            echo "Normalized candidate for **$VERSION**."
-            echo "- Downstream package versions synchronized"
-            echo "- Legacy Electron desktop tree/workflows removed"
-            echo "- Apple/iOS sources untouched"
-          } >> "$GITHUB_STEP_SUMMARY"
+          test ! -d windows
+          test ! -e .github/workflows/release.yml
+          test ! -e .github/workflows/build-windows.yml
+          python3 scripts/ci/sync-downstream-version.py --check
+          echo "Candidate normalization verified read-only; immutable SHA preserved." >> "$GITHUB_STEP_SUMMARY"
