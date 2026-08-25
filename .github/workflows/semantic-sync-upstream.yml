@@ -8,7 +8,7 @@ on:
     paths:
       - ".github/upstream-sync-request.json"
       - ".github/workflows/semantic-sync-upstream.yml"
-      - "scripts/ci/validate-upstream-candidate.py"
+      - "Scripts/ci/validate-upstream-candidate.py"
   workflow_dispatch:
     inputs:
       mode:
@@ -459,7 +459,7 @@ jobs:
       - name: Version consistency and protected Apple boundary
         run: |
           python3 scripts/ci/sync-downstream-version.py --check
-          python3 scripts/ci/validate-upstream-candidate.py \
+          python3 Scripts/ci/validate-upstream-candidate.py \
             --base-sha "${{ needs.prepare.outputs.base_sha }}" \
             --candidate-sha "${{ needs.prepare.outputs.candidate_sha }}" \
             --upstream-sha "${{ needs.prepare.outputs.upstream_sha }}" \
