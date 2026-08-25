@@ -334,15 +334,16 @@ jobs:
           # Checkout intentionally disables persisted credentials.  Use the
           # already scoped workflow token only for this push operation, then
           # leave the public remote unchanged for subsequent read-only checks.
-          AUTH_HEADER="AUTHORIZATION: bearer $GH_TOKEN"
+          export GIT_TERMINAL_PROMPT=0
+          AUTH_REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags origin "$SYNC_BRANCH" >/dev/null 2>&1 || true
           if git show-ref --verify --quiet "refs/remotes/origin/$SYNC_BRANCH"; then
-            git -c http.extraheader="$AUTH_HEADER" push --force-with-lease=refs/heads/$SYNC_BRANCH:"$(git rev-parse "refs/remotes/origin/$SYNC_BRANCH")" \
-              origin HEAD:"$SYNC_BRANCH"
+            git push --force-with-lease=refs/heads/$SYNC_BRANCH:"$(git rev-parse "refs/remotes/origin/$SYNC_BRANCH")" \
+              "$AUTH_REMOTE" HEAD:"$SYNC_BRANCH"
           else
-            git -c http.extraheader="$AUTH_HEADER" push origin HEAD:"$SYNC_BRANCH"
+            git push "$AUTH_REMOTE" HEAD:"$SYNC_BRANCH"
           fi
-          REMOTE_SHA=$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
+          REMOTE_SHA=$(git ls-remote "$AUTH_REMOTE" "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
           [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
             echo "::error::Remote candidate SHA mismatch"
             exit 1
