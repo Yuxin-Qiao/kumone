@@ -6,6 +6,40 @@ on:
       - "Validate Downstream Release Request"
       - "Downstream Windows + Linux + Android Release"
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: "Completed workflow name to record"
+        required: true
+        type: string
+      run_id:
+        description: "Completed workflow run ID"
+        required: true
+        type: string
+      run_number:
+        description: "Completed workflow run number"
+        required: true
+        type: string
+      run_attempt:
+        description: "Completed workflow run attempt"
+        required: true
+        type: string
+      conclusion:
+        description: "Completed workflow conclusion"
+        required: true
+        type: string
+      head_sha:
+        description: "Completed workflow head SHA"
+        required: true
+        type: string
+      html_url:
+        description: "Completed workflow URL"
+        required: true
+        type: string
+      updated_at:
+        description: "Completed workflow update timestamp"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,20 +55,20 @@ jobs:
 
       - name: Record workflow result
         env:
-          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
-          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          HTML_URL: ${{ github.event.workflow_run.html_url }}
-          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          WORKFLOW_NAME: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.name || inputs.workflow_name }}
+          RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.run_id }}
+          RUN_NUMBER: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_number || inputs.run_number }}
+          RUN_ATTEMPT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          CONCLUSION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion || inputs.conclusion }}
+          HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.head_sha }}
+          HTML_URL: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.html_url || inputs.html_url }}
+          UPDATED_AT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.updated_at || inputs.updated_at }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .github/release-status
 
-          if [[ "$WORKFLOW_NAME" == "Downstream Windows + Android Release" ]]; then
+          if [[ "$WORKFLOW_NAME" == "Downstream Windows + Linux + Android Release" ]]; then
             REQUEST=.github/release-request.json
             SOURCE_REF=""
             TAG_SUFFIX=""
