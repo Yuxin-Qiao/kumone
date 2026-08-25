@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from pathlib import Path
 
@@ -35,9 +34,16 @@ def desired_contents(version: str) -> dict[Path, str]:
     if n != 1:
         raise SystemExit("Could not update [workspace.package] version in Cargo.toml")
 
-    tauri_data = json.loads(TAURI.read_text(encoding="utf-8"))
-    tauri_data["version"] = version
-    tauri_new = json.dumps(tauri_data, ensure_ascii=False, indent=2) + "\n"
+    tauri = TAURI.read_text(encoding="utf-8")
+    tauri_new, n = re.subn(
+        r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)',
+        rf"\g<1>{version}\g<2>",
+        tauri,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if n != 1:
+        raise SystemExit("Could not update Tauri version")
 
     android = ANDROID.read_text(encoding="utf-8")
     android_new, n = re.subn(
