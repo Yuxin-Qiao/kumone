@@ -13,13 +13,16 @@ jobs:
     if: github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v7
         with:
           ref: main
+          fetch-depth: 0
+
       - name: Record result
         env:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
@@ -27,18 +30,32 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .github/release-status
+
+          REQUEST=$(git show "$HEAD_SHA:.github/rc1-request.json")
+          SOURCE_REF=$(jq -r '.source_ref' <<< "$REQUEST")
+          VERSION=$(jq -r '.version' <<< "$REQUEST")
+          LABEL=$(jq -r '.label // "rc.1"' <<< "$REQUEST")
+
           jq -n \
             --argjson run_id "$RUN_ID" \
             --argjson run_number "$RUN_NUMBER" \
+            --argjson run_attempt "$RUN_ATTEMPT" \
             --arg conclusion "$CONCLUSION" \
             --arg head_sha "$HEAD_SHA" \
             --arg url "$RUN_URL" \
+            --arg source_ref "$SOURCE_REF" \
+            --arg version "$VERSION" \
+            --arg label "$LABEL" \
             --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{workflow:"RC1 Exact-Source Verification",run_id:$run_id,run_number:$run_number,conclusion:$conclusion,head_sha:$head_sha,url:$url,source_ref:"8822b36e15fd5f5846749cca32a80d5075216283",version:"0.2.3",label:"rc.1",updated_at:$updated_at}' \
+            '{workflow:"RC1 Exact-Source Verification",run_id:$run_id,run_number:$run_number,run_attempt:$run_attempt,conclusion:$conclusion,head_sha:$head_sha,url:$url,source_ref:$source_ref,version:$version,label:$label,updated_at:$updated_at}' \
             > .github/release-status/rc1.json
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/release-status/rc1.json
-          git commit -m "ci(status): record RC1 verification #$RUN_NUMBER $CONCLUSION"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "ci(status): record RC1 verification #$RUN_NUMBER attempt $RUN_ATTEMPT $CONCLUSION"
           git pull --rebase origin main
           git push origin HEAD:main
