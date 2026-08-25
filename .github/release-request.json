@@ -1,7 +1,7 @@
 {
   "source_ref": "c5f4749fc63af2d45000f7aebafccb504cea6775",
-  "tag_suffix": "",
+  "tag_suffix": "stable",
   "prerelease": false,
-  "requested_at": "2026-08-25T09:11:00+08:00",
-  "retry": 6
+  "requested_at": "2026-08-25T09:13:00+08:00",
+  "retry": 7
 }
