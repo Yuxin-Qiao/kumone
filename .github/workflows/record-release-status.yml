@@ -24,6 +24,7 @@ jobs:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HTML_URL: ${{ github.event.workflow_run.html_url }}
@@ -32,28 +33,72 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .github/release-status
+
           if [[ "$WORKFLOW_NAME" == "Downstream Windows + Android Release" ]]; then
-            FILE=.github/release-status/release.json
+            REQUEST=.github/release-request.json
+            SOURCE_REF=""
+            TAG_SUFFIX=""
+            PRERELEASE=""
+            VERSION=""
+            TAG=""
+
+            if [[ -f "$REQUEST" ]]; then
+              SOURCE_REF=$(jq -r '.source_ref // ""' "$REQUEST")
+              TAG_SUFFIX=$(jq -r '.tag_suffix // ""' "$REQUEST")
+              PRERELEASE=$(jq -r '.prerelease // false' "$REQUEST")
+            fi
+
+            if [[ -n "$SOURCE_REF" ]]; then
+              git fetch origin "$SOURCE_REF" 2>/dev/null || true
+              VERSION=$(git show "$SOURCE_REF:CHANGELOG.md" 2>/dev/null \
+                | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' \
+                | head -n 1 || true)
+            fi
+
+            if [[ -n "$VERSION" ]]; then
+              TAG="downstream-v$VERSION"
+              [[ -z "$TAG_SUFFIX" ]] || TAG="$TAG-$TAG_SUFFIX"
+            fi
+
+            jq -n \
+              --arg workflow "$WORKFLOW_NAME" \
+              --argjson run_id "$RUN_ID" \
+              --argjson run_number "$RUN_NUMBER" \
+              --argjson run_attempt "$RUN_ATTEMPT" \
+              --arg status "completed" \
+              --arg conclusion "$CONCLUSION" \
+              --arg head_sha "$HEAD_SHA" \
+              --arg source_ref "$SOURCE_REF" \
+              --arg version "$VERSION" \
+              --arg tag "$TAG" \
+              --arg prerelease "$PRERELEASE" \
+              --arg url "$HTML_URL" \
+              --arg updated_at "$UPDATED_AT" \
+              '{workflow:$workflow,run_id:$run_id,run_number:$run_number,run_attempt:$run_attempt,status:$status,conclusion:$conclusion,head_sha:$head_sha,source_ref:$source_ref,version:$version,tag:$tag,prerelease:$prerelease,url:$url,updated_at:$updated_at}' \
+              > .github/release-status/release.json
+            cp .github/release-status/release.json .github/release-status/active.json
+            FILES=(.github/release-status/release.json .github/release-status/active.json)
           else
-            FILE=.github/release-status/dispatcher.json
+            jq -n \
+              --arg workflow "$WORKFLOW_NAME" \
+              --argjson run_id "$RUN_ID" \
+              --argjson run_number "$RUN_NUMBER" \
+              --argjson run_attempt "$RUN_ATTEMPT" \
+              --arg conclusion "$CONCLUSION" \
+              --arg head_sha "$HEAD_SHA" \
+              --arg url "$HTML_URL" \
+              --arg updated_at "$UPDATED_AT" \
+              '{workflow:$workflow,run_id:$run_id,run_number:$run_number,run_attempt:$run_attempt,conclusion:$conclusion,head_sha:$head_sha,url:$url,updated_at:$updated_at}' \
+              > .github/release-status/dispatcher.json
+            FILES=(.github/release-status/dispatcher.json)
           fi
-          jq -n \
-            --arg workflow "$WORKFLOW_NAME" \
-            --argjson run_id "$RUN_ID" \
-            --argjson run_number "$RUN_NUMBER" \
-            --arg conclusion "$CONCLUSION" \
-            --arg head_sha "$HEAD_SHA" \
-            --arg url "$HTML_URL" \
-            --arg updated_at "$UPDATED_AT" \
-            '{workflow:$workflow,run_id:$run_id,run_number:$run_number,conclusion:$conclusion,head_sha:$head_sha,url:$url,updated_at:$updated_at}' \
-            > "$FILE"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$FILE"
+          git add "${FILES[@]}"
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "ci(status): record $WORKFLOW_NAME #$RUN_NUMBER $CONCLUSION"
+          git commit -m "ci(status): record $WORKFLOW_NAME #$RUN_NUMBER attempt $RUN_ATTEMPT $CONCLUSION"
           git pull --rebase origin main
           git push origin HEAD:main
