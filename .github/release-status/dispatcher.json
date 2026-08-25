@@ -1,10 +1,10 @@
 {
   "workflow": "Validate Downstream Release Request",
-  "run_id": 32796571034,
-  "run_number": 20,
+  "run_id": 32796639530,
+  "run_number": 21,
   "run_attempt": 1,
   "conclusion": "failure",
-  "head_sha": "94cb000344267993f46cede33e2c25bc987f1d1f",
-  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32796571034",
-  "updated_at": "2026-08-25T01:11:23Z"
+  "head_sha": "69429b7db0e16815478831e46009be912a56fcaa",
+  "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32796639530",
+  "updated_at": "2026-08-25T01:12:32Z"
 }
