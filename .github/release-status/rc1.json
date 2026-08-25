@@ -2,11 +2,12 @@
   "workflow": "RC1 Exact-Source Verification",
   "run_id": 32795861118,
   "run_number": 2,
+  "run_attempt": 1,
   "conclusion": "success",
   "head_sha": "b7a14f57639b0457d8fce1b0a6e2768d7ec4e6dc",
   "url": "https://github.com/Yuxin-Qiao/kumone/actions/runs/32795861118",
-  "source_ref": "8822b36e15fd5f5846749cca32a80d5075216283",
-  "version": "0.2.3",
+  "source_ref": "c5f4749fc63af2d45000f7aebafccb504cea6775",
+  "version": "0.2.5",
   "label": "rc.1",
   "updated_at": "2026-08-25T01:06:45Z"
 }
