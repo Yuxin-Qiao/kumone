@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -16,8 +17,8 @@ def main() -> int:
 
     release = json.loads(args.release_json.read_text(encoding="utf-8"))
     tag = str(release["tag_name"])
-    if not tag.startswith("downstream-v"):
-        raise SystemExit(f"Expected downstream-v* release, got {tag}")
+    if not re.fullmatch(r"downstream-v\d+\.\d+\.\d+(?:\.\d+)?", tag):
+        raise SystemExit(f"Expected stable downstream-v<version> release, got {tag}")
     if release.get("draft") or release.get("prerelease"):
         raise SystemExit(f"Expected published stable release, got draft/prerelease: {tag}")
 
