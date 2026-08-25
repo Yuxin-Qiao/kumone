@@ -1,6 +1,7 @@
 package dev.yuxinqiao.kumone.ui
 
 import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -97,6 +98,8 @@ fun KumoneApp() {
     var positionMs by remember { mutableLongStateOf(0L) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var loadingTrackId by remember { mutableStateOf<Long?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
+    var diagnosticsMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(loggedIn, refreshVersion) {
         homeLoading = true
@@ -261,6 +264,31 @@ fun KumoneApp() {
                         Text("Sign out")
                     }
                 }
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            updateMessage = runCatching {
+                                val release = repository.latestRelease()
+                                val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+                                if (release.version.isNotBlank() && release.version != current) {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.url)))
+                                    "发现 Kumone ${release.version}，已打开发布页"
+                                } else {
+                                    "当前已是最新版本"
+                                }
+                            }.getOrElse { "更新检查失败：${it.message ?: "网络不可用"}" }
+                        }
+                    },
+                ) { Text("Check updates") }
+                TextButton(onClick = { diagnosticsMessage = "诊断已保存：${repository.exportDiagnostics()}" }) {
+                    Text("Export diagnostics")
+                }
+            }
+            updateMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            }
+            diagnosticsMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
             }
             playbackError?.let { ErrorText(it) }
             Spacer(Modifier.height(8.dp))
@@ -533,19 +561,33 @@ private fun QrLoginDialog(
 
     LaunchedEffect(session?.key) {
         val key = session?.key ?: return@LaunchedEffect
+        var transientFailures = 0
+        var polls = 0
         while (true) {
             delay(1_500L)
+            polls += 1
+            if (polls > 120) {
+                status = "二维码轮询已超时，请生成新二维码"
+                return@LaunchedEffect
+            }
             val result = runCatching { repository.checkQrLogin(key) }
             if (result.isFailure) {
-                error = result.exceptionOrNull()?.message ?: "Unable to check login status"
+                transientFailures += 1
+                error = if (transientFailures >= 3) {
+                    "网络或网易云风控暂时不可用，请稍后重试"
+                } else {
+                    result.exceptionOrNull()?.message ?: "Unable to check login status"
+                }
                 continue
             }
+            transientFailures = 0
             val login = result.getOrThrow()
             status = when {
                 login.state == "waiting" -> "Waiting for scan…"
                 login.state == "scanned" -> "Scanned — confirm login in NetEase"
                 login.state == "success" -> "Signed in"
                 login.state == "expired" -> "QR code expired"
+                login.code == -462L || login.code == -460L -> "网易云要求完成验证，请稍后重试"
                 else -> login.message ?: "NetEase status ${login.code}"
             }
             when (login.state) {

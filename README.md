@@ -184,9 +184,11 @@ See [`docs/architecture/shared-contracts.md`](docs/architecture/shared-contracts
 - Downstream package versions must match the latest upstream version; CI rejects drift.
 - Upstream synchronization runs every 3 hours, creates a candidate branch, normalizes downstream versions and removes retired Electron desktop files automatically.
 - Candidate upstream PRs are opened only after Core/Web, Android, Windows and Linux compatibility gates pass.
-- Windows NSIS and Android APK use a 15 MiB hard package budget; Linux deb/rpm packages use a 25 MiB hard budget and the self-contained AppImage uses a 90 MiB hard budget.
+- Windows NSIS and Android APK use a 15 MiB hard package budget; Linux deb/rpm packages use a 25 MiB hard budget and the self-contained AppImage uses an 80 MiB hard budget. The AppImage report explains the unavoidable WebKitGTK runtime portion.
 - Android releases require the pinned signing identity and embedded arm64 Rust library.
 - Windows Authenticode signing is automatic when `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` are configured; otherwise releases are explicitly marked unsigned and publication is not falsely blocked as "signed".
+- Every downstream release publishes a checksum-backed `latest.json` update manifest. Tauri auto-install remains fail-safe/disabled until trusted updater signatures and a public key are configured; Android only checks Releases and opens the system download flow.
+- Windows/Linux desktop settings can export local redacted diagnostics; no crash or account data is uploaded by default.
 - Windows, Linux and Android packages receive SHA-256 checksums and provenance attestations.
 - GitHub Releases publish automatically after automated gates pass; there is no maintainer-side real-device approval gate.
 - Community device feedback is captured through structured Issues and summarized automatically in [`docs/compatibility.md`](docs/compatibility.md).

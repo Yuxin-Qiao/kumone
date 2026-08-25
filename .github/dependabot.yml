@@ -28,13 +28,6 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Maintain the legacy Windows / Linux Electron dependencies until Tauri replaces them.
-  - package-ecosystem: "npm"
-    directory: "/windows"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-
   # Maintain Web player dependencies.
   - package-ecosystem: "npm"
     directory: "/web"

@@ -1388,6 +1388,17 @@
             基于 Cloudflare Workers 边缘计算与标准 Web 技术构建，完全移植自上游 missuo/kumone。
           </div>
         </div>
+
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:18px;margin-bottom:18px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px">更新与诊断</div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:12px">
+            桌面端只接受带可信签名的更新清单；未配置签名密钥时仅检查并跳转发布页，不会静默安装。
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="category-pill" id="btn-check-update">检查更新</button>
+            <button class="category-pill" id="btn-export-diagnostics">导出隐私诊断</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -1398,6 +1409,41 @@
         renderSettingsView();
       };
     });
+
+    const updateButton = document.getElementById('btn-check-update');
+    if (updateButton) {
+      updateButton.onclick = async () => {
+        if (!window.KumoneTauri?.invoke) {
+          showToast('浏览器版请打开 GitHub Releases 查看更新');
+          return;
+        }
+        updateButton.disabled = true;
+        try {
+          const result = await window.KumoneTauri.invoke('check_for_update');
+          if (result?.url) window.open(result.url, '_blank', 'noopener,noreferrer');
+          showToast(result?.status === 'available' ? '发现更新，已打开发布页' : (result?.reason || '暂无可安装更新'));
+        } catch (error) {
+          showToast(`更新检查失败: ${error.message || error}`);
+        } finally {
+          updateButton.disabled = false;
+        }
+      };
+    }
+    const diagnosticsButton = document.getElementById('btn-export-diagnostics');
+    if (diagnosticsButton) {
+      diagnosticsButton.onclick = async () => {
+        if (!window.KumoneTauri?.exportDiagnostics) {
+          showToast('浏览器版已使用本地诊断状态；桌面端可导出 JSON');
+          return;
+        }
+        try {
+          const path = await window.KumoneTauri.exportDiagnostics();
+          showToast(`诊断已保存: ${path}`);
+        } catch (error) {
+          showToast(`诊断导出失败: ${error.message || error}`);
+        }
+      };
+    }
   }
 
   // ==========================================================================

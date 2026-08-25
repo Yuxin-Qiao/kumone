@@ -1,8 +1,11 @@
 mod bridge;
 mod unblock;
+mod updates;
 
 use std::{
     collections::BTreeMap,
+    fs,
+    path::PathBuf,
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -27,12 +30,21 @@ use kumone_core::{
 };
 use reqwest::{Client, Method, header::SET_COOKIE};
 use serde::Serialize;
-use serde_json::Value;
-use tauri::State;
+use serde_json::{Value, json};
+use tauri::{AppHandle, Manager, State};
 
-struct AppState {
+pub(crate) struct AppState {
     client: Client,
     cookies: Mutex<SessionCookies>,
+    session_path: Mutex<Option<PathBuf>>,
+    diagnostics: Mutex<DiagnosticsState>,
+}
+
+#[derive(Debug, Default)]
+struct DiagnosticsState {
+    request_count: u64,
+    last_error: Option<String>,
+    last_error_class: Option<String>,
 }
 
 impl AppState {
@@ -45,7 +57,34 @@ impl AppState {
         Self {
             client,
             cookies: Mutex::new(SessionCookies::default()),
+            session_path: Mutex::new(None),
+            diagnostics: Mutex::new(DiagnosticsState::default()),
         }
+    }
+
+    pub(crate) fn initialize_persistence(&self, app_data_dir: PathBuf) -> Result<(), String> {
+        fs::create_dir_all(&app_data_dir).map_err(|error| format!("session directory: {error}"))?;
+        let path = app_data_dir.join("session.json");
+        *self.session_path.lock().map_err(|_| "session lock poisoned".to_owned())? = Some(path.clone());
+        if let Ok(raw) = fs::read_to_string(&path)
+            && let Ok(values) = serde_json::from_str::<BTreeMap<String, String>>(&raw)
+        {
+            let mut cookies = self
+                .cookies
+                .lock()
+                .map_err(|_| "session lock poisoned".to_owned())?;
+            cookies.extend(values);
+        }
+        Ok(())
+    }
+
+    fn persist(&self) -> Result<(), String> {
+        let Some(path) = self.session_path.lock().map_err(|_| "session lock poisoned".to_owned())?.clone() else {
+            return Ok(());
+        };
+        let values = self.snapshot()?.into_values();
+        let payload = serde_json::to_vec(&values).map_err(|error| format!("session encode: {error}"))?;
+        fs::write(path, payload).map_err(|error| format!("session write: {error}"))
     }
 
     fn snapshot(&self) -> Result<SessionCookies, String> {
@@ -60,7 +99,7 @@ impl AppState {
             .cookies
             .lock()
             .map_err(|_| "session lock poisoned".to_owned())? = cookies;
-        Ok(())
+        self.persist()
     }
 
     fn ingest_set_cookie(&self, raw: &str) -> Result<(), String> {
@@ -68,7 +107,38 @@ impl AppState {
             .lock()
             .map_err(|_| "session lock poisoned".to_owned())?
             .ingest_cookie_string(raw);
-        Ok(())
+        self.persist()
+    }
+
+    fn record_error(&self, message: &str, class: &str) {
+        if let Ok(mut diagnostics) = self.diagnostics.lock() {
+            diagnostics.request_count = diagnostics.request_count.saturating_add(1);
+            diagnostics.last_error = Some(message.chars().take(240).collect());
+            diagnostics.last_error_class = Some(class.to_owned());
+        }
+    }
+
+    fn record_request(&self) {
+        if let Ok(mut diagnostics) = self.diagnostics.lock() {
+            diagnostics.request_count = diagnostics.request_count.saturating_add(1);
+        }
+    }
+
+    fn diagnostics_json(&self) -> Result<Value, String> {
+        let diagnostics = self.diagnostics.lock().map_err(|_| "diagnostics lock poisoned".to_owned())?;
+        Ok(json!({
+            "schema_version": 1,
+            "product": "kumone",
+            "platform": std::env::consts::OS,
+            "app_version": env!("CARGO_PKG_VERSION"),
+            "privacy": {"redacted": true, "network_upload": false},
+            "session": {"configured": self.snapshot()?.is_logged_in(), "cookie_values": "redacted"},
+            "events": [{
+                "request_count": diagnostics.request_count,
+                "last_error_class": diagnostics.last_error_class,
+                "last_error": diagnostics.last_error,
+            }]
+        }))
     }
 }
 
@@ -137,6 +207,7 @@ fn request_context() -> EapiContext {
 }
 
 async fn execute(state: &AppState, request: RequestSpec) -> Result<String, String> {
+    state.record_request();
     let method = Method::from_bytes(request.method.as_bytes())
         .map_err(|error| format!("invalid HTTP method: {error}"))?;
     let mut builder = state.client.request(method, &request.url);
@@ -150,7 +221,10 @@ async fn execute(state: &AppState, request: RequestSpec) -> Result<String, Strin
     let response = builder
         .send()
         .await
-        .map_err(|error| format!("NetEase request failed: {error}"))?;
+        .map_err(|error| {
+            state.record_error(&format!("NetEase request failed: {error}"), "network");
+            format!("NetEase request failed: {error}")
+        })?;
     let status = response.status();
     let set_cookies = response
         .headers()
@@ -167,6 +241,8 @@ async fn execute(state: &AppState, request: RequestSpec) -> Result<String, Strin
         .await
         .map_err(|error| format!("failed to read NetEase response: {error}"))?;
     if !status.is_success() {
+        let class = kumone_core::errors::classify_http_status(status.as_u16());
+        state.record_error(&format!("NetEase HTTP {status}"), &format!("{class:?}"));
         return Err(format!(
             "NetEase HTTP {status}: {}",
             body.chars().take(240).collect::<String>()
@@ -180,6 +256,25 @@ fn session_import(state: State<'_, AppState>, values: BTreeMap<String, String>) 
     let mut cookies = SessionCookies::default();
     cookies.extend(values);
     state.replace(cookies)
+}
+
+#[tauri::command]
+fn diagnostics_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
+    state.diagnostics_json()
+}
+
+#[tauri::command]
+fn diagnostics_export(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("diagnostics directory: {error}"))?;
+    fs::create_dir_all(&directory).map_err(|error| format!("diagnostics directory: {error}"))?;
+    let path = directory.join("diagnostics.json");
+    let payload = serde_json::to_vec_pretty(&state.diagnostics_json()?)
+        .map_err(|error| format!("diagnostics encode: {error}"))?;
+    fs::write(&path, payload).map_err(|error| format!("diagnostics write: {error}"))?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -404,6 +499,8 @@ pub fn run() {
             session_export,
             session_is_logged_in,
             session_logout,
+            diagnostics_snapshot,
+            diagnostics_export,
             netease_search_songs,
             netease_resolve_playback,
             netease_lyrics,
@@ -420,6 +517,7 @@ pub fn run() {
             netease_eapi,
             netease_build_weapi_request,
             netease_build_eapi_request,
+            updates::check_for_update,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Kumone Windows");

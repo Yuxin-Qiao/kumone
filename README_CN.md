@@ -181,9 +181,11 @@ scripts/ci/                # 可重复执行的 CI 辅助脚本
 - 下游包版本必须与最新上游版本一致，CI 会拒绝版本漂移。
 - 上游同步每 3 小时运行一次：生成候选分支、自动同步下游版本，并自动移除已经退役的 Electron 桌面文件。
 - 只有 Core/Web、Android、Windows、Linux 四组兼容性 gate 全部通过，才会自动创建上游同步 Draft PR。
-- Windows NSIS 与 Android APK 硬上限 15 MiB；Linux deb/rpm 硬上限 25 MiB，自包含 AppImage 硬上限 90 MiB。
+- Windows NSIS 与 Android APK 硬上限 15 MiB；Linux deb/rpm 硬上限 25 MiB，自包含 AppImage 硬上限 80 MiB。AppImage 会在 CI 中报告 WebKitGTK 自包含运行时占比。
 - Android 正式产物必须使用固定签名身份并包含 arm64 Rust 动态库。
 - 配置 `WINDOWS_CERTIFICATE_BASE64` 与 `WINDOWS_CERTIFICATE_PASSWORD` 后，Windows 会自动 Authenticode 签名并验证；没配置证书时会明确标记 unsigned，不会伪装成“已签名”。
+- 每个下游 Release 都会生成带 SHA-256 的 `latest.json` 更新清单；没有可信 updater 签名和公钥时，Tauri 自动安装会 fail-safe 关闭。Android 只检查 Releases 并交给系统/浏览器下载，不绕过包签名或安装权限。
+- Windows/Linux 桌面设置可导出本地脱敏诊断信息；默认不上传崩溃或账号数据。
 - Windows、Linux 与 Android 产物自动生成 SHA-256 和 provenance attestation。
 - 自动门禁通过后自动发布 GitHub Release，不设置维护者人工实机审批门槛。
 - 实机反馈通过结构化 Issues 收集，并自动汇总到 [`docs/compatibility.md`](docs/compatibility.md)。

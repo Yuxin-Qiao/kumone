@@ -17,3 +17,13 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# Keep the desktop payload small without changing runtime dependencies.  The
+# AppImage still carries WebKitGTK, but stripping the Rust shell and using size
+# optimisation avoids shipping duplicate debug/unwind data in every bundle.
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

@@ -14,6 +14,8 @@ on:
       - "apps/windows/src-tauri/tauri.conf.json"
       - "apps/android/app/build.gradle.kts"
       - "scripts/ci/sync-downstream-version.py"
+      - "scripts/ci/validate-contracts.py"
+      - "contracts/**"
       - ".github/workflows/ci-core.yml"
   workflow_dispatch:
 
@@ -33,6 +35,9 @@ jobs:
 
       - name: Verify downstream version consistency
         run: python3 scripts/ci/sync-downstream-version.py --check
+
+      - name: Validate cross-platform UI, update and diagnostics contracts
+        run: python3 scripts/ci/validate-contracts.py
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2

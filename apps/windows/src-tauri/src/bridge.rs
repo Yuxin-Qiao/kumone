@@ -6,6 +6,9 @@ use tauri::{App, Manager, Wry};
 /// adapter that redirects stabilized NetEase operations to Rust commands and
 /// wires Media Session controls for Windows/WebView2.
 pub fn install(app: &mut App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
+    let app_data_dir = app.path().app_data_dir()?;
+    app.state::<crate::AppState>()
+        .initialize_persistence(app_data_dir)?;
     let webview = app
         .get_webview_window("main")
         .ok_or("main webview was not created")?;

@@ -124,6 +124,7 @@ jobs:
         run: |
           cargo test --workspace --all-targets
           npm test --prefix web
+          python3 scripts/ci/validate-contracts.py
       - name: Build NSIS
         shell: pwsh
         run: |
@@ -266,7 +267,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential curl file libayatana-appindicator3-dev libssl-dev \
-            librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
+            librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm squashfs-tools wget
       - name: Verify shared gates and build Linux packages
         shell: bash
         run: |
@@ -274,6 +275,7 @@ jobs:
           cargo test --workspace --all-targets
           npm test --prefix web
           cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+          python3 scripts/ci/validate-contracts.py
           npm install --global @tauri-apps/cli@v2
           python3 - <<'PY'
           import re
@@ -314,10 +316,11 @@ jobs:
             }
             cp "$source" "rc-linux/$output"
           }
-          copy_one '*.AppImage' "Kumone-$VERSION-$LABEL-linux-x86_64.AppImage" 90
+          copy_one '*.AppImage' "Kumone-$VERSION-$LABEL-linux-x86_64.AppImage" 80
           copy_one '*.deb' "Kumone-$VERSION-$LABEL-linux-x86_64.deb" 25
           copy_one '*.rpm' "Kumone-$VERSION-$LABEL-linux-x86_64.rpm" 25
           (cd rc-linux && sha256sum Kumone-* > SHA256SUMS-linux)
+          bash scripts/ci/report-appimage-size.sh "$(find apps/windows/src-tauri/target/release/bundle -type f -name '*.AppImage' -print -quit)" "$GITHUB_STEP_SUMMARY"
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
@@ -394,6 +397,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p kumone-core -p kumone-ffi --all-targets
+          python3 scripts/ci/validate-contracts.py
           cargo build -p kumone-ffi --release
           rm -rf apps/android/app/build/generated/uniffi/kotlin apps/android/app/build/generated/uniffi/jniLibs
           mkdir -p apps/android/app/build/generated/uniffi/kotlin

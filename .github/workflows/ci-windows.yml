@@ -12,6 +12,8 @@ on:
       - "Cargo.toml"
       - "rust-toolchain.toml"
       - ".github/workflows/ci-windows.yml"
+      - "contracts/**"
+      - "scripts/ci/validate-contracts.py"
   workflow_dispatch:
 
 permissions:
@@ -44,6 +46,9 @@ jobs:
 
       - name: Test shared web UI
         run: npm test --prefix web
+
+      - name: Validate shared state and release contracts
+        run: python3 scripts/ci/validate-contracts.py
 
       - name: Check Tauri shell
         run: cargo check --manifest-path apps/windows/src-tauri/Cargo.toml

@@ -187,7 +187,7 @@ pub fn kuwo_search_request(track: &UnblockTrack) -> UnblockHttpRequest {
     let query = encoded_keyword(track);
     UnblockHttpRequest {
         url: format!(
-            "http://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all={query}"
+            "https://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all={query}"
         ),
         user_agent: "Mozilla/5.0".to_owned(),
     }
@@ -229,7 +229,7 @@ pub fn decode_kuwo_search_response(body: &str, target_duration_ms: i64) -> Optio
 pub fn kuwo_convert_request(rid: &str) -> UnblockHttpRequest {
     UnblockHttpRequest {
         url: format!(
-            "http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_{rid}"
+            "https://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_{rid}"
         ),
         user_agent: "okhttp/3.10.0".to_owned(),
     }
@@ -251,7 +251,7 @@ pub fn kugou_search_request(track: &UnblockTrack) -> UnblockHttpRequest {
     let query = encoded_keyword(track);
     UnblockHttpRequest {
         url: format!(
-            "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword={query}&page=1&pagesize=10"
+            "https://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword={query}&page=1&pagesize=10"
         ),
         user_agent: "Mozilla/5.0".to_owned(),
     }
@@ -296,7 +296,7 @@ pub fn kugou_track_request(song: &KugouMatch) -> UnblockHttpRequest {
     let key = hex::encode(hasher.finalize());
     UnblockHttpRequest {
         url: format!(
-            "http://trackercdn.kugou.com/i/v2/?key={key}&hash={}&appid=1005&pid=2&cmd=25&behavior=play&album_id={}",
+            "https://trackercdn.kugou.com/i/v2/?key={key}&hash={}&appid=1005&pid=2&cmd=25&behavior=play&album_id={}",
             song.hash, song.album_id
         ),
         user_agent: "Mozilla/5.0".to_owned(),

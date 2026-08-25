@@ -23,3 +23,13 @@ tauri = { version = "2", features = [] }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# The desktop crate is its own Tauri workspace, so keep its release profile
+# aligned with the shared workspace.  This strips the Rust shell without
+# removing WebKitGTK/GTK runtime libraries required by the AppImage.
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
