@@ -50,7 +50,7 @@ Apple SwiftUI 上游 · Rust 共享核心 · Tauri 2 桌面端 · Android Jetpac
 
 已发布的 0.2.5 早于本次 Linux/Tauri Phase 2 集成，因此它仍只包含 Windows + Android 产物。新的自动发布流水线已经加入 Linux；首个正式 Linux 包会随下一次上游对齐版本发布，而不会把新源码产物倒灌进旧的 0.2.5 tag，避免源码与产物不一致。
 
-`script/ci` 中的版本同步器从 `CHANGELOG.md` 最新版本统一同步 Cargo、Tauri 与 Android 本地默认版本；CI 会阻止任何版本漂移，上游自动同步候选也会自动修正版本。
+`scripts/ci` 中的版本同步器从 `CHANGELOG.md` 最新版本统一同步 Cargo、Tauri 与 Android 本地默认版本；CI 会阻止任何版本漂移，上游自动同步候选也会自动修正版本。
 
 ## 功能
 
@@ -167,7 +167,7 @@ scripts/ci/                # 可重复执行的 CI 辅助脚本
 - 下游包版本必须与最新上游版本一致，CI 会拒绝版本漂移。
 - 上游同步每 3 小时运行一次：生成候选分支、自动同步下游版本，并自动移除已经退役的 Electron 桌面文件。
 - 只有 Core/Web、Android、Windows、Linux 四组兼容性 gate 全部通过，才会自动创建上游同步 Draft PR。
-- Windows NSIS 与 Android APK 硬上限 15 MiB；Linux 包硬上限 25 MiB。
+- Windows NSIS 与 Android APK 硬上限 15 MiB；Linux deb/rpm 硬上限 25 MiB，自包含 AppImage 硬上限 90 MiB。
 - Android 正式产物必须使用固定签名身份并包含 arm64 Rust 动态库。
 - 配置 `WINDOWS_CERTIFICATE_BASE64` 与 `WINDOWS_CERTIFICATE_PASSWORD` 后，Windows 会自动 Authenticode 签名并验证；没配置证书时会明确标记 unsigned，不会伪装成“已签名”。
 - Windows、Linux 与 Android 产物自动生成 SHA-256 和 provenance attestation。
