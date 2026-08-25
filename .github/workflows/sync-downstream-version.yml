@@ -7,9 +7,15 @@ on:
     paths:
       - "CHANGELOG.md"
       - "Cargo.toml"
-      - "apps/windows/src-tauri/tauri.conf.json"
-      - "apps/android/app/build.gradle.kts"
+      - "apps/windows/**"
+      - "apps/android/**"
+      - "windows/**"
+      - "contracts/**"
       - "scripts/ci/sync-downstream-version.py"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/build-windows.yml"
+      - ".github/workflows/build-linux.yml"
+      - ".github/workflows/sync-downstream-version.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,21 +34,33 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Synchronize package versions from CHANGELOG
-        run: python3 scripts/ci/sync-downstream-version.py
-
-      - name: Commit synchronized versions when needed
+      - name: Enforce downstream desktop layout
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo "Version metadata already synchronized." >> "$GITHUB_STEP_SUMMARY"
+          rm -rf windows
+          rm -f .github/workflows/release.yml .github/workflows/build-windows.yml
+
+      - name: Synchronize package versions from CHANGELOG
+        run: python3 scripts/ci/sync-downstream-version.py
+
+      - name: Commit downstream normalization when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && [[ -z "$(git status --porcelain)" ]]; then
+            echo "Downstream layout and versions already normalized." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml apps/windows/src-tauri/tauri.conf.json apps/android/app/build.gradle.kts
-          git commit -m "build: sync downstream package version to $VERSION"
+          git add -A
+          git commit -m "build: normalize downstream desktop for $VERSION"
           git push origin HEAD:"${GITHUB_REF_NAME}"
-          echo "Synchronized downstream package metadata to **$VERSION**." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "Normalized candidate for **$VERSION**."
+            echo "- Downstream package versions synchronized"
+            echo "- Legacy Electron desktop tree/workflows removed"
+            echo "- Apple/iOS sources untouched"
+          } >> "$GITHUB_STEP_SUMMARY"
