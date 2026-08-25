@@ -7,10 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: "Source branch, tag, or commit to build"
-        required: false
+        description: "Full main-history commit SHA to build"
+        required: true
         type: string
-        default: "main"
       version:
         description: "Upstream-aligned app version (for example 0.2.5)"
         required: true
@@ -27,9 +26,7 @@ on:
         default: true
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: downstream-release-${{ github.ref }}-${{ inputs.version || github.ref_name }}
@@ -37,8 +34,10 @@ concurrency:
 
 jobs:
   prepare:
-    name: Resolve release source
+    name: Resolve trusted release source
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
@@ -47,35 +46,70 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
-
-      - name: Verify synchronized downstream package versions
-        run: python3 scripts/ci/sync-downstream-version.py --check
+          persist-credentials: false
 
       - id: meta
-        name: Validate upstream-aligned version
+        name: Validate trusted upstream-aligned source
         shell: bash
         run: |
           set -euo pipefail
 
+          git fetch --no-tags origin main
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SOURCE_SHA="${{ inputs.source_ref }}"
             REQUESTED_VERSION="${{ inputs.version }}"
             TAG_SUFFIX="${{ inputs.tag_suffix }}"
             PRERELEASE="${{ inputs.prerelease }}"
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "::error::workflow_dispatch source_ref must be a full commit SHA"
+              exit 1
+            }
           else
+            [[ "$GITHUB_REF_NAME" == downstream-v* ]] || {
+              echo "::error::Unexpected release tag: $GITHUB_REF_NAME"
+              exit 1
+            }
+            git fetch origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+            SOURCE_SHA=$(git rev-list -n 1 "$GITHUB_REF_NAME")
             RAW="${GITHUB_REF_NAME#downstream-v}"
             REQUESTED_VERSION="${RAW%%-*}"
             if [[ "$RAW" == *-* ]]; then TAG_SUFFIX="${RAW#*-}"; else TAG_SUFFIX=""; fi
             if [[ -n "$TAG_SUFFIX" ]]; then PRERELEASE="true"; else PRERELEASE="false"; fi
           fi
 
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Resolved source is not an immutable SHA"
+            exit 1
+          }
           [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
-            echo "::error::Invalid version: $REQUESTED_VERSION"; exit 1;
+            echo "::error::Invalid version: $REQUESTED_VERSION"
+            exit 1
           }
           [[ -z "$TAG_SUFFIX" || "$TAG_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]] || {
-            echo "::error::Invalid tag suffix: $TAG_SUFFIX"; exit 1;
+            echo "::error::Invalid tag suffix: $TAG_SUFFIX"
+            exit 1
           }
+          [[ "$PRERELEASE" == "true" || "$PRERELEASE" == "false" ]] || {
+            echo "::error::Invalid prerelease flag: $PRERELEASE"
+            exit 1
+          }
+
+          git cat-file -e "$SOURCE_SHA^{commit}" 2>/dev/null || {
+            echo "::error::Release source commit is not available in this repository"
+            exit 1
+          }
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main || {
+            echo "::error::Release source must already be part of main history"
+            exit 1
+          }
+
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+
+          python3 scripts/ci/sync-downstream-version.py --check
 
           SOURCE_VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
           UPSTREAM_VERSION=$(curl --fail --silent --show-error --location \
@@ -83,18 +117,24 @@ jobs:
             | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
 
           [[ -n "$SOURCE_VERSION" && -n "$UPSTREAM_VERSION" ]] || {
-            echo "::error::Could not resolve source/upstream version"; exit 1;
+            echo "::error::Could not resolve source/upstream version"
+            exit 1
           }
           [[ "$SOURCE_VERSION" == "$UPSTREAM_VERSION" ]] || {
-            echo "::error::Source $SOURCE_VERSION is behind upstream $UPSTREAM_VERSION"; exit 1;
+            echo "::error::Source $SOURCE_VERSION is behind upstream $UPSTREAM_VERSION"
+            exit 1
           }
           [[ "$REQUESTED_VERSION" == "$UPSTREAM_VERSION" ]] || {
-            echo "::error::Requested $REQUESTED_VERSION != upstream $UPSTREAM_VERSION"; exit 1;
+            echo "::error::Requested $REQUESTED_VERSION != upstream $UPSTREAM_VERSION"
+            exit 1
           }
 
           TAG="downstream-v$REQUESTED_VERSION"
           [[ -z "$TAG_SUFFIX" ]] || TAG="$TAG-$TAG_SUFFIX"
-          SOURCE_SHA=$(git rev-parse HEAD)
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" && "$TAG" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::Tag-derived metadata mismatch: $TAG != $GITHUB_REF_NAME"
+            exit 1
+          fi
 
           echo "version=$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -106,6 +146,7 @@ jobs:
             echo "- Source version: **$SOURCE_VERSION**"
             echo "- Upstream version: **$UPSTREAM_VERSION**"
             echo "- Source commit: \`$SOURCE_SHA\`"
+            echo "- Source trust: **main ancestor verified**"
             echo "- Release tag: **$TAG**"
             echo "- Prerelease: **$PRERELEASE**"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -114,34 +155,44 @@ jobs:
     name: Build Windows NSIS
     needs: prepare
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_sha }}
-
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified release source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           workspaces: |
             .
             apps/windows/src-tauri
-
       - name: Automated shared-core and Web/PWA gates
         shell: pwsh
         run: |
           cargo test --workspace --all-targets
           npm test --prefix web
-
       - name: Install Tauri CLI
         shell: pwsh
         run: npm install --global @tauri-apps/cli@v2
-
       - name: Build NSIS installer
         shell: pwsh
         run: |
@@ -151,7 +202,6 @@ jobs:
           $config | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding utf8
           Push-Location apps/windows
           try { tauri build --bundles nsis } finally { Pop-Location }
-
       - name: Optionally Authenticode-sign Windows installer
         shell: pwsh
         run: |
@@ -165,17 +215,19 @@ jobs:
           if ($null -eq $installer) { throw "NSIS installer was not produced" }
           $pfx = Join-Path $env:RUNNER_TEMP "kumone-windows-signing.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
-          $kits = ${env:ProgramFiles(x86)}
-          $signtool = Get-ChildItem "$kits\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if ($null -eq $signtool) { throw "signtool.exe not found on runner" }
-          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
-          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
-          & $signtool.FullName verify /pa /v $installer.FullName
-          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
-          Remove-Item $pfx -Force
+          try {
+            $kits = ${env:ProgramFiles(x86)}
+            $signtool = Get-ChildItem "$kits\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if ($null -eq $signtool) { throw "signtool.exe not found on runner" }
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+            & $signtool.FullName verify /pa /v $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
+          } finally {
+            if (Test-Path $pfx) { Remove-Item $pfx -Force }
+          }
           "- Windows signing: **Authenticode verified**" >> $env:GITHUB_STEP_SUMMARY
-
       - name: Prepare Windows asset and enforce budget
         shell: pwsh
         run: |
@@ -189,12 +241,10 @@ jobs:
           $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path $out -Leaf)" | Set-Content release-windows/SHA256SUMS-windows -Encoding ascii
           "Windows NSIS: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
-
       - name: Attest Windows provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: release-windows/*.exe
-
       - name: Store Windows release asset
         uses: actions/upload-artifact@v7
         with:
@@ -207,60 +257,67 @@ jobs:
     name: Build Linux AppImage + deb + rpm
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_sha }}
-
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified release source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
       - name: Install Tauri Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            curl \
-            file \
-            libayatana-appindicator3-dev \
-            libssl-dev \
-            librsvg2-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf \
-            rpm \
-            wget
-
+            build-essential curl file libayatana-appindicator3-dev libssl-dev \
+            librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           workspaces: |
             .
             apps/windows/src-tauri
-
       - name: Automated shared-core and Web/PWA gates
         run: |
           cargo test --workspace --all-targets
           npm test --prefix web
           cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
-
       - name: Install Tauri CLI
         run: npm install --global @tauri-apps/cli@v2
-
       - name: Build Linux packages
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
+          import re
           from pathlib import Path
-          p = Path('apps/windows/src-tauri/tauri.conf.json')
-          d = json.loads(p.read_text())
-          d['version'] = '${{ needs.prepare.outputs.version }}'
-          p.write_text(json.dumps(d, indent=2) + '\n')
+          p = Path("apps/windows/src-tauri/tauri.conf.json")
+          text = p.read_text(encoding="utf-8")
+          text, n = re.subn(
+              r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)',
+              r'\g<1>${{ needs.prepare.outputs.version }}\g<2>',
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if n != 1:
+              raise SystemExit("Could not set Tauri version")
+          p.write_text(text, encoding="utf-8")
           PY
           (cd apps/windows && tauri build --bundles appimage,deb,rpm)
-
       - name: Prepare Linux assets and enforce budget
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -287,15 +344,13 @@ jobs:
           copy_one '*.deb' "Kumone-$VERSION-linux-x86_64.deb"
           copy_one '*.rpm' "Kumone-$VERSION-linux-x86_64.rpm"
           (cd release-linux && sha256sum Kumone-* > SHA256SUMS-linux)
-
       - name: Attest Linux provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             release-linux/*.AppImage
             release-linux/*.deb
             release-linux/*.rpm
-
       - name: Store Linux release assets
         uses: actions/upload-artifact@v7
         with:
@@ -308,6 +363,10 @@ jobs:
     name: Build signed Android APK + AAB
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -317,41 +376,44 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.source_sha }}
-
+          ref: main
+          persist-credentials: false
+      - name: Checkout verified release source
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$SOURCE_SHA"
+          git checkout --detach "$SOURCE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Setup Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1 (Node 24)
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
         with:
           cmdline-tools-version: 15859902
           accept-android-sdk-licenses: false
           packages: ''
-
       - name: Install Android SDK and NDK
         shell: bash
         run: bash scripts/ci/install-android-sdk.sh
-
       - name: Setup Gradle 9.5
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0 (Node 24)
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
         with:
           gradle-version: "9.5.0"
-
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-
       - name: Setup Android Rust target
         shell: bash
         run: |
           set -euo pipefail
           rustup target add aarch64-linux-android
           cargo +stable install cargo-ndk --version 4.1.2 --locked
-
       - name: Automated shared-core and FFI gates
         run: cargo test -p kumone-core -p kumone-ffi --all-targets
-
       - name: Generate UniFFI Kotlin bindings and arm64 library
         shell: bash
         run: |
@@ -369,11 +431,9 @@ jobs:
             -o apps/android/app/build/generated/uniffi/jniLibs \
             build -p kumone-ffi --release
           test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
-
       - name: Verify pinned signing identity
         shell: bash
         run: bash scripts/ci/prepare-android-signing.sh
-
       - name: Build signed release APK and AAB
         shell: bash
         run: |
@@ -385,7 +445,6 @@ jobs:
             :app:bundleRelease \
             -PkumoneVersion="$VERSION" \
             -PkumoneVersionCode="${{ github.run_number }}"
-
       - name: Verify signatures, Rust packaging, and package budget
         shell: bash
         run: |
@@ -398,7 +457,9 @@ jobs:
           test -f "$AAB"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | \
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | \
+            tr -d ':' | tr '[:lower:]' '[:upper:]')
           [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
           jarsigner -verify "$AAB"
           BYTES=$(stat -c%s "$APK")
@@ -408,7 +469,6 @@ jobs:
             exit 1
           fi
           echo "Android APK: **${MIB} MiB**" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Prepare Android release assets
         shell: bash
         run: |
@@ -417,14 +477,12 @@ jobs:
           cp apps/android/app/build/outputs/apk/release/app-release.apk "release-android/Kumone-$VERSION-android.apk"
           cp apps/android/app/build/outputs/bundle/release/app-release.aab "release-android/Kumone-$VERSION-android.aab"
           (cd release-android && sha256sum *.apk *.aab > SHA256SUMS-android)
-
       - name: Attest Android provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             release-android/*.apk
             release-android/*.aab
-
       - name: Store Android release assets
         uses: actions/upload-artifact@v7
         with:
@@ -451,17 +509,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-windows --dir publish-assets/windows
-
       - name: Download Linux assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-linux --dir publish-assets/linux
-
       - name: Download Android assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-android --dir publish-assets/android
-
       - name: Assemble release payload
         shell: bash
         run: |
@@ -472,11 +527,26 @@ jobs:
           cp publish-assets/android/* publish-assets/final/
           (cd publish-assets/final && sha256sum Kumone-* > SHA256SUMS)
           ls -lh publish-assets/final
-
       - name: Create or update release and publish automatically
         shell: bash
         run: |
           set -euo pipefail
+
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TAG" =~ ^downstream-v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-[A-Za-z0-9._-]+)?$ ]]
+          [[ "$PRERELEASE" == "true" || "$PRERELEASE" == "false" ]]
+
+          TAG_LINES=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          if [[ -n "$TAG_LINES" ]]; then
+            TAG_SHA=$(printf '%s\n' "$TAG_LINES" | awk '$2 ~ /\^\{\}$/ {print $1; exit}')
+            if [[ -z "$TAG_SHA" ]]; then
+              TAG_SHA=$(printf '%s\n' "$TAG_LINES" | awk 'NR == 1 {print $1}')
+            fi
+            [[ "$TAG_SHA" == "$SOURCE_SHA" ]] || {
+              echo "::error::Existing tag $TAG points to $TAG_SHA, expected $SOURCE_SHA"
+              exit 1
+            }
+          fi
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; replacing assets."
@@ -490,14 +560,21 @@ jobs:
 
           RELEASE_ID=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
-          [[ -n "$RELEASE_ID" ]] || { echo "::error::Release $TAG not found after creation"; exit 1; }
+          [[ -n "$RELEASE_ID" ]] || {
+            echo "::error::Release $TAG not found after creation"
+            exit 1
+          }
+
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-            -F draft=false -F prerelease="$PRERELEASE" >/dev/null
+            -f name="Kumone v$VERSION — Windows + Linux + Android" \
+            -F draft=false \
+            -F prerelease="$PRERELEASE" >/dev/null
 
           {
             echo "### Published"
             echo "- Release: **$TAG**"
             echo "- Source: \`$SOURCE_SHA\`"
             echo "- Windows + Linux + Android assets uploaded"
+            echo "- Existing tag target verified when present"
             echo "- No maintainer-side real-device gate"
           } >> "$GITHUB_STEP_SUMMARY"
