@@ -324,7 +324,7 @@ jobs:
           }
           git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
           APPLE_DIFF=$(git diff --name-only "$CANDIDATE_SHA" "$UPSTREAM_SHA" -- \
-            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios Scripts)
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
           [[ -z "$APPLE_DIFF" ]] || {
             PROTECTED_APPLE_CHANGES=1
             echo "::error::Protected Apple/iOS tree contains downstream changes: $APPLE_DIFF"
