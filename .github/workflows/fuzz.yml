@@ -1,0 +1,66 @@
+name: Rust nightly fuzz
+
+on:
+  schedule:
+    - cron: '20 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-nightly-fuzz
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz network-controlled parsers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Install nightly Rust and cargo-fuzz
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked --version 0.13.2
+
+      - id: lyrics
+        name: Fuzz lyrics/LRC parsing
+        continue-on-error: true
+        working-directory: fuzz
+        shell: bash
+        run: cargo +nightly fuzz run lyrics -- -max_total_time=120 -rss_limit_mb=2048
+
+      - id: search
+        name: Fuzz search response decoding
+        continue-on-error: true
+        working-directory: fuzz
+        shell: bash
+        run: cargo +nightly fuzz run search-response -- -max_total_time=120 -rss_limit_mb=2048
+
+      - name: Upload crash artifacts
+        if: steps.lyrics.outcome == 'failure' || steps.search.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-fuzz-crash-artifacts
+          path: fuzz/artifacts/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail on fuzz crash
+        if: steps.lyrics.outcome == 'failure' || steps.search.outcome == 'failure'
+        shell: bash
+        run: |
+          echo '::error::A Rust fuzz target found a crash or invariant violation.'
+          exit 1
