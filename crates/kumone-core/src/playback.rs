@@ -115,7 +115,7 @@ pub fn build_song_url_request(
 /// trial/restricted URL at a requested quality; callers should retry lower
 /// qualities before invoking an external unblock provider.
 #[must_use]
-pub fn quality_fallbacks<'a>(requested: &'a str) -> Vec<&'a str> {
+pub fn quality_fallbacks(requested: &str) -> Vec<&str> {
     let mut levels = Vec::with_capacity(4);
     for level in [requested, "lossless", "exhigh", "standard"] {
         if !levels.contains(&level) {
