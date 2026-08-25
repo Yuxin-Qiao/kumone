@@ -27,3 +27,9 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# UniFFI's release library carries generation metadata consumed by the Android
+# binding step.  Keep that metadata while still stripping the desktop/core
+# payloads that are shipped to users.
+[profile.release.package.kumone-ffi]
+strip = "none"
