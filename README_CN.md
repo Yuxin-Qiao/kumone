@@ -24,7 +24,7 @@ macOS 原生 SwiftUI 上游 · Rust 共享核心 · Windows Tauri · Android Jet
 
 ## 这个仓库是什么
 
-这个 fork 保留上游原生 macOS 应用，同时增加 Windows、Android 与 Web/PWA 下游客户端和自动化发布链。跨平台部分通过 Rust 共享网易云协议、加密、播放、队列、搜索、账号与灰色歌曲解锁逻辑，避免每个平台重复实现核心业务。
+这个 fork 保留上游原生 macOS 应用，同时增加 Windows、Android 与 Web/PWA 下游客户端，以及自动化同步、校验、构建和发布链。跨平台部分通过 Rust 共享网易云协议、加密、播放、队列、搜索、账号与灰色歌曲解锁逻辑，避免每个平台重复实现核心业务。
 
 上游：[`missuo/kumone`](https://github.com/missuo/kumone)
 
@@ -33,16 +33,18 @@ macOS 原生 SwiftUI 上游 · Rust 共享核心 · Windows Tauri · Android Jet
 | 平台 | UI / 运行时 | 当前状态 |
 | --- | --- | --- |
 | macOS 15+ | SwiftUI / AVPlayer | 保留上游原生应用 |
-| Windows x64 | Tauri 2 + Rust 共享核心 + Web UI | RC 已验证，NSIS 安装包已成功产出 |
-| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | RC 已验证，已产出签名 APK + AAB |
+| Windows x64 | Tauri 2 + Rust 共享核心 + Web UI | 自动 CI / Release；输出 NSIS 安装包 |
+| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | 自动 CI / Release；输出签名 APK + AAB |
 | Web / PWA | HTML/CSS/JavaScript + Service Worker | 已接入冒烟、PWA 与真实 API 联通测试 |
 | Linux | 共享核心 / Web/PWA 方向 CI | 实验性支持，暂不是主要打包发布目标 |
 
-### 当前下游候选版本
+### 当前下游版本
 
-`v0.2.3-rc.1` 已针对精确源码提交 `8822b36e15fd5f5846749cca32a80d5075216283` 完成验证。
+下游已对齐 **Kumone 0.2.5**，精确源码提交为 `c5f4749fc63af2d45000f7aebafccb504cea6775`。
 
-RC 验证流水线会同时构建 Windows 与 Android，检查安装包体积、Android 签名身份与 APK 内 Rust 动态库，并生成 provenance attestation。构建验证和 GitHub Release 发布被视为两个独立阶段，因此发布权限问题不会否定已经通过的平台构建。
+正式版标签采用 `downstream-v0.2.5`，候选版使用 `downstream-v0.2.5-rc.1` 这类后缀；应用自身版本号始终保持与上游一致，即 `0.2.5`。
+
+Windows 与 Android 发布流水线会自动执行共享核心 / Web / FFI 测试、构建安装包、校验包体积、验证 Android 固定签名身份与 APK 内 arm64 Rust 动态库、生成 provenance attestation，并自动发布 GitHub Release。维护者不设置人工实机测试发布门槛；实机兼容性问题通过发布后的用户反馈继续修复。
 
 ## 功能
 
@@ -54,7 +56,7 @@ RC 验证流水线会同时构建 Windows 与 Android，检查安装包体积、
 - 基于共享实现的灰色歌曲回退
 - 跨下游客户端共享 `weapi` / `eapi` 加密与请求行为
 - Web/PWA 与 Service Worker
-- 上游版本对齐校验与自动 RC 验证
+- 上游版本对齐校验、精确源码验证与自动下游发布
 
 macOS 原生版本继续保留媒体键、控制中心、桌面歌词与 Sparkle 自动更新等平台专属能力。
 
@@ -72,15 +74,18 @@ brew install owo-network/brew/kumone --cask
 
 ### Windows / Android 下游版本
 
-Windows 与 Android 包由本仓库的 GitHub Actions RC / Release 流水线生成。请使用**本仓库**的 Actions 或 Releases 获取下游产物，不要把上游 macOS Release 当成 Windows/Android 下载入口。
+请直接从**本仓库 Releases** 获取 Windows / Android 下游产物。自动发布包包含：
 
-下游应用版本保持与上游一致（当前 `0.2.3`），`rc.1` 只体现在候选版本标签 / artifact 名称中，不修改应用自身版本号。
+- `Kumone-0.2.5-windows-x64-setup.exe`
+- `Kumone-0.2.5-android.apk`
+- `Kumone-0.2.5-android.aab`
+- SHA-256 校验文件
 
-### iOS / iPadOS（侧载）
+不要把上游 macOS Release 当成 Windows / Android 下载入口。
 
-每次发版都会附带**无签名**的 `Kumone-iOS-x.y.z.ipa`（iOS 17+）。Kumone 是非官方客户端，不会上架 App Store 或 TestFlight，请用侧载工具以自己的 Apple ID 签名安装 —— [AltStore](https://altstore.io)、[SideStore](https://sidestore.io)、[Sideloadly](https://sideloadly.io) 或 Xcode 均可。
+### iOS / iPadOS
 
-更新：iOS 应用无法自我替换。设置 → 关于 → **检查更新** 会提示是否有新版本并给出下载链接，下载新 IPA 后用同一工具重新安装即可，登录状态与设置会保留。AltStore / SideStore 也可通过 source 自动追踪发布。
+上游源码树包含 iOS 相关实现与侧载支持，但当前**下游 Windows + Android 自动发布流程不会生成或上传 IPA**。因此不要假设每个下游 Release 都包含 iOS 安装包。
 
 ## 构建
 
@@ -137,7 +142,7 @@ apps/
 
 web/                    # Web/PWA UI，同时供 Windows 下游复用
 Sources/Kumone/         # 上游原生 macOS SwiftUI 应用
-.github/workflows/      # CI、RC 验证与下游发布自动化
+.github/workflows/      # CI、验证与下游发布自动化
 ```
 
 ## 发布策略
@@ -145,8 +150,10 @@ Sources/Kumone/         # 上游原生 macOS SwiftUI 应用
 - 下游应用版本必须与最新上游版本一致。
 - Windows NSIS 与 Android APK 设有 15 MiB 硬上限、10 MiB 优化目标。
 - Android 正式产物必须使用固定签名身份，并包含 arm64 Rust 动态库。
-- 下游发布前先执行 exact-source RC 验证。
+- 发布前执行精确源码自动校验，并在发布流程中再次执行自动测试与构建门禁。
 - 打包产物生成 provenance attestation。
+- 自动门禁通过后直接发布 GitHub Release，不设置维护者人工实机审批门槛。
+- `.github/release-status/` 记录 dispatcher 和最近一次 release 结果，避免状态长期停留在旧版本。
 
 ## Credits
 
