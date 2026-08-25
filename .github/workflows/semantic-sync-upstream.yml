@@ -262,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add aarch64-linux-android
-          cargo install cargo-ndk --version 4.1.2 --locked
+          cargo +stable install cargo-ndk --version 4.1.2 --locked
 
       - name: Verify shared Rust core and FFI
         run: cargo test -p kumone-core -p kumone-ffi --all-targets

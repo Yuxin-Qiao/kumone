@@ -71,7 +71,7 @@ android {
             // Kotlin source-set alias. Register generated UniFFI Kotlin bindings
             // through AndroidSourceSet.kotlin explicitly.
             kotlin.directories += "build/generated/uniffi/kotlin"
-            jniLibs.srcDir(file("build/generated/uniffi/jniLibs"))
+            jniLibs.directories += file("build/generated/uniffi/jniLibs")
         }
     }
 

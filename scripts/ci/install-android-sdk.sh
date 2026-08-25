@@ -9,7 +9,7 @@ fi
 # Android CLI uses slash-separated package paths. Feed enough affirmative
 # answers for first-time license prompts while keeping the command suitable
 # for non-interactive CI runners.
-printf 'y\n%.0s' {1..100} | android sdk install \
+printf 'y\n%.0s' {1..100} | android --no-metrics sdk install \
   platform-tools \
   platforms/android-36 \
   build-tools/36.0.0 \
