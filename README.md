@@ -24,7 +24,7 @@ Native macOS SwiftUI upstream · Rust shared core · Tauri on Windows · Jetpack
 
 ## What this repository is
 
-This fork keeps the upstream native macOS application while adding downstream platform clients and release automation. The cross-platform work intentionally shares protocol, crypto, playback, queue, search, account and unblock behavior through a Rust core instead of duplicating business logic in every UI.
+This fork keeps the upstream native macOS application while adding downstream Windows, Android and Web/PWA clients plus automated release infrastructure. Cross-platform protocol, crypto, playback, queue, search, account and unblock behavior is shared through Rust instead of being reimplemented per UI.
 
 Upstream: [`missuo/kumone`](https://github.com/missuo/kumone)
 
@@ -33,16 +33,18 @@ Upstream: [`missuo/kumone`](https://github.com/missuo/kumone)
 | Platform | UI/runtime | Status |
 | --- | --- | --- |
 | macOS 15+ | SwiftUI / AVPlayer | Upstream-native application retained |
-| Windows x64 | Tauri 2 + shared Rust core + Web UI | RC build verified; NSIS installer produced |
-| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | RC build verified; signed APK + AAB produced |
-| Web / PWA | HTML/CSS/JavaScript + service worker | Smoke, PWA and live API tests wired into CI |
-| Linux | Shared core / Web/PWA-oriented downstream CI | Experimental, not a primary packaged release target yet |
+| Windows x64 | Tauri 2 + shared Rust core + Web UI | Automated CI/release build; NSIS installer |
+| Android 8+ / API 26+ | Jetpack Compose + Media3 + UniFFI/Rust | Automated CI/release build; signed APK + AAB |
+| Web / PWA | HTML/CSS/JavaScript + service worker | Smoke, PWA and live API tests in CI |
+| Linux | Shared core / Web/PWA-oriented downstream CI | Experimental; not a primary packaged release target |
 
-### Current downstream candidate
+### Current downstream version
 
-`v0.2.3-rc.1` is verified from exact source commit `8822b36e15fd5f5846749cca32a80d5075216283`.
+Downstream is aligned to **Kumone 0.2.5** from exact source commit `c5f4749fc63af2d45000f7aebafccb504cea6775`.
 
-The RC verification pipeline successfully builds both Windows and Android artifacts, checks package size budgets, verifies the Android signing identity and embedded Rust library, and emits provenance attestations. GitHub Release publication is kept separate from build verification so a release-permission failure cannot invalidate an otherwise good platform build.
+Stable releases use tags such as `downstream-v0.2.5`; release candidates use suffixes such as `downstream-v0.2.5-rc.1`. The application version itself remains upstream-aligned (`0.2.5`).
+
+Windows and Android release automation runs shared-core/Web/FFI tests, builds packages, enforces package-size limits, verifies the pinned Android signing identity and embedded arm64 Rust library, emits provenance attestations, and publishes GitHub Release assets automatically. Maintainers do not block publication on manual real-device testing; real-device compatibility feedback is handled after publication.
 
 ## Features
 
@@ -54,7 +56,7 @@ The RC verification pipeline successfully builds both Windows and Android artifa
 - Gray-track fallback through the shared unblock implementation
 - Shared NetEase `weapi` / `eapi` crypto and request behavior across downstream clients
 - Web/PWA support with offline-capable service worker
-- Automated upstream-version gating and downstream RC verification
+- Automated upstream-version gating, exact-source verification and downstream publication
 
 The macOS app retains additional native-only integrations such as media keys, Control Center, desktop lyrics and Sparkle updates.
 
@@ -72,22 +74,18 @@ Upstream releases remain available at [`missuo/kumone`](https://github.com/missu
 
 ### Windows / Android downstream builds
 
-Windows and Android downstream packages are produced by this repository's GitHub Actions release/RC pipelines. Use this repository's **Actions** or **Releases** pages for downstream artifacts; do not use the upstream macOS release as a Windows/Android download source.
+Use this repository's **Releases** page for downstream Windows and Android packages. The automated release payload contains:
 
-RC artifacts are version-aligned with upstream (`0.2.3`); the downstream candidate marker is encoded in the release/artifact label (`rc.1`) rather than changing the application version.
+- `Kumone-0.2.5-windows-x64-setup.exe`
+- `Kumone-0.2.5-android.apk`
+- `Kumone-0.2.5-android.aab`
+- SHA-256 checksum files
 
-### iOS / iPadOS (sideload)
+Do not use the upstream macOS release as a Windows/Android download source.
 
-Every release ships an **unsigned** `Kumone-iOS-x.y.z.ipa` (iOS 17+). Kumone
-is an unofficial client and will not be on the App Store or TestFlight, so
-install it with a sideloading tool that signs the IPA with your own Apple ID —
-[AltStore](https://altstore.io), [SideStore](https://sidestore.io),
-[Sideloadly](https://sideloadly.io) or Xcode all work.
+### iOS / iPadOS
 
-Updating: iOS apps can't replace themselves. Settings → About → **Check for
-Updates** tells you when a newer release exists and links to it; download the
-new IPA and reinstall with the same tool — sign-in state and settings are kept.
-AltStore / SideStore can also track the release automatically via a source.
+The upstream source tree contains iOS support and sideloading-related code, but the **downstream Windows + Android release workflow does not currently publish an IPA**. Do not assume every downstream Release includes an iOS artifact.
 
 ## Building
 
@@ -144,7 +142,7 @@ apps/
 
 web/                    # Web/PWA UI reused by the Windows downstream
 Sources/Kumone/         # native upstream macOS SwiftUI application
-.github/workflows/      # CI, RC verification and downstream release automation
+.github/workflows/      # CI, verification and downstream release automation
 ```
 
 ## Release policy
@@ -152,8 +150,10 @@ Sources/Kumone/         # native upstream macOS SwiftUI application
 - Downstream application versions must match the latest upstream version.
 - Windows NSIS and Android APK releases have a 15 MiB hard package budget (10 MiB stretch target).
 - Android release artifacts must use the pinned signing identity and contain the arm64 Rust library.
-- Exact-source RC verification runs before downstream publication.
+- Exact-source automated verification runs before/palongside downstream publication.
 - Provenance attestations are generated for packaged release artifacts.
+- GitHub Releases are published automatically after automated gates pass; no maintainer-side real-device approval gate is required.
+- `.github/release-status/` records dispatcher and latest release outcomes for repository-visible status tracking.
 
 ## Credits
 
