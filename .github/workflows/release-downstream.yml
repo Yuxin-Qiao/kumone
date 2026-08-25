@@ -161,7 +161,7 @@ jobs:
           "Windows NSIS: **$mib MiB**" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Attest Windows provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: release-windows/*.exe
 
@@ -188,7 +188,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -290,7 +290,7 @@ jobs:
           (cd release-android && sha256sum *.apk *.aab > SHA256SUMS-android)
 
       - name: Attest Android provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             release-android/*.apk

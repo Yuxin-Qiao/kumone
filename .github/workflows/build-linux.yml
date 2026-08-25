@@ -25,11 +25,11 @@ jobs:
       run:
         working-directory: windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -46,19 +46,19 @@ jobs:
         run: ls -lh dist-installer/
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kumone-Linux-AppImage
           path: windows/dist-installer/*.AppImage
 
       - name: Upload Deb package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kumone-Linux-Deb
           path: windows/dist-installer/*.deb
 
       - name: Upload Tarball
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Kumone-Linux-Tarball
           path: windows/dist-installer/*.tar.gz
