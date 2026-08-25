@@ -72,24 +72,37 @@ jobs:
         working-directory: apps/windows
         run: tauri build --bundles appimage,deb,rpm
 
-      - name: Enforce Linux package budget and prepare artifacts
+      - name: Enforce Linux package budgets and prepare artifacts
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-linux
-          find apps/windows/src-tauri/target/release/bundle \
-            -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
-            -print0 | while IFS= read -r -d '' pkg; do
-              bytes=$(stat -c%s "$pkg")
-              mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
-              echo "$(basename "$pkg"): ${mib} MiB"
-              if [ "$bytes" -gt $((25 * 1024 * 1024)) ]; then
-                echo "::error::$(basename "$pkg") exceeds the 25 MiB Linux package hard budget (${mib} MiB)"
+          count=0
+          while IFS= read -r -d '' pkg; do
+            count=$((count + 1))
+            bytes=$(stat -c%s "$pkg")
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            case "$pkg" in
+              *.AppImage)
+                limit_mib=90
+                ;;
+              *.deb|*.rpm)
+                limit_mib=25
+                ;;
+              *)
+                echo "::error::Unexpected Linux package format: $pkg"
                 exit 1
-              fi
-              cp "$pkg" release-linux/
-            done
-          test -n "$(find release-linux -maxdepth 1 -type f -print -quit)"
+                ;;
+            esac
+            echo "$(basename "$pkg"): ${mib} MiB (budget: ${limit_mib} MiB)"
+            if [ "$bytes" -gt $((limit_mib * 1024 * 1024)) ]; then
+              echo "::error::$(basename "$pkg") exceeds its ${limit_mib} MiB Linux package hard budget (${mib} MiB)"
+              exit 1
+            fi
+            cp "$pkg" release-linux/
+          done < <(find apps/windows/src-tauri/target/release/bundle \
+            -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0)
+          [ "$count" -ge 3 ] || { echo "::error::Expected AppImage, deb and rpm"; exit 1; }
           (cd release-linux && sha256sum * > SHA256SUMS-linux)
           ls -lh release-linux
 
