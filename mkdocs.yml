@@ -1,0 +1,22 @@
+site_name: Kumone
+site_description: Cross-platform downstream architecture, automation, compatibility and release documentation
+repo_url: https://github.com/Yuxin-Qiao/kumone
+repo_name: Yuxin-Qiao/kumone
+theme:
+  name: readthedocs
+nav:
+  - Home: index.md
+  - Architecture:
+      - Downstream refactor: architecture/downstream-refactor.md
+      - Shared contracts: architecture/shared-contracts.md
+  - Automation:
+      - Upstream maintenance: automation/upstream-maintenance.md
+      - Free OSS infrastructure: automation/free-oss-infrastructure.md
+  - Compatibility: compatibility.md
+  - Release:
+      - Android signing: release/android-signing.md
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
