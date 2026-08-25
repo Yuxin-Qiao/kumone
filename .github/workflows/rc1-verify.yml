@@ -155,6 +155,86 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  android-sign:
+    name: RC1 sign Android artifact in isolated job
+    needs: [prepare, android]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      LABEL: ${{ needs.prepare.outputs.label }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      # No checkout and no repository scripts execute in this secret-bearing job.
+      - uses: actions/download-artifact@v8
+        with:
+          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android-build
+          path: unsigned-input
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android build tools only
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: false
+          packages: "build-tools;36.0.0"
+      - name: Verify pinned identity and sign RC artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is required for a signed RC"; exit 1; }
+          done
+          EXPECTED_KEYSTORE_SHA256="679cd8d890491caa93c96e8672699e6083c228e1c5087309432442375c370d9b"
+          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
+          KEY_ALIAS="${ANDROID_KEY_ALIAS:-kumone-release}"
+          KEYSTORE="$RUNNER_TEMP/kumone-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode --ignore-garbage > "$KEYSTORE"
+          [[ -s "$KEYSTORE" ]] || { echo "::error::Android keystore did not decode"; exit 1; }
+          actual_keystore_sha256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
+          [[ "$actual_keystore_sha256" == "$EXPECTED_KEYSTORE_SHA256" ]] || { echo "::error::Android keystore bytes do not match pinned identity"; exit 1; }
+          keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > "$RUNNER_TEMP/keytool.txt" 2>&1 || { echo "::error::Android keystore password or alias is invalid"; exit 1; }
+          actual_cert_sha256=$(sed -n 's/^[[:space:]]*SHA256: //p' "$RUNNER_TEMP/keytool.txt" | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          [[ "$actual_cert_sha256" == "$EXPECTED_CERT_SHA256" ]] || { echo "::error::Android certificate fingerprint does not match pinned identity"; exit 1; }
+          APK_IN=$(find unsigned-input -name '*android-unsigned.apk' -type f -print -quit)
+          AAB_IN=$(find unsigned-input -name '*android-unsigned.aab' -type f -print -quit)
+          [[ -n "$APK_IN" && -n "$AAB_IN" ]] || { echo "::error::Unsigned RC Android artifact is missing"; exit 1; }
+          mkdir -p rc-android
+          APK_OUT="rc-android/Kumone-$VERSION-$LABEL-android.apk"
+          AAB_OUT="rc-android/Kumone-$VERSION-$LABEL-android.aab"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$ANDROID_KEY_PASSWORD" --out "$APK_OUT" "$APK_IN"
+          cp "$AAB_IN" "$RUNNER_TEMP/rc-unsigned.aab"
+          zip -q -d "$RUNNER_TEMP/rc-unsigned.aab" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.DSA' >/dev/null 2>&1 || true
+          jarsigner -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+            -signedjar "$AAB_OUT" "$RUNNER_TEMP/rc-unsigned.aab" "$KEY_ALIAS" >/dev/null
+          "$APKSIGNER" verify --print-certs "$APK_OUT" >/dev/null
+          jarsigner -verify "$AAB_OUT" >/dev/null
+          unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
+          [ "$(stat -c%s "$APK_OUT")" -le $((15 * 1024 * 1024)) ] || { echo "::error::RC Android APK exceeds 15 MiB"; exit 1; }
+          (cd rc-android && sha256sum *.apk *.aab > SHA256SUMS-android)
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: |
+            rc-android/*.apk
+            rc-android/*.aab
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android
+          path: rc-android/
+          if-no-files-found: error
+          retention-days: 30
+
   linux:
     name: RC1 Linux AppImage + deb + rpm
     needs: prepare
@@ -252,20 +332,14 @@ jobs:
           retention-days: 30
 
   android:
-    name: RC1 Android signed APK + AAB
+    name: RC1 Android build APK + AAB
     needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       LABEL: ${{ needs.prepare.outputs.label }}
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -298,14 +372,24 @@ jobs:
         with:
           gradle-version: "9.5.0"
           cache-disabled: true
+      - name: Create ephemeral build-only Android signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/rc-build.jks" \
+            -storepass changeit -keypass changeit -alias build-only -keyalg RSA -keysize 2048 \
+            -validity 1 -dname "CN=Kumone RC build-only"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/rc-build.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=changeit"
+            echo "ANDROID_KEY_ALIAS=build-only"
+            echo "ANDROID_KEY_PASSWORD=changeit"
+          } >> "$GITHUB_ENV"
       - name: Setup Rust Android target
         run: |
           rustup target add aarch64-linux-android
           cargo +stable install cargo-ndk --version 4.1.2 --locked
-      - name: Verify pinned Android signing identity
-        shell: bash
-        run: bash scripts/ci/prepare-android-signing.sh
-      - name: Generate UniFFI and build signed Android release
+      - name: Generate UniFFI and build Android release artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -319,36 +403,23 @@ jobs:
             build -p kumone-ffi --release
           gradle -p apps/android :app:lintRelease :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease \
             -PkumoneVersion="$VERSION" -PkumoneVersionCode="${{ github.run_number }}"
-      - name: Verify and prepare Android RC
+      - name: Verify and prepare unsigned Android RC artifact
         shell: bash
         run: |
           set -euo pipefail
           APK=apps/android/app/build/outputs/apk/release/app-release.apk
           AAB=apps/android/app/build/outputs/bundle/release/app-release.aab
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
-          APK_CERT_SHA256=$("$APKSIGNER" verify --print-certs "$APK" | \
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | \
-            tr -d ':' | tr '[:lower:]' '[:upper:]')
-          [[ "$APK_CERT_SHA256" == "$EXPECTED_CERT_SHA256" ]]
-          jarsigner -verify "$AAB"
           [ "$(stat -c%s "$APK")" -le $((15 * 1024 * 1024)) ] || {
             echo "::error::Android APK exceeds 15 MiB"
             exit 1
           }
-          mkdir -p rc-android
-          cp "$APK" "rc-android/Kumone-$VERSION-$LABEL-android.apk"
-          cp "$AAB" "rc-android/Kumone-$VERSION-$LABEL-android.aab"
-          (cd rc-android && sha256sum *.apk *.aab > SHA256SUMS-android)
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
-        with:
-          subject-path: |
-            rc-android/*.apk
-            rc-android/*.aab
+          mkdir -p rc-android-build
+          cp "$APK" "rc-android-build/Kumone-$VERSION-$LABEL-android-unsigned.apk"
+          cp "$AAB" "rc-android-build/Kumone-$VERSION-$LABEL-android-unsigned.aab"
       - uses: actions/upload-artifact@v7
         with:
-          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android
-          path: rc-android/
+          name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android-build
+          path: rc-android-build/
           if-no-files-found: error
           retention-days: 30

@@ -1,0 +1,166 @@
+name: Upstream Maintenance Health
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-maintenance-transaction
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Check and self-heal maintenance state
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+      issues: write
+    steps:
+      - name: Inspect live state and self-heal safe failures
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          attention=0
+          reasons=()
+          main_sha=$(gh api "repos/$repo/git/ref/heads/main" --jq '.object.sha')
+          upstream_sha=$(gh api "repos/missuo/kumone/commits/main" --jq '.sha')
+          main_changelog=$(gh api "repos/$repo/contents/CHANGELOG.md?ref=main" --jq '.content' | tr -d '\n' | base64 --decode)
+          upstream_changelog=$(gh api "repos/missuo/kumone/contents/CHANGELOG.md?ref=main" --jq '.content' | tr -d '\n' | base64 --decode)
+          main_version=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' <<< "$main_changelog" | head -n 1)
+          upstream_version=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' <<< "$upstream_changelog" | head -n 1)
+          [[ -n "$main_version" && -n "$upstream_version" ]] || {
+            attention=1; reasons+=("could not resolve main/upstream versions")
+          }
+
+          prs=$(gh api --paginate "repos/$repo/pulls?state=open&base=main&per_page=100")
+          automation_prs=$(jq '[.[] | select(.head.ref | startswith("automation/upstream-"))]' <<< "$prs")
+          pr_count=$(jq 'length' <<< "$automation_prs")
+          candidate_sha=""
+          stale_pr=0
+          if [[ "$pr_count" -gt 0 ]]; then
+            candidate_sha=$(jq -r '.[0].head.sha' <<< "$automation_prs")
+            while IFS= read -r base_sha; do
+              [[ "$base_sha" == "$main_sha" ]] || stale_pr=1
+            done < <(jq -r '.[].base.sha' <<< "$automation_prs")
+            if [[ "$pr_count" -gt 1 ]]; then
+              stale_pr=1
+              reasons+=("more than one open automation upstream PR")
+            fi
+            if [[ "$stale_pr" -eq 1 ]]; then
+              attention=1
+              reasons+=("open automation candidate is not based on current main")
+            fi
+          fi
+
+          # If upstream moved beyond the current package and no current
+          # candidate exists, rebuild it. A run already in flight is left alone.
+          if [[ -n "$main_version" && -n "$upstream_version" && "$main_version" != "$upstream_version" ]]; then
+            if [[ "$(printf '%s\n%s\n' "$main_version" "$upstream_version" | sort -V | tail -n 1)" == "$upstream_version" && "$main_version" != "$upstream_version" ]]; then
+              if [[ "$pr_count" -eq 0 ]]; then
+                active_sync=$(gh run list --workflow semantic-sync-upstream.yml --repo "$repo" \
+                  --limit 10 --json status --jq '[.[] | select(.status == "in_progress" or .status == "queued")] | length')
+                if [[ "$active_sync" -gt 0 ]]; then
+                  echo "Semantic sync is already active; no duplicate dispatch."
+                else
+                  gh workflow run semantic-sync-upstream.yml --repo "$repo" --ref main
+                fi
+              fi
+            fi
+          fi
+
+          # Main CI failures are safe to rerun because they execute the trusted
+          # main ref and contain no release secrets. Persistent failures become
+          # the single deduplicated maintenance issue below.
+          for workflow in "Core CI" "Windows CI" "Android CI" "Linux Tauri CI" "CodeQL Security Scan"; do
+            run=$(gh run list --workflow "$workflow" --repo "$repo" --branch main --limit 1 \
+              --json databaseId,status,conclusion,headSha,htmlUrl,displayTitle)
+            status=$(jq -r '.[0].status // "missing"' <<< "$run")
+            conclusion=$(jq -r '.[0].conclusion // ""' <<< "$run")
+            if [[ "$status" == "completed" && "$conclusion" != "success" ]]; then
+              attention=1
+              reasons+=("$workflow latest main run concluded $conclusion")
+              run_id=$(jq -r '.[0].databaseId // empty' <<< "$run")
+              if [[ -n "$run_id" ]]; then
+                gh run rerun "$run_id" --repo "$repo" --failed >/dev/null 2>&1 || true
+              fi
+            elif [[ "$status" == "missing" ]]; then
+              attention=1
+              reasons+=("$workflow has no recorded main run")
+            fi
+          done
+
+          stable=$(gh api --paginate "repos/$repo/releases?per_page=100" --jq \
+            '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^downstream-v[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$")))] | sort_by(.published_at) | reverse | .[0] // {}')
+          stable_tag=$(jq -r '.tag_name // empty' <<< "$stable")
+          status_content=$(gh api "repos/$repo/contents/.github/release-status/release.json?ref=main" --jq '.content' 2>/dev/null | tr -d '\n' | base64 --decode || true)
+          if [[ -n "$status_content" && "$(jq -r '.conclusion // ""' <<< "$status_content")" == "failure" ]]; then
+            attention=1
+            reasons+=("latest downstream release workflow failed")
+          fi
+          status_tag=$(jq -r '.tag // empty' <<< "$status_content")
+          if [[ -n "$stable_tag" && -n "$status_tag" && "$status_tag" != "$stable_tag" ]]; then
+            attention=1
+            reasons+=("release-status tag $status_tag does not match latest stable $stable_tag")
+          fi
+
+          # The committed Web/PWA metadata must identify the latest stable
+          # downstream release, never an RC or a draft.
+          if [[ -n "$stable_tag" ]]; then
+            latest_content=$(gh api "repos/$repo/contents/web/latest.json?ref=main" --jq '.content' 2>/dev/null | tr -d '\n' | base64 --decode || true)
+            if [[ "$(jq -r '.tag // empty' <<< "$latest_content")" != "$stable_tag" ]]; then
+              attention=1
+              reasons+=("web/latest.json does not point at $stable_tag")
+              gh workflow run build-web.yml --repo "$repo" --ref main >/dev/null 2>&1 || true
+            fi
+          fi
+
+          # Three consecutive failed semantic transactions are an explicit
+          # human-intervention signal, not permission to merge around gates.
+          recent_failures=$(gh run list --workflow semantic-sync-upstream.yml --repo "$repo" --limit 3 \
+            --json conclusion --jq '[.[] | select(.conclusion == "failure")] | length')
+          if [[ "$recent_failures" -ge 3 ]]; then
+            attention=1
+            reasons+=("three recent semantic sync transactions failed")
+          fi
+
+          issue_title="[automation] upstream maintenance needs attention"
+          if [[ "$attention" -eq 1 ]]; then
+            gh label create "automation/maintenance" --repo "$repo" --color F9D0C4 \
+              --description "Automated maintenance incident" --force >/dev/null 2>&1 || true
+            printf '%s\n' "## Automated maintenance health check" "" \
+              "- Upstream version/SHA: \`$upstream_version\` / \`$upstream_sha\`" \
+              "- Main version/SHA: \`$main_version\` / \`$main_sha\`" \
+              "- Candidate SHA: \`${candidate_sha:-none}\`" \
+              "- Observed conditions: **${reasons[*]}**" \
+              "- Health run: $GITHUB_SERVER_URL/$repo/actions/runs/$GITHUB_RUN_ID" \
+              "" "Self-healing was attempted where safe. The system remains fail-closed; no user bug was closed." \
+              > "$RUNNER_TEMP/health-issue.md"
+            issue=$(gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
+              --json number --jq '.[0].number // empty')
+            if [[ -n "$issue" ]]; then
+              gh issue comment "$issue" --repo "$repo" --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
+            else
+              gh issue create --repo "$repo" --title "$issue_title" --label "automation/maintenance" \
+                --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
+            fi
+            exit 0
+          fi
+
+          # Recovery closes only the automation-owned incident title. Real
+          # user bug reports are never touched by this workflow.
+          while IFS= read -r issue; do
+            [[ -z "$issue" ]] && continue
+            gh issue comment "$issue" --repo "$repo" --body "Health check recovered the upstream maintenance state; the automation incident is resolved." >/dev/null
+            gh issue close "$issue" --repo "$repo" >/dev/null
+          done < <(gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
+            --json number --jq '.[].number')
+          echo "Maintenance health: main=$main_sha upstream=$upstream_sha stable=${stable_tag:-none}; no outstanding automation incident." >> "$GITHUB_STEP_SUMMARY"

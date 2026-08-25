@@ -7,114 +7,241 @@ on:
     branches: [main]
     paths:
       - ".github/upstream-sync-request.json"
+      - ".github/workflows/semantic-sync-upstream.yml"
+      - "scripts/ci/validate-upstream-candidate.py"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run the transaction live or only verify its state machine"
+        required: false
+        type: choice
+        options: [live, dry-run]
+        default: live
 
 permissions:
   contents: read
 
+# A maintenance transaction is deliberately serialized across all invocations.
+# A newer upstream run cancels an older one before it can publish or merge.
 concurrency:
-  group: semantic-upstream-sync
+  group: upstream-maintenance-transaction
   cancel-in-progress: true
 
 jobs:
   prepare:
-    name: Prepare ownership-aware upstream candidate
+    name: Refresh immutable upstream candidate
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: read
+      pull-requests: write
+      issues: write
     outputs:
       updated: ${{ steps.sync.outputs.updated }}
+      reused: ${{ steps.sync.outputs.reused }}
       target_branch: ${{ steps.sync.outputs.target_branch }}
       sync_branch: ${{ steps.sync.outputs.sync_branch }}
       candidate_sha: ${{ steps.sync.outputs.candidate_sha }}
+      base_sha: ${{ steps.sync.outputs.base_sha }}
       version: ${{ steps.sync.outputs.version }}
       upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
+      upstream_prerelease: ${{ steps.sync.outputs.upstream_prerelease }}
+      upstream_tag_suffix: ${{ steps.sync.outputs.upstream_tag_suffix }}
       conflict_count: ${{ steps.sync.outputs.conflict_count }}
+      ambiguous_conflicts: ${{ steps.sync.outputs.ambiguous_conflicts }}
+      protected_apple_changes: ${{ steps.sync.outputs.protected_apple_changes }}
+      superseded_count: ${{ steps.sync.outputs.superseded_count }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: main
+          persist-credentials: false
 
-      - name: Prepare semantic sync candidate
+      - name: Refresh or create candidate from current main
         id: sync
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RUN_MODE: ${{ inputs.mode || 'live' }}
         shell: bash
         run: |
           set -euo pipefail
 
           REQUEST=.github/upstream-sync-request.json
+          TARGET_BRANCH="main"
           if [[ -f "$REQUEST" ]]; then
             TARGET_BRANCH=$(jq -r '.target_branch // "main"' "$REQUEST")
-          else
-            TARGET_BRANCH="main"
           fi
           [[ "$TARGET_BRANCH" == "main" ]] || {
             echo "::error::Semantic upstream sync targets main only; got $TARGET_BRANCH"
             exit 1
           }
 
+          for key in updated reused sync_branch candidate_sha base_sha version upstream_sha \
+            upstream_prerelease upstream_tag_suffix conflict_count ambiguous_conflicts \
+            protected_apple_changes superseded_count; do
+            echo "$key=" >> "$GITHUB_OUTPUT"
+          done
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "reused=false" >> "$GITHUB_OUTPUT"
           echo "conflict_count=0" >> "$GITHUB_OUTPUT"
+          echo "ambiguous_conflicts=false" >> "$GITHUB_OUTPUT"
+          echo "protected_apple_changes=0" >> "$GITHUB_OUTPUT"
+          echo "superseded_count=0" >> "$GITHUB_OUTPUT"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$TARGET_BRANCH"
+          git fetch --no-tags origin "$TARGET_BRANCH"
           git remote add upstream https://github.com/missuo/kumone.git 2>/dev/null || \
             git remote set-url upstream https://github.com/missuo/kumone.git
           git fetch upstream main --tags --force
-          git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
 
+          BASE_SHA=$(git rev-parse "origin/$TARGET_BRANCH")
           UPSTREAM_SHA=$(git rev-parse upstream/main)
           UPSTREAM_SHORT=${UPSTREAM_SHA:0:12}
-          UPSTREAM_VERSION=$(git show upstream/main:CHANGELOG.md | \
+          BASE_SHORT=${BASE_SHA:0:12}
+          UPSTREAM_VERSION=$(git show "upstream/main:CHANGELOG.md" | \
             sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
-          [[ -n "$UPSTREAM_VERSION" ]] || {
-            echo "::error::Could not resolve upstream version from CHANGELOG.md"
-            exit 1
-          }
           [[ "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
-            echo "::error::Unexpected upstream version: $UPSTREAM_VERSION"
+            echo "::error::Could not resolve a stable semantic version from upstream CHANGELOG.md"
             exit 1
           }
+
+          UPSTREAM_PRERELEASE=false
+          UPSTREAM_TAG_SUFFIX=""
+          UPSTREAM_TAG=$(git tag --points-at "$UPSTREAM_SHA" | \
+            grep -E "^v${UPSTREAM_VERSION}(-[A-Za-z0-9._-]+)?$" | head -n 1 || true)
+          if [[ "$UPSTREAM_TAG" == *-* ]]; then
+            UPSTREAM_PRERELEASE=true
+            UPSTREAM_TAG_SUFFIX="${UPSTREAM_TAG#v${UPSTREAM_VERSION}-}"
+          fi
+          # A release API lookup covers repositories where main is not tagged.
+          RELEASE_META=$(gh api --paginate "repos/missuo/kumone/releases?per_page=100" \
+            --jq ".[] | select(.tag_name | startswith(\"v${UPSTREAM_VERSION}\")) | [.tag_name, .prerelease] | @tsv" \
+            | head -n 1 || true)
+          if [[ -n "$RELEASE_META" ]]; then
+            RELEASE_TAG=${RELEASE_META%%$'\t'*}
+            RELEASE_PRE=${RELEASE_META#*$'\t'}
+            if [[ "$RELEASE_PRE" == "true" ]]; then UPSTREAM_PRERELEASE=true; fi
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              UPSTREAM_TAG_SUFFIX="${RELEASE_TAG#v${UPSTREAM_VERSION}-}"
+            fi
+          fi
+
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
           echo "version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
           echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+          echo "upstream_prerelease=$UPSTREAM_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag_suffix=$UPSTREAM_TAG_SUFFIX" >> "$GITHUB_OUTPUT"
 
-          MERGE_BASE=$(git merge-base HEAD upstream/main)
+          SYNC_BRANCH="automation/upstream-v${UPSTREAM_VERSION}-${UPSTREAM_SHORT}-${BASE_SHORT}"
+          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Close and remove only automation-owned stale candidates. A branch
+          # is deleted only when its first-parent commits after the merge base
+          # are all authored by the Actions bot; this preserves manual work.
+          gh label create "automation/superseded" --repo "$GITHUB_REPOSITORY" \
+            --color BFDADC --description "Superseded upstream automation candidate" --force >/dev/null 2>&1 || true
+          OPEN_PRS_JSON="$RUNNER_TEMP/open-upstream-prs.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&base=$TARGET_BRANCH&per_page=100" \
+            > "$OPEN_PRS_JSON"
+          superseded=0
+          can_delete_branch() {
+            local branch="$1" base_for_check="$2" commits commit email
+            git fetch --no-tags origin "$branch" >/dev/null 2>&1 || return 1
+            git cat-file -e "origin/$branch^{commit}" 2>/dev/null || return 1
+            commits=$(git rev-list --first-parent "$base_for_check..origin/$branch" 2>/dev/null || true)
+            while IFS= read -r commit; do
+              [[ -z "$commit" ]] && continue
+              email=$(git show -s --format='%ae' "$commit")
+              [[ "$email" == "41898282+github-actions[bot]@users.noreply.github.com" ]] || return 1
+            done <<< "$commits"
+            return 0
+          }
+          while IFS= read -r pr; do
+            [[ -z "$pr" ]] && continue
+            number=$(jq -r '.number' <<< "$pr")
+            branch=$(jq -r '.head.ref' <<< "$pr")
+            draft=$(jq -r '.draft' <<< "$pr")
+            [[ "$branch" == automation/upstream-* ]] || continue
+            [[ "$branch" == "$SYNC_BRANCH" ]] && continue
+            if [[ "$draft" != "true" ]]; then
+              echo "::warning::Leaving non-draft automation PR #$number open for manual review"
+              continue
+            fi
+            gh pr comment "$number" --repo "$GITHUB_REPOSITORY" --body \
+              "Superseded automatically by a fresh candidate based on current main. This draft is closed fail-closed; no manual rebase is required." >/dev/null || true
+            gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --add-label "automation/superseded" >/dev/null 2>&1 || true
+            gh pr close "$number" --repo "$GITHUB_REPOSITORY" >/dev/null
+            superseded=$((superseded + 1))
+            merge_base=$(git merge-base "origin/$TARGET_BRANCH" "origin/$branch" 2>/dev/null || true)
+            if [[ -n "$merge_base" ]] && can_delete_branch "$branch" "$merge_base"; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" >/dev/null || true
+              echo "Deleted superseded automation branch $branch"
+            else
+              echo "::warning::Preserved $branch because bot-only ownership could not be proven"
+            fi
+          done < <(jq -c '.[] | select(.head.ref | startswith("automation/upstream-"))' "$OPEN_PRS_JSON")
+
+          # Also clean orphaned automation branches, using the same bot-only
+          # first-parent proof. Unknown authors are deliberately retained.
+          while IFS=$'\t' read -r branch branch_sha; do
+            [[ -z "$branch" || "$branch" == "automation/upstream-v${UPSTREAM_VERSION}-${UPSTREAM_SHORT}-${BASE_SHORT}" ]] && continue
+            [[ "$branch" == automation/upstream-* ]] || continue
+            merge_base=$(git merge-base "origin/$TARGET_BRANCH" "$branch_sha" 2>/dev/null || true)
+            if [[ -n "$merge_base" ]] && can_delete_branch "$branch" "$merge_base"; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" >/dev/null || true
+            fi
+          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" \
+            --jq '.[] | select(.name | startswith("automation/upstream-")) | [.name, .commit.sha] | @tsv')
+          echo "superseded_count=$superseded" >> "$GITHUB_OUTPUT"
+
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$UPSTREAM_SHA")
           if [[ "$UPSTREAM_SHA" == "$MERGE_BASE" ]]; then
             {
-              echo "### Semantic upstream sync"
-              echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
-              echo "- Result: already up to date"
+              echo "### Semantic upstream maintenance"
+              echo "- Upstream: **v$UPSTREAM_VERSION** (`$UPSTREAM_SHORT`)"
+              echo "- Current main: `$BASE_SHA`"
+              echo "- Result: already up to date; stale automation candidates were retired"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          SYNC_BRANCH="automation/upstream-v${UPSTREAM_VERSION}-${UPSTREAM_SHORT}"
-          [[ "$SYNC_BRANCH" =~ ^automation/upstream-v[0-9A-Za-z._-]+$ ]] || {
-            echo "::error::Unexpected sync branch: $SYNC_BRANCH"
-            exit 1
-          }
-          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
-
-          EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" --json url \
-            --jq '.[0].url // empty')
-          if [[ -n "$EXISTING_PR" ]]; then
-            echo "Existing upstream automation PR: $EXISTING_PR" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          # Reuse only an exact candidate that is still based on this main SHA
+          # and still points at the immutable upstream SHA. Anything else is
+          # rebuilt from scratch, which is the stale-PR self-healing path.
+          EXISTING=$(jq -c --arg branch "$SYNC_BRANCH" '.[] | select(.head.ref == $branch)' "$OPEN_PRS_JSON" | head -n 1 || true)
+          if [[ -n "$EXISTING" ]]; then
+            EXISTING_BASE=$(jq -r '.base.sha' <<< "$EXISTING")
+            EXISTING_HEAD=$(jq -r '.head.sha' <<< "$EXISTING")
+            EXISTING_BODY=$(gh pr view "$(jq -r '.number' <<< "$EXISTING")" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+            if [[ "$EXISTING_BASE" == "$BASE_SHA" && "$EXISTING_HEAD" =~ ^[0-9a-f]{40}$ && \
+              "$EXISTING_BODY" == *"Upstream commit: \`$UPSTREAM_SHA\`"* && \
+              "$EXISTING_BODY" == *"Candidate base main: \`$BASE_SHA\`"* ]]; then
+              git fetch --no-tags origin "$EXISTING_HEAD"
+              git merge-base --is-ancestor "$BASE_SHA" "$EXISTING_HEAD"
+              echo "candidate_sha=$EXISTING_HEAD" >> "$GITHUB_OUTPUT"
+              echo "updated=true" >> "$GITHUB_OUTPUT"
+              echo "reused=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "### Reused immutable candidate"
+                echo "- Branch: `$SYNC_BRANCH`"
+                echo "- Candidate SHA: `$EXISTING_HEAD`"
+                echo "- Base SHA: `$BASE_SHA`"
+                echo "- Upstream SHA: `$UPSTREAM_SHA`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
           fi
 
-          git checkout -B "$SYNC_BRANCH" "origin/$TARGET_BRANCH"
+          git checkout -B "$SYNC_BRANCH" "$BASE_SHA"
           set +e
-          git merge --no-commit --no-ff upstream/main
+          git merge --no-commit --no-ff "$UPSTREAM_SHA"
           MERGE_STATUS=$?
           set -e
-
           CONFLICT_COUNT=0
+          AMBIGUOUS_CONFLICTS=false
+          PROTECTED_APPLE_CHANGES=0
           if [[ "$MERGE_STATUS" -ne 0 ]]; then
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
             CONFLICT_COUNT=${#conflicts[@]}
@@ -123,87 +250,70 @@ jobs:
               echo "::error::Upstream merge failed without conflict paths"
               exit 1
             }
-
             for path in "${conflicts[@]}"; do
               case "$path" in
-                Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/dependabot.yml|.github/workflows/*|.github/ISSUE_TEMPLATE/*|.github/release-request.json|.github/upstream-sync-request.json|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|contracts/*|docs/architecture/*|docs/release/*|docs/compatibility.md|scripts/ci/*|web/lib/tauri-bridge.js|web/test/smoke.js|README.md|README_CN.md|MAINTAINERS.md)
+                Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/*|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|contracts/*|docs/*|scripts/*|web/*|README.md|README_CN.md|MAINTAINERS.md)
                   echo "downstream owns conflict: $path"
                   git checkout --ours -- "$path"
                   git add -- "$path"
                   ;;
-                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|Sources/Kumone/*|Sources/KumoneLauncher/*|AppIcon.icon/*|Scripts/*|ios/*|web/*)
+                CHANGELOG.md|Package.swift|Package.resolved|.gitignore|Sources/Kumone/*|Sources/KumoneLauncher/*|AppIcon.icon/*|ios/*|Scripts/*)
                   echo "upstream owns conflict: $path"
                   git checkout --theirs -- "$path"
                   git add -- "$path"
                   ;;
                 *)
                   echo "::error::Unclassified upstream conflict: $path"
+                  AMBIGUOUS_CONFLICTS=true
                   git merge --abort || true
                   exit 1
                   ;;
               esac
             done
           fi
-
           if git diff --name-only --diff-filter=U | grep -q .; then
             echo "::error::Unresolved conflicts remain"
             git diff --name-only --diff-filter=U
             exit 1
           fi
 
-          rm -rf windows
+          rm -rf -- windows
           rm -f .github/workflows/release.yml .github/workflows/build-windows.yml
-
           MERGED_VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
           [[ "$MERGED_VERSION" == "$UPSTREAM_VERSION" ]] || {
             echo "::error::Merged version $MERGED_VERSION != upstream $UPSTREAM_VERSION"
             exit 1
           }
-
           UPSTREAM_VERSION="$UPSTREAM_VERSION" python3 - <<'PY'
           import os
           import re
           from pathlib import Path
 
           version = os.environ["UPSTREAM_VERSION"]
-
-          cargo = Path("Cargo.toml")
-          cargo_text = cargo.read_text(encoding="utf-8")
-          cargo_text, n = re.subn(
-              r'(?ms)(^\[workspace\.package\]\s*.*?^version\s*=\s*")[^"]+(")',
-              rf'\g<1>{version}\g<2>',
-              cargo_text,
-              count=1,
-          )
-          if n != 1:
-              raise SystemExit("Could not update [workspace.package] version in Cargo.toml")
-          cargo.write_text(cargo_text, encoding="utf-8")
-
-          tauri = Path("apps/windows/src-tauri/tauri.conf.json")
-          tauri_text = tauri.read_text(encoding="utf-8")
-          tauri_text, n = re.subn(
-              r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)',
-              rf'\g<1>{version}\g<2>',
-              tauri_text,
-              count=1,
-              flags=re.MULTILINE,
-          )
-          if n != 1:
-              raise SystemExit("Could not update Tauri version")
-          tauri.write_text(tauri_text, encoding="utf-8")
-
-          android = Path("apps/android/app/build.gradle.kts")
-          android_text = android.read_text(encoding="utf-8")
-          android_text, n = re.subn(
-              r'(providers\.gradleProperty\("kumoneVersion"\)\.orElse\(")[^"]+("\))',
-              rf'\g<1>{version}\g<2>',
-              android_text,
-              count=1,
-          )
-          if n != 1:
-              raise SystemExit("Could not update Android default version")
-          android.write_text(android_text, encoding="utf-8")
+          replacements = {
+              Path("Cargo.toml"): (r'(?ms)(^\[workspace\.package\]\s*.*?^version\s*=\s*")[^"]+(")', rf'\g<1>{version}\g<2>'),
+              Path("apps/windows/src-tauri/tauri.conf.json"): (r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)', rf'\g<1>{version}\g<2>'),
+              Path("apps/android/app/build.gradle.kts"): (r'(providers\.gradleProperty\("kumoneVersion"\)\.orElse\(")[^"]+("\))', rf'\g<1>{version}\g<2>'),
+          }
+          for path, (pattern, replacement) in replacements.items():
+              text = path.read_text(encoding="utf-8")
+              text, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+              if count != 1:
+                  raise SystemExit(f"Could not synchronize {path}")
+              path.write_text(text, encoding="utf-8")
           PY
+          mkdir -p .github/maintenance
+          jq -n \
+            --arg upstream_version "$UPSTREAM_VERSION" \
+            --arg upstream_sha "$UPSTREAM_SHA" \
+            --arg base_sha "$BASE_SHA" \
+            --arg branch "$SYNC_BRANCH" \
+            --arg mode "$RUN_MODE" \
+            --argjson prerelease "$UPSTREAM_PRERELEASE" \
+            --arg tag_suffix "$UPSTREAM_TAG_SUFFIX" \
+            --argjson conflict_count "$CONFLICT_COUNT" \
+            '{schema:1,workflow:"Semantic Upstream Sync",status:"candidate",upstream_version:$upstream_version,upstream_sha:$upstream_sha,base_sha:$base_sha,branch:$branch,upstream_prerelease:$prerelease,upstream_tag_suffix:$tag_suffix,ownership_conflict_count:$conflict_count,ambiguous_conflicts:false,protected_apple_changes:0,mode:$mode,updated_at:(now | todateiso8601)}' \
+            > .github/maintenance/upstream.json
 
           git add -A
           git commit -m "chore(sync): prepare upstream v$UPSTREAM_VERSION compatibility candidate"
@@ -212,14 +322,22 @@ jobs:
             echo "::error::Candidate SHA is not immutable"
             exit 1
           }
+          git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
+          APPLE_DIFF=$(git diff --name-only "$CANDIDATE_SHA" "$UPSTREAM_SHA" -- \
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios Scripts)
+          [[ -z "$APPLE_DIFF" ]] || {
+            PROTECTED_APPLE_CHANGES=1
+            echo "::error::Protected Apple/iOS tree contains downstream changes: $APPLE_DIFF"
+            exit 1
+          }
 
-          if git ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null 2>&1; then
-            git fetch origin "$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH"
-            git push --force-with-lease origin HEAD:"$SYNC_BRANCH"
+          git fetch --no-tags origin "$SYNC_BRANCH" >/dev/null 2>&1 || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$SYNC_BRANCH"; then
+            git push --force-with-lease=refs/heads/$SYNC_BRANCH:"$(git rev-parse "refs/remotes/origin/$SYNC_BRANCH")" \
+              origin HEAD:"$SYNC_BRANCH"
           else
             git push origin HEAD:"$SYNC_BRANCH"
           fi
-
           REMOTE_SHA=$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
           [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
             echo "::error::Remote candidate SHA mismatch"
@@ -228,24 +346,96 @@ jobs:
 
           echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
           echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "reused=false" >> "$GITHUB_OUTPUT"
           echo "conflict_count=$CONFLICT_COUNT" >> "$GITHUB_OUTPUT"
-          CHANGED_FILES=$(git diff --name-only "origin/$TARGET_BRANCH...HEAD" | wc -l | tr -d ' ')
+          echo "ambiguous_conflicts=$AMBIGUOUS_CONFLICTS" >> "$GITHUB_OUTPUT"
+          echo "protected_apple_changes=$PROTECTED_APPLE_CHANGES" >> "$GITHUB_OUTPUT"
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA...HEAD" | wc -l | tr -d ' ')
           {
-            echo "### Semantic upstream candidate prepared"
-            echo "- Candidate: \`$SYNC_BRANCH\`"
-            echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
-            echo "- Candidate commit: \`$CANDIDATE_SHA\`"
+            echo "### Fresh semantic upstream candidate"
+            echo "- Candidate: `$SYNC_BRANCH`"
+            echo "- Candidate SHA: `$CANDIDATE_SHA`"
+            echo "- Candidate base main: `$BASE_SHA`"
+            echo "- Upstream: **v$UPSTREAM_VERSION** (`$UPSTREAM_SHORT`)"
             echo "- Changed files: **$CHANGED_FILES**"
             echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
+            echo "- Ambiguous conflicts: **none**"
+            echo "- Protected Apple/iOS downstream modifications: **none**"
             echo "- Legacy Electron desktop layout: **removed automatically**"
-            echo "- Downstream package versions: **synchronized automatically**"
             echo "- Candidate validation caches: **disabled**"
-            echo "- Apple/iOS sources: **upstream-owned and untouched downstream**"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  open_candidate:
+    name: Open or refresh Draft PR before external checks
+    needs: prepare
+    if: needs.prepare.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      pr_url: ${{ steps.pr.outputs.pr_url }}
+    steps:
+      - id: pr
+        name: Create immutable candidate Draft PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          TARGET_BRANCH: ${{ needs.prepare.outputs.target_branch }}
+          SYNC_BRANCH: ${{ needs.prepare.outputs.sync_branch }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+          CONFLICT_COUNT: ${{ needs.prepare.outputs.conflict_count }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          REMOTE_SHA=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
+          [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::Candidate branch moved before the Draft PR was opened"
+            exit 1
+          }
+          cat > "$RUNNER_TEMP/upstream-pr.md" <<EOF
+          ## Automated upstream compatibility candidate
+
+          This PR is generated and refreshed by the serialized semantic maintenance transaction.
+
+          - Upstream commit: `$UPSTREAM_SHA`
+          - Candidate SHA: `$CANDIDATE_SHA`
+          - Candidate base main: `$BASE_SHA`
+          - Ownership-resolved conflicts: **$CONFLICT_COUNT**
+          - Ambiguous conflicts: **none**
+          - Protected Apple/iOS downstream modifications: **none**
+          - Core + Web, Android, Windows and Linux gates: **running on this immutable SHA**
+          - CodeQL and Dependency Review: **required before merge**
+          - Windows Authenticode: **release-time optional; unsigned fallback is explicit**
+          - Apple/iOS implementation: **upstream-owned; no downstream iOS work**
+          - Maintenance run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          The PR stays Draft until every local and external check is green and the main SHA is revalidated immediately before squash merge.
+          EOF
+
+          EXISTING=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$TARGET_BRANCH" \
+            --head "$SYNC_BRANCH" --json number,url --jq '.[0] // empty')
+          if [[ -n "$EXISTING" ]]; then
+            PR_NUMBER=$(jq -r '.number' <<< "$EXISTING")
+            PR_URL=$(jq -r '.url' <<< "$EXISTING")
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --title "chore(sync): integrate upstream v$VERSION" \
+              --body-file "$RUNNER_TEMP/upstream-pr.md" >/dev/null
+          else
+            PR_URL=$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" \
+              --title "chore(sync): integrate upstream v$VERSION" --body-file "$RUNNER_TEMP/upstream-pr.md" --draft)
+            PR_NUMBER=$(gh pr view "$PR_URL" --repo "$GITHUB_REPOSITORY" --json number --jq .number)
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "Draft candidate PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
 
   core:
     name: Core + Web compatibility gate
-    needs: prepare
+    needs: [prepare, open_candidate]
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -255,6 +445,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          fetch-depth: 0
       - name: Checkout immutable candidate
         env:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -265,8 +456,14 @@ jobs:
           git fetch --no-tags origin "$CANDIDATE_SHA"
           git checkout --detach "$CANDIDATE_SHA"
           [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
-      - name: Version consistency
-        run: python3 scripts/ci/sync-downstream-version.py --check
+      - name: Version consistency and protected Apple boundary
+        run: |
+          python3 scripts/ci/sync-downstream-version.py --check
+          python3 scripts/ci/validate-upstream-candidate.py \
+            --base-sha "${{ needs.prepare.outputs.base_sha }}" \
+            --candidate-sha "${{ needs.prepare.outputs.candidate_sha }}" \
+            --upstream-sha "${{ needs.prepare.outputs.upstream_sha }}" \
+            --conflict-count "${{ needs.prepare.outputs.conflict_count }}"
       - name: Rust format
         run: cargo fmt --all -- --check
       - name: Rust clippy
@@ -278,7 +475,7 @@ jobs:
 
   android:
     name: Android compatibility gate
-    needs: prepare
+    needs: [prepare, open_candidate]
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -288,6 +485,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          fetch-depth: 0
       - name: Checkout immutable candidate
         env:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -310,8 +508,7 @@ jobs:
           packages: ''
       - name: Install pinned Android SDK and NDK
         run: bash scripts/ci/install-android-sdk.sh
-      - name: Setup Gradle 9.5
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
         with:
           gradle-version: "9.5.0"
           cache-disabled: true
@@ -330,14 +527,12 @@ jobs:
           mkdir -p apps/android/app/build/generated/uniffi/kotlin
           cargo run -p uniffi-bindgen -- generate --library target/release/libkumone_ffi.so \
             --language kotlin --out-dir apps/android/app/build/generated/uniffi/kotlin --no-format
-          cargo ndk -t arm64-v8a -o apps/android/app/build/generated/uniffi/jniLibs \
-            build -p kumone-ffi --release
+          cargo ndk -t arm64-v8a -o apps/android/app/build/generated/uniffi/jniLibs build -p kumone-ffi --release
           test -f apps/android/app/build/generated/uniffi/jniLibs/arm64-v8a/libkumone_ffi.so
       - name: Android lint, tests and optimized package
         run: |
           gradle -p apps/android :app:lintDebug :app:testDebugUnitTest :app:assembleRelease \
-            -PkumoneVersion="${{ needs.prepare.outputs.version }}" \
-            -PkumoneVersionCode="${{ github.run_number }}"
+            -PkumoneVersion="${{ needs.prepare.outputs.version }}" -PkumoneVersionCode="${{ github.run_number }}"
       - name: Enforce Android package budget
         shell: bash
         run: |
@@ -346,13 +541,11 @@ jobs:
           test -n "$APK"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
           BYTES=$(stat -c%s "$APK")
-          [ "$BYTES" -le $((15 * 1024 * 1024)) ] || {
-            echo "::error::Android optimized APK exceeds 15 MiB"; exit 1;
-          }
+          [ "$BYTES" -le $((15 * 1024 * 1024)) ] || { echo "::error::Android optimized APK exceeds 15 MiB"; exit 1; }
 
   windows:
     name: Windows Tauri compatibility gate
-    needs: prepare
+    needs: [prepare, open_candidate]
     if: needs.prepare.outputs.updated == 'true'
     runs-on: windows-latest
     permissions:
@@ -362,6 +555,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          fetch-depth: 0
       - name: Checkout immutable candidate
         env:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -375,7 +569,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Shared gates
+      - name: Shared Rust and Web gates
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
           npm test --prefix web
@@ -394,7 +588,7 @@ jobs:
 
   linux:
     name: Linux Tauri compatibility gate
-    needs: prepare
+    needs: [prepare, open_candidate]
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -404,6 +598,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          fetch-depth: 0
       - name: Checkout immutable candidate
         env:
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
@@ -420,9 +615,7 @@ jobs:
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential curl file libayatana-appindicator3-dev libssl-dev \
-            librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
+          sudo apt-get install -y --no-install-recommends build-essential curl file libayatana-appindicator3-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
       - name: Shared and Tauri gates
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
@@ -439,88 +632,186 @@ jobs:
           set -euo pipefail
           count=0
           while IFS= read -r -d '' pkg; do
-            count=$((count + 1))
-            bytes=$(stat -c%s "$pkg")
-            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
-            case "$pkg" in
-              *.AppImage) limit_mib=90 ;;
-              *.deb|*.rpm) limit_mib=25 ;;
-              *) echo "::error::Unexpected Linux package: $pkg"; exit 1 ;;
-            esac
-            echo "$(basename "$pkg"): ${mib} MiB (budget: ${limit_mib} MiB)"
-            [ "$bytes" -le $((limit_mib * 1024 * 1024)) ] || {
-              echo "::error::$(basename "$pkg") exceeds ${limit_mib} MiB (${mib} MiB)"; exit 1;
-            }
-          done < <(find apps/windows/src-tauri/target/release/bundle -type f \
-            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0)
+            count=$((count + 1)); bytes=$(stat -c%s "$pkg")
+            case "$pkg" in *.AppImage) limit_mib=90 ;; *.deb|*.rpm) limit_mib=25 ;; *) echo "::error::Unexpected Linux package: $pkg"; exit 1 ;; esac
+            [ "$bytes" -le $((limit_mib * 1024 * 1024)) ] || { echo "::error::$(basename "$pkg") exceeds ${limit_mib} MiB"; exit 1; }
+          done < <(find apps/windows/src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0)
           [ "$count" -ge 3 ] || { echo "::error::Expected AppImage, deb and rpm"; exit 1; }
 
-  propose:
-    name: Open validated upstream Draft PR
-    needs: [prepare, core, android, windows, linux]
+  auto_merge:
+    name: Strict policy, Ready and squash merge
+    needs: [prepare, open_candidate, core, android, windows, linux]
     if: >-
-      ${{ always() &&
-          needs.prepare.outputs.updated == 'true' &&
-          needs.core.result == 'success' &&
-          needs.android.result == 'success' &&
-          needs.windows.result == 'success' &&
+      ${{ always() && needs.prepare.outputs.updated == 'true' &&
+          needs.open_candidate.result == 'success' && needs.core.result == 'success' &&
+          needs.android.result == 'success' && needs.windows.result == 'success' &&
           needs.linux.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
+      actions: write
+    outputs:
+      merged_sha: ${{ steps.merge.outputs.merged_sha }}
+      merged: ${{ steps.merge.outputs.merged }}
     steps:
-      - name: Create compatibility-gated Draft PR
+      - id: merge
+        name: Revalidate every merge condition and dispatch release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          TARGET_BRANCH: ${{ needs.prepare.outputs.target_branch }}
-          SYNC_BRANCH: ${{ needs.prepare.outputs.sync_branch }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          PR_NUMBER: ${{ needs.open_candidate.outputs.pr_number }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
-          VERSION: ${{ needs.prepare.outputs.version }}
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
           UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_PRERELEASE: ${{ needs.prepare.outputs.upstream_prerelease }}
+          UPSTREAM_TAG_SUFFIX: ${{ needs.prepare.outputs.upstream_tag_suffix }}
           CONFLICT_COUNT: ${{ needs.prepare.outputs.conflict_count }}
+          AMBIGUOUS_CONFLICTS: ${{ needs.prepare.outputs.ambiguous_conflicts }}
+          PROTECTED_APPLE_CHANGES: ${{ needs.prepare.outputs.protected_apple_changes }}
+          RUN_MODE: ${{ inputs.mode || 'live' }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$TARGET_BRANCH" == "main" ]]
-          [[ "$SYNC_BRANCH" =~ ^automation/upstream-v[0-9A-Za-z._-]+$ ]]
+          echo "merged=false" >> "$GITHUB_OUTPUT"
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONFLICT_COUNT" =~ ^[0-9]+$ ]]
+          [[ "$AMBIGUOUS_CONFLICTS" == "false" ]]
+          [[ "$PROTECTED_APPLE_CHANGES" == "0" ]]
 
-          REMOTE_SHA=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
-          [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
-            echo "::error::Validated candidate branch moved after gates"
-            exit 1
-          }
+          MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          BRANCH_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/${{ needs.prepare.outputs.sync_branch }}" --jq '.object.sha')
+          [[ "$MAIN_SHA" == "$BASE_SHA" ]] || { echo "::error::main advanced during validation; candidate is stale"; exit 1; }
+          [[ "$BRANCH_SHA" == "$CANDIDATE_SHA" ]] || { echo "::error::candidate branch moved after gates"; exit 1; }
 
-          EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" --json url --jq '.[0].url // empty')
-          if [[ -n "$EXISTING_PR" ]]; then
-            echo "Existing upstream sync PR: $EXISTING_PR" >> "$GITHUB_STEP_SUMMARY"
+          PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,baseRefOid,headRefOid,mergeable,mergeStateStatus,body)
+          [[ "$(jq -r '.isDraft' <<< "$PR_JSON")" == "true" ]] || { echo "::error::candidate PR was unexpectedly changed before policy"; exit 1; }
+          [[ "$(jq -r '.baseRefOid' <<< "$PR_JSON")" == "$BASE_SHA" ]] || { echo "::error::candidate PR base is stale"; exit 1; }
+          [[ "$(jq -r '.headRefOid' <<< "$PR_JSON")" == "$CANDIDATE_SHA" ]] || { echo "::error::candidate PR head is not immutable"; exit 1; }
+          [[ "$(jq -r '.body' <<< "$PR_JSON")" == *"Upstream commit: \`$UPSTREAM_SHA\`"* ]] || { echo "::error::PR metadata does not match upstream SHA"; exit 1; }
+          [[ "$(jq -r '.mergeable' <<< "$PR_JSON")" == "MERGEABLE" ]] || { echo "::error::GitHub reports a non-mergeable candidate"; exit 1; }
+          [[ "$(jq -r '.mergeStateStatus' <<< "$PR_JSON")" == "CLEAN" ]] || { echo "::error::candidate merge state is not CLEAN"; exit 1; }
+
+          REQUIRED=(rust javascript-typescript actions java-kotlin)
+          deadline=$((SECONDS + 3600))
+          while :; do
+            CHECKS=$(gh api "repos/$GITHUB_REPOSITORY/commits/$CANDIDATE_SHA/check-runs?per_page=100" --jq '.check_runs')
+            all_green=true
+            for language in "${REQUIRED[@]}"; do
+              status=$(jq -r --arg re "^CodeQL \\($language\\)" '[.[] | select(.name | test($re))] | sort_by(.completed_at // "") | last // {} | [(.status // "missing"), (.conclusion // "")] | @tsv' <<< "$CHECKS")
+              read -r state conclusion <<< "$status"
+              if [[ "$state" == "completed" && "$conclusion" != "success" ]]; then
+                echo "::error::CodeQL $language concluded $conclusion"
+                exit 1
+              fi
+              [[ "$state" == "completed" && "$conclusion" == "success" ]] || all_green=false
+            done
+            dep=$(jq -r '[.[] | select(.name | test("Dependency Review"))] | sort_by(.completed_at // "") | last // {} | [(.status // "missing"), (.conclusion // "")] | @tsv' <<< "$CHECKS")
+            read -r dep_state dep_conclusion <<< "$dep"
+            if [[ "$dep_state" == "completed" && "$dep_conclusion" != "success" ]]; then
+              echo "::error::Dependency Review concluded $dep_conclusion"
+              exit 1
+            fi
+            [[ "$dep_state" == "completed" && "$dep_conclusion" == "success" ]] || all_green=false
+            [[ "$all_green" == "true" ]] && break
+            [[ "$SECONDS" -lt "$deadline" ]] || { echo "::error::CodeQL/Dependency Review did not become green within the policy window"; exit 1; }
+            sleep 30
+          done
+
+          if [[ "$RUN_MODE" == "dry-run" ]]; then
+            {
+              echo "### Dry-run auto-merge policy"
+              echo "- Current main, branch SHA, mergeability, ownership and external checks: **verified**"
+              echo "- Action: **would mark Ready and squash merge; no mutation performed**"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          cat > /tmp/upstream-pr.md <<EOF
-          ## Automated upstream compatibility report
+          gh pr ready "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+          MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          BRANCH_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/${{ needs.prepare.outputs.sync_branch }}" --jq '.object.sha')
+          [[ "$MAIN_SHA" == "$BASE_SHA" && "$BRANCH_SHA" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::main or candidate changed between Ready and merge"
+            exit 1
+          }
+          MERGE_JSON=$(gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/merge" \
+            -f sha="$CANDIDATE_SHA" -f merge_method=squash)
+          [[ "$(jq -r '.merged' <<< "$MERGE_JSON")" == "true" ]] || {
+            echo "::error::GitHub refused the expected-head squash merge"
+            jq -c . <<< "$MERGE_JSON"
+            exit 1
+          }
+          MERGED_SHA=$(jq -r '.sha' <<< "$MERGE_JSON")
+          [[ "$MERGED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::merge response did not contain an immutable SHA"; exit 1; }
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/${{ needs.prepare.outputs.sync_branch }}" >/dev/null 2>&1 || true
+          gh workflow run release-downstream.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f source_ref="$MERGED_SHA" -f version="$VERSION" \
+            -f tag_suffix="$UPSTREAM_TAG_SUFFIX" -f prerelease="$UPSTREAM_PRERELEASE"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          echo "merged_sha=$MERGED_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Auto-merged upstream candidate"
+            echo "- Squash merge SHA: `$MERGED_SHA`"
+            echo "- Upstream: `$UPSTREAM_SHA` (v$VERSION)"
+            echo "- Required local gates: **passed**"
+            echo "- CodeQL matrix + Dependency Review: **passed**"
+            echo "- Release workflow: **dispatched automatically**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          This PR integrates **missuo/kumone v$VERSION** into \`main\` without directly modifying \`main\`.
+  incident:
+    name: Open or update one maintenance incident
+    needs: [prepare, open_candidate, core, android, windows, linux, auto_merge]
+    if: >-
+      ${{ always() && (needs.prepare.result == 'failure' || needs.open_candidate.result == 'failure' ||
+          needs.core.result == 'failure' || needs.android.result == 'failure' ||
+          needs.windows.result == 'failure' || needs.linux.result == 'failure' ||
+          needs.auto_merge.result == 'failure') }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      actions: read
+      contents: read
+    steps:
+      - name: Deduplicate automation incident
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed_jobs=$(gh run view "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || echo "see workflow run")
+          reason="One or more fail-closed maintenance gates did not complete successfully. No stale candidate was merged."
+          if [[ -z "$CANDIDATE_SHA" ]]; then CANDIDATE_SHA="not-created"; fi
+          cat > "$RUNNER_TEMP/maintenance-incident.md" <<EOF
+          ## Automated upstream maintenance needs attention
 
-          - Upstream commit: \`$UPSTREAM_SHA\`
-          - Validated candidate: \`$CANDIDATE_SHA\`
-          - Ownership-resolved conflicts: **$CONFLICT_COUNT**
-          - Core + Web shared-contract gate: **passed**
-          - Android Compose + Rust gate: **passed**
-          - Windows Tauri gate: **passed**
-          - Linux Tauri AppImage/deb/rpm gate: **passed**
-          - Downstream package versions: **synchronized automatically**
-          - Legacy Electron desktop code: **removed automatically**
-          - Candidate validation caches: **disabled**
-          - Apple/iOS implementation: **upstream-owned; no downstream iOS work**
-          - Validation workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          The serialized maintenance transaction stopped fail-closed and did not merge an unverified candidate.
 
-          Ambiguous merge conflicts fail closed. This PR is intentionally a **Draft** and is never auto-merged.
+          - Upstream version: \`${UPSTREAM_VERSION:-unknown}\`
+          - Upstream SHA: \`${UPSTREAM_SHA:-unknown}\`
+          - Candidate SHA: \`$CANDIDATE_SHA\`
+          - Main/base SHA: \`${BASE_SHA:-unknown}\`
+          - Failed workflow jobs: **$failed_jobs**
+          - Reason: $reason
+          - Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          The next scheduled health check will retry or rebuild the candidate. This issue is automation-owned and does not replace or close user bug reports.
           EOF
-
-          PR_URL=$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$TARGET_BRANCH" \
-            --head "$SYNC_BRANCH" --title "chore(sync): integrate upstream v$VERSION" \
-            --body-file /tmp/upstream-pr.md --draft)
-          echo "Validated upstream PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          gh label create "automation/maintenance" --repo "$GITHUB_REPOSITORY" --color F9D0C4 \
+            --description "Automated maintenance incident" --force >/dev/null 2>&1 || true
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search '"[automation] upstream maintenance needs attention" in:title' --json number --jq '.[0].number // empty')
+          if [[ -n "$issue" ]]; then
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/maintenance-incident.md" >/dev/null
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "[automation] upstream maintenance needs attention" \
+              --label "automation/maintenance" --body-file "$RUNNER_TEMP/maintenance-incident.md" >/dev/null
+          fi
