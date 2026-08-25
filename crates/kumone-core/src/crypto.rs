@@ -98,16 +98,19 @@ mod tests {
 
     #[test]
     fn shared_crypto_contract_vectors_match() {
-        let fixture: ContractFile = serde_json::from_str(include_str!(
-            "../../../contracts/crypto-vectors.json"
-        ))
-        .expect("valid shared crypto contract fixture");
+        let fixture: ContractFile =
+            serde_json::from_str(include_str!("../../../contracts/crypto-vectors.json"))
+                .expect("valid shared crypto contract fixture");
         assert_eq!(fixture.schema_version, 1);
         assert!(!fixture.cases.is_empty());
 
         for case in fixture.cases {
             let weapi_result = weapi(&case.json);
-            assert_eq!(weapi_result.params, case.weapi_params, "{} weapi", case.name);
+            assert_eq!(
+                weapi_result.params, case.weapi_params,
+                "{} weapi",
+                case.name
+            );
             assert_eq!(
                 weapi_result.enc_sec_key, case.weapi_enc_sec_key,
                 "{} encSecKey",
