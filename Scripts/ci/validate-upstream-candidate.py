@@ -23,7 +23,6 @@ PROTECTED_APPLE_PATHS = (
     "Package.resolved",
     "AppIcon.icon/",
     "ios/",
-    "Scripts/",
 )
 
 
