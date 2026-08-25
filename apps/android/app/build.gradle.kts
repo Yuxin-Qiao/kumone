@@ -5,7 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val kumoneVersionName = providers.gradleProperty("kumoneVersion").orElse("0.2.5")
+val kumoneVersionName = providers.gradleProperty("kumoneVersion").orElse("0.3.3")
 val kumoneVersionCode = providers.gradleProperty("kumoneVersionCode").map(String::toInt).orElse(1)
 val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
 val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
