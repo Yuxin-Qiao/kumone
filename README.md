@@ -150,7 +150,7 @@ Sources/Kumone/         # native upstream macOS SwiftUI application
 - Downstream application versions must match the latest upstream version.
 - Windows NSIS and Android APK releases have a 15 MiB hard package budget (10 MiB stretch target).
 - Android release artifacts must use the pinned signing identity and contain the arm64 Rust library.
-- Exact-source automated verification runs before/palongside downstream publication.
+- Exact-source automated verification runs before and alongside downstream publication.
 - Provenance attestations are generated for packaged release artifacts.
 - GitHub Releases are published automatically after automated gates pass; no maintainer-side real-device approval gate is required.
 - `.github/release-status/` records dispatcher and latest release outcomes for repository-visible status tracking.
