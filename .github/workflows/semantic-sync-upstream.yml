@@ -27,6 +27,7 @@ jobs:
       updated: ${{ steps.sync.outputs.updated }}
       target_branch: ${{ steps.sync.outputs.target_branch }}
       sync_branch: ${{ steps.sync.outputs.sync_branch }}
+      candidate_sha: ${{ steps.sync.outputs.candidate_sha }}
       version: ${{ steps.sync.outputs.version }}
       upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
       conflict_count: ${{ steps.sync.outputs.conflict_count }}
@@ -75,6 +76,10 @@ jobs:
             echo "::error::Could not resolve upstream version from CHANGELOG.md"
             exit 1
           }
+          [[ "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
+            echo "::error::Unexpected upstream version: $UPSTREAM_VERSION"
+            exit 1
+          }
           echo "version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
           echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
 
@@ -89,7 +94,12 @@ jobs:
           fi
 
           SYNC_BRANCH="automation/upstream-v${UPSTREAM_VERSION}-${UPSTREAM_SHORT}"
+          [[ "$SYNC_BRANCH" =~ ^automation/upstream-v[0-9A-Za-z._-]+$ ]] || {
+            echo "::error::Unexpected sync branch: $SYNC_BRANCH"
+            exit 1
+          }
           echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
           EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
             --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" --json url \
             --jq '.[0].url // empty')
@@ -141,9 +151,6 @@ jobs:
             exit 1
           fi
 
-          # Legacy Electron desktop code and its old release workflows are retired
-          # downstream. Upstream may still carry them, so remove them from every
-          # candidate before validation. Apple/iOS sources are intentionally untouched.
           rm -rf windows
           rm -f .github/workflows/release.yml .github/workflows/build-windows.yml
 
@@ -153,10 +160,58 @@ jobs:
             exit 1
           }
 
-          python3 scripts/ci/sync-downstream-version.py
+          UPSTREAM_VERSION="$UPSTREAM_VERSION" python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["UPSTREAM_VERSION"]
+
+          cargo = Path("Cargo.toml")
+          cargo_text = cargo.read_text(encoding="utf-8")
+          cargo_text, n = re.subn(
+              r'(?ms)(^\[workspace\.package\]\s*.*?^version\s*=\s*")[^"]+(")',
+              rf'\g<1>{version}\g<2>',
+              cargo_text,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit("Could not update [workspace.package] version in Cargo.toml")
+          cargo.write_text(cargo_text, encoding="utf-8")
+
+          tauri = Path("apps/windows/src-tauri/tauri.conf.json")
+          tauri_text = tauri.read_text(encoding="utf-8")
+          tauri_text, n = re.subn(
+              r'(^\s*"version"\s*:\s*")[^"]+("\s*,?\s*$)',
+              rf'\g<1>{version}\g<2>',
+              tauri_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if n != 1:
+              raise SystemExit("Could not update Tauri version")
+          tauri.write_text(tauri_text, encoding="utf-8")
+
+          android = Path("apps/android/app/build.gradle.kts")
+          android_text = android.read_text(encoding="utf-8")
+          android_text, n = re.subn(
+              r'(providers\.gradleProperty\("kumoneVersion"\)\.orElse\(")[^"]+("\))',
+              rf'\g<1>{version}\g<2>',
+              android_text,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit("Could not update Android default version")
+          android.write_text(android_text, encoding="utf-8")
+          PY
+
           git add -A
           git commit -m "chore(sync): prepare upstream v$UPSTREAM_VERSION compatibility candidate"
           CANDIDATE_SHA=$(git rev-parse HEAD)
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Candidate SHA is not immutable"
+            exit 1
+          }
 
           if git ls-remote --exit-code --heads origin "$SYNC_BRANCH" >/dev/null 2>&1; then
             git fetch origin "$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH"
@@ -165,6 +220,13 @@ jobs:
             git push origin HEAD:"$SYNC_BRANCH"
           fi
 
+          REMOTE_SHA=$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
+          [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::Remote candidate SHA mismatch"
+            exit 1
+          }
+
+          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
           echo "updated=true" >> "$GITHUB_OUTPUT"
           echo "conflict_count=$CONFLICT_COUNT" >> "$GITHUB_OUTPUT"
           CHANGED_FILES=$(git diff --name-only "origin/$TARGET_BRANCH...HEAD" | wc -l | tr -d ' ')
@@ -177,6 +239,7 @@ jobs:
             echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
             echo "- Legacy Electron desktop layout: **removed automatically**"
             echo "- Downstream package versions: **synchronized automatically**"
+            echo "- Candidate validation caches: **disabled**"
             echo "- Apple/iOS sources: **upstream-owned and untouched downstream**"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -185,11 +248,23 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sync_branch }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+          ref: main
+          persist-credentials: false
+      - name: Checkout immutable candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
       - name: Version consistency
         run: python3 scripts/ci/sync-downstream-version.py --check
       - name: Rust format
@@ -206,10 +281,23 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sync_branch }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout immutable candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -226,7 +314,7 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
         with:
           gradle-version: "9.5.0"
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+          cache-disabled: true
       - name: Setup Android Rust target
         run: |
           rustup target add aarch64-linux-android
@@ -267,18 +355,26 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.updated == 'true'
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sync_branch }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout immutable candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          workspaces: |
-            .
-            apps/windows/src-tauri
       - name: Shared gates
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
@@ -301,10 +397,23 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sync_branch }}
+          ref: main
+          persist-credentials: false
+      - name: Checkout immutable candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -314,11 +423,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential curl file libayatana-appindicator3-dev libssl-dev \
             librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf rpm wget
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          workspaces: |
-            .
-            apps/windows/src-tauri
       - name: Shared and Tauri gates
         run: |
           cargo test --manifest-path crates/kumone-core/Cargo.toml --all-targets
@@ -364,12 +468,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET_BRANCH: ${{ needs.prepare.outputs.target_branch }}
           SYNC_BRANCH: ${{ needs.prepare.outputs.sync_branch }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
           VERSION: ${{ needs.prepare.outputs.version }}
           UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
           CONFLICT_COUNT: ${{ needs.prepare.outputs.conflict_count }}
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$TARGET_BRANCH" == "main" ]]
+          [[ "$SYNC_BRANCH" =~ ^automation/upstream-v[0-9A-Za-z._-]+$ ]]
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          REMOTE_SHA=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
+          [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
+            echo "::error::Validated candidate branch moved after gates"
+            exit 1
+          }
+
           EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
             --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" --json url --jq '.[0].url // empty')
           if [[ -n "$EXISTING_PR" ]]; then
@@ -383,6 +498,7 @@ jobs:
           This PR integrates **missuo/kumone v$VERSION** into `main` without directly modifying `main`.
 
           - Upstream commit: \`$UPSTREAM_SHA\`
+          - Validated candidate: \`$CANDIDATE_SHA\`
           - Ownership-resolved conflicts: **$CONFLICT_COUNT**
           - Core + Web shared-contract gate: **passed**
           - Android Compose + Rust gate: **passed**
@@ -390,6 +506,7 @@ jobs:
           - Linux Tauri AppImage/deb/rpm gate: **passed**
           - Downstream package versions: **synchronized automatically**
           - Legacy Electron desktop code: **removed automatically**
+          - Candidate validation caches: **disabled**
           - Apple/iOS implementation: **upstream-owned; no downstream iOS work**
           - Validation workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
 
