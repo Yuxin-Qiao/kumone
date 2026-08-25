@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!Sources/Kumone/**"
+    - "!Sources/KumoneLauncher/**"
+    - "!ios/**"
+    - "!AppIcon.icon/**"
+    - "!Package.swift"
+    - "!Package.resolved"
+    - "!**/target/**"
+    - "!**/build/**"
+    - "!**/dist/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.webp"
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: |
+        Treat CI/CD as security-sensitive production code.
+        Flag unpinned third-party actions, excessive token permissions, secret-bearing jobs that execute candidate/untrusted source code, dynamic privileged checkouts, unsafe pull_request_target usage, cache poisoning risks, and merge/release paths that do not bind decisions to immutable SHAs.
+        Preserve the fail-closed maintenance model and do not recommend giving an external bot independent merge authority.
+    - path: "crates/**"
+      instructions: |
+        Focus on protocol compatibility, parsing robustness, cookie/session semantics, error classification, playback fallback correctness, retry behavior and deterministic tests.
+        Flag panics or unchecked assumptions on network-controlled input.
+    - path: "apps/android/**"
+      instructions: |
+        Check lifecycle/background playback, Media3/session behavior, Compose state handling, Android signing/update safety, generated UniFFI boundary handling, and user-data privacy.
+    - path: "apps/windows/**"
+      instructions: |
+        Check Tauri command boundaries, WebView bridge validation, updater/signature fail-safe behavior, session persistence, playback state and Windows packaging implications.
+    - path: "web/**"
+      instructions: |
+        Check PWA/browser fallback compatibility, safe DOM/API handling, deterministic tests, external-service anti-bot/error classification and parity with shared contracts.
+    - path: "docs/**"
+      instructions: |
+        Check that documentation matches the actual automated trust model and does not claim signing, device testing or third-party service activation unless it is really configured.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "MAINTAINERS.md"
+      - "docs/architecture/*.md"
+      - "docs/automation/*.md"
+
+chat:
+  auto_reply: true
