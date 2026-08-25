@@ -1,76 +1,102 @@
-name: Build Linux (AppImage & Deb)
+name: Linux Tauri CI
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    branches: [main, master]
+    branches: [main]
+    paths:
+      - "apps/windows/**"
+      - "crates/**"
+      - "web/**"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/build-linux.yml"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: '发布到的 GitHub Release Tag (例如 v0.1.9.1 或 v0.2.0，为空则仅打包不发布)'
-        required: false
-        type: string
-        default: ''
-
-concurrency:
-  group: build-linux-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: linux-tauri-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  linux-tauri:
+    name: Linux Tauri desktop packages
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: windows
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
           node-version: 22
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Smoke test (crypto parity & logic)
-        run: npm test
-
-      - name: Build Linux packages (AppImage, Deb, tar.gz)
-        run: npm run package:linux
-
-      - name: List built packages
-        run: ls -lh dist-installer/
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v7
-        with:
-          name: Kumone-Linux-AppImage
-          path: windows/dist-installer/*.AppImage
-
-      - name: Upload Deb package
-        uses: actions/upload-artifact@v7
-        with:
-          name: Kumone-Linux-Deb
-          path: windows/dist-installer/*.deb
-
-      - name: Upload Tarball
-        uses: actions/upload-artifact@v7
-        with:
-          name: Kumone-Linux-Tarball
-          path: windows/dist-installer/*.tar.gz
-
-      - name: Publish to GitHub Releases
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Install Tauri Linux system dependencies
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "Publishing Linux deliverables to release: $TAG"
-          find dist-installer/ -maxdepth 1 \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" \) -type f | while read -r pkg; do
-            echo "Uploading $pkg to release $TAG..."
-            gh release upload "$TAG" "$pkg" --clobber || true
-          done
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            rpm \
+            wget
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+
+      - name: Test shared Rust core and Web/PWA
+        run: |
+          cargo test --workspace --all-targets
+          npm test --prefix web
+
+      - name: Check shared Tauri desktop shell
+        run: |
+          cargo check --manifest-path apps/windows/src-tauri/Cargo.toml
+          cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Install Tauri CLI
+        run: npm install --global @tauri-apps/cli@v2
+
+      - name: Build AppImage, deb and rpm
+        working-directory: apps/windows
+        run: tauri build --bundles appimage,deb,rpm
+
+      - name: Enforce Linux package budget and prepare artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-linux
+          find apps/windows/src-tauri/target/release/bundle \
+            -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
+            -print0 | while IFS= read -r -d '' pkg; do
+              bytes=$(stat -c%s "$pkg")
+              mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+              echo "$(basename "$pkg"): ${mib} MiB"
+              if [ "$bytes" -gt $((25 * 1024 * 1024)) ]; then
+                echo "::error::$(basename "$pkg") exceeds the 25 MiB Linux package hard budget (${mib} MiB)"
+                exit 1
+              fi
+              cp "$pkg" release-linux/
+            done
+          test -n "$(find release-linux -maxdepth 1 -type f -print -quit)"
+          (cd release-linux && sha256sum * > SHA256SUMS-linux)
+          ls -lh release-linux
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: kumone-desktop-linux
+          path: release-linux/
+          if-no-files-found: error
+          retention-days: 7
