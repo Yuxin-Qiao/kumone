@@ -1,0 +1,54 @@
+name: Community Compatibility Report
+
+on:
+  issues:
+    types: [opened, edited, reopened, closed, labeled, unlabeled]
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: compatibility-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Export repository issue data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state all \
+            --limit 1000 \
+            --json number,title,state,labels,createdAt,closedAt,url \
+            > "$RUNNER_TEMP/issues.json"
+
+      - name: Generate compatibility report
+        run: python3 scripts/ci/generate-compatibility-report.py "$RUNNER_TEMP/issues.json" docs/compatibility.md
+
+      - name: Commit report when feedback changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/compatibility.md; then
+            echo "Compatibility report unchanged." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/compatibility.md
+          git commit -m "docs(compat): refresh community compatibility report"
+          git push origin HEAD:main
+          echo "Updated **docs/compatibility.md** from structured GitHub Issues." >> "$GITHUB_STEP_SUMMARY"
