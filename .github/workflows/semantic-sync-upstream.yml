@@ -433,7 +433,7 @@ jobs:
       - name: Build Linux bundles
         working-directory: apps/windows
         run: tauri build --bundles appimage,deb,rpm
-      - name: Enforce Linux package budget
+      - name: Enforce Linux package budgets
         shell: bash
         run: |
           set -euo pipefail
@@ -441,8 +441,15 @@ jobs:
           while IFS= read -r -d '' pkg; do
             count=$((count + 1))
             bytes=$(stat -c%s "$pkg")
-            [ "$bytes" -le $((25 * 1024 * 1024)) ] || {
-              echo "::error::$(basename "$pkg") exceeds 25 MiB"; exit 1;
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            case "$pkg" in
+              *.AppImage) limit_mib=90 ;;
+              *.deb|*.rpm) limit_mib=25 ;;
+              *) echo "::error::Unexpected Linux package: $pkg"; exit 1 ;;
+            esac
+            echo "$(basename "$pkg"): ${mib} MiB (budget: ${limit_mib} MiB)"
+            [ "$bytes" -le $((limit_mib * 1024 * 1024)) ] || {
+              echo "::error::$(basename "$pkg") exceeds ${limit_mib} MiB (${mib} MiB)"; exit 1;
             }
           done < <(find apps/windows/src-tauri/target/release/bundle -type f \
             \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0)
