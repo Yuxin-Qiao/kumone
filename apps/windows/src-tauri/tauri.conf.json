@@ -26,8 +26,8 @@
     "active": true,
     "targets": ["nsis"],
     "icon": [
-      "../../../windows/build/icon.ico",
-      "../../../windows/build/icon.png"
+      "icons/icon.ico",
+      "icons/icon.png"
     ]
   }
 }
