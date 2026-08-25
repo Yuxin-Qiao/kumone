@@ -25,6 +25,7 @@ jobs:
       - name: Inspect live state and self-heal safe failures
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          ISSUE_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -134,7 +135,7 @@ jobs:
 
           issue_title="[automation] upstream maintenance needs attention"
           if [[ "$attention" -eq 1 ]]; then
-            gh label create "automation/maintenance" --repo "$repo" --color F9D0C4 \
+            GH_TOKEN="$ISSUE_TOKEN" gh label create "automation/maintenance" --repo "$repo" --color F9D0C4 \
               --description "Automated maintenance incident" --force >/dev/null 2>&1 || true
             printf '%s\n' "## Automated maintenance health check" "" \
               "- Upstream version/SHA: \`$upstream_version\` / \`$upstream_sha\`" \
@@ -144,12 +145,14 @@ jobs:
               "- Health run: $GITHUB_SERVER_URL/$repo/actions/runs/$GITHUB_RUN_ID" \
               "" "Self-healing was attempted where safe. The system remains fail-closed; no user bug was closed." \
               > "$RUNNER_TEMP/health-issue.md"
-            issue=$(gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
+            issue=$(GH_TOKEN="$ISSUE_TOKEN" gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
               --json number --jq '.[0].number // empty')
             if [[ -n "$issue" ]]; then
-              gh issue comment "$issue" --repo "$repo" --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
+              GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$issue" --repo "$repo" \
+                --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
             else
-              gh issue create --repo "$repo" --title "$issue_title" --label "automation/maintenance" \
+              GH_TOKEN="$ISSUE_TOKEN" gh issue create --repo "$repo" --title "$issue_title" \
+                --label "automation/maintenance" \
                 --body-file "$RUNNER_TEMP/health-issue.md" >/dev/null
             fi
             exit 0
@@ -159,8 +162,10 @@ jobs:
           # user bug reports are never touched by this workflow.
           while IFS= read -r issue; do
             [[ -z "$issue" ]] && continue
-            gh issue comment "$issue" --repo "$repo" --body "Health check recovered the upstream maintenance state; the automation incident is resolved." >/dev/null
-            gh issue close "$issue" --repo "$repo" >/dev/null
-          done < <(gh issue list --repo "$repo" --state open --search '"[automation] upstream maintenance needs attention" in:title' \
+            GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$issue" --repo "$repo" \
+              --body "Health check recovered the upstream maintenance state; the automation incident is resolved." >/dev/null
+            GH_TOKEN="$ISSUE_TOKEN" gh issue close "$issue" --repo "$repo" >/dev/null
+          done < <(GH_TOKEN="$ISSUE_TOKEN" gh issue list --repo "$repo" --state open \
+            --search '"[automation] upstream maintenance needs attention" in:title' \
             --json number --jq '.[].number')
           echo "Maintenance health: main=$main_sha upstream=$upstream_sha stable=${stable_tag:-none}; no outstanding automation incident." >> "$GITHUB_STEP_SUMMARY"
