@@ -6,6 +6,61 @@
 section the English bullets come first, followed by their Simplified Chinese
 counterparts. 段落格式：`## <版本号> - <日期>`，条目必须写成单行。
 
+## 0.3.1 - 2026-08-25
+
+### Fixed / 修复
+
+- iOS 16–25: removed the duplicate system tab bar that was showing behind the glass tab bar. The pre-26 layout no longer hosts a `TabView` (each tab is a persistent `NavigationStack` shown/hidden in place), so there is now exactly one tab bar.
+- iOS 16–25：修复玻璃 Tab Bar 背后还叠着一个系统原生 Tab Bar 的问题。26 以下的布局不再使用 `TabView`（每个标签为常驻的 `NavigationStack`，就地显隐），现在只有一个 Tab Bar。
+
+### Improved / 改进
+
+- iOS 16–25 glass tab bar: the selected tab now sits on a brighter, dimensional glass chip — a Telegram-style continuous-rounded squircle with a specular highlight, hairline rim, and soft shadow — that clearly lifts off the bar, instead of the previous flat wash.
+- iOS 16–25 玻璃 Tab Bar：选中项改为更明亮、有立体感的玻璃方块——Telegram 风格的连续圆角方块，带高光、细描边与柔和投影——明显浮于栏面，不再是之前扁平的一层。
+
+## 0.2.8 - 2026-08-25
+
+### Added / 新增
+
+- AirPlay: the now-playing page (and the macOS player bar) gain a system route picker for sending audio to AirPlay / Bluetooth devices; playback is audio-only, so it routes sound instead of mirroring the screen (#20)
+- AirPlay：播放页（及 macOS 播放条）新增系统输出设备选择器，可将音频投送到 AirPlay / 蓝牙设备；由于是纯音频播放，只路由声音而非镜像屏幕（#20）
+
+## 0.3.0 - 2026-08-25
+
+### Added / 新增
+
+- iOS 16 support: the minimum iOS version is lowered from 17 to 16 (iPhone 8 / X and later). The Observation-based state layer was rewritten to classic `ObservableObject`, with the high-frequency playback position split into its own `PlaybackClock` so only the scrubbers and lyrics re-render per tick — everything else is unaffected. macOS behavior is unchanged.
+- Liquid Glass tab bar on iOS: iOS 26+ uses the native glass tab bar; iOS 16–25 gets a Telegram-style simulated glass bar (blurred material capsule with an edge highlight, hairline rim, and soft shadow).
+- iOS 16 支持：最低 iOS 版本从 17 降到 16（iPhone 8 / X 及之后机型）。基于 Observation 的状态层重写为经典 `ObservableObject`，并把高频播放进度拆到独立的 `PlaybackClock`，每秒跳动只重绘进度条与歌词，其余视图不受影响；macOS 行为不变。
+- iOS 玻璃 Tab Bar：iOS 26+ 使用系统原生玻璃 Tab Bar；iOS 16–25 使用 Telegram 风格的仿制玻璃（材质模糊胶囊 + 边缘高光 + 细描边 + 柔和投影）。
+
+### Improved / 改进
+
+- Redesigned the phone-code login form (rounded card-style input rows) and added a notice that SMS login may be blocked by NetEase's risk control — QR sign-in is recommended.
+- 重新设计手机验证码登录表单（圆角卡片式输入行），并提示短信登录可能被网易云风控拦截、推荐使用扫码登录。
+
+## 0.2.7 - 2026-08-25
+
+### Added / 新增
+
+- iOS in-app auto-update for TrollStore devices (Dopamine-style): checks GitHub on launch and from Settings → About → Check for Updates, shows a circular download-progress ring, and hands the IPA to TrollStore via `apple-magnifier://install?url=` for one-tap install; plain sideloads fall back to opening the release page (README documents the TrollStore requirement)
+- iOS 应用内自动更新（针对 TrollStore / 巨魔设备，参考 Dopamine）：启动时与「设置 → 关于 → 检查更新」查询 GitHub，带圆环下载进度，并通过 `apple-magnifier://install?url=` 移交 TrollStore 一键安装；普通侧载则降级为打开发布页（README 已注明仅限 TrollStore）
+
+## 0.2.6 - 2026-08-25
+
+### Fixed / 修复
+
+- SMS login called endpoints that do not exist (`/sms/sendcode`, `/login/cellphone`); now uses the real ones from upstream — `/api/sms/captcha/sent` and `/api/w/login/cellphone` — with the required fields
+- iOS: opening an album/artist from Collections misrouted (went back to Collections, showed the target only after going back) — library navigation is now fully value-based (#13)
+- Gray-track unblocking was fully broken on iOS: the App Transport Security cleartext exception was set via a nonexistent build setting and never shipped, so the HTTP third-party sources were blocked; ATS now ships correctly and Kuwo/Kugou use HTTPS where possible (#15)
+- The now-playing page merged shuffle and repeat into one button, making it impossible to turn shuffle on; they are now separate controls (#18)
+- macOS: Home/Explore content no longer widens after closing the now-playing page (#19, contributed by @baisensenseng)
+- 短信登录调用了不存在的接口（`/sms/sendcode`、`/login/cellphone`）；现改为上游实际使用的 `/api/sms/captcha/sent` 与 `/api/w/login/cellphone`，并带上必需字段
+- iOS：从「我的收藏」点开专辑/歌手会路由错乱（先回到收藏页、返回后才显示目标）—— 音乐库导航现已全部改为值式路由（#13）
+- iOS 灰色歌曲解锁完全失效：App Transport Security 明文例外被写成了不存在的构建设置、从未生效，导致 HTTP 第三方音源被拦；现 ATS 正确打包，酷我 / 酷狗尽量走 HTTPS（#15）
+- 播放页把随机和循环合并成了一个按钮，导致无法开启随机播放；现拆为两个独立控制（#18）
+- macOS：关闭播放页后首页/精选内容不再变宽（#19，由 @baisensenseng 贡献）
+
 ## 0.2.5 - 2026-08-23
 
 ### Added / 新增

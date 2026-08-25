@@ -19,7 +19,7 @@ CODE_SIGN_STYLE = Automatic
 // ==========================================
 // Platform Configuration
 // ==========================================
-IPHONEOS_DEPLOYMENT_TARGET = 17.0
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
 
 // (1 == iPhone, 2 == iPad)
 TARGETED_DEVICE_FAMILY = 1,2 
@@ -36,7 +36,6 @@ INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_FILE = Config/Info.plist
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
-INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES
 
 // ==========================================
 // Entitlements
