@@ -212,18 +212,22 @@ jobs:
           set -euo pipefail
           mkdir -p rc-linux
           copy_one() {
-            source=$(find apps/windows/src-tauri/target/release/bundle -type f -name "$1" -print -quit)
-            test -n "$source" || { echo "::error::Missing $1"; exit 1; }
+            local pattern="$1" output="$2" limit_mib="$3"
+            local source bytes mib
+            source=$(find apps/windows/src-tauri/target/release/bundle -type f -name "$pattern" -print -quit)
+            test -n "$source" || { echo "::error::Missing $pattern"; exit 1; }
             bytes=$(stat -c%s "$source")
-            [ "$bytes" -le $((25 * 1024 * 1024)) ] || {
-              echo "::error::$1 exceeds 25 MiB"
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            echo "$(basename "$source"): ${mib} MiB (budget: ${limit_mib} MiB)"
+            [ "$bytes" -le $((limit_mib * 1024 * 1024)) ] || {
+              echo "::error::$pattern exceeds ${limit_mib} MiB (${mib} MiB)"
               exit 1
             }
-            cp "$source" "rc-linux/$2"
+            cp "$source" "rc-linux/$output"
           }
-          copy_one '*.AppImage' "Kumone-$VERSION-$LABEL-linux-x86_64.AppImage"
-          copy_one '*.deb' "Kumone-$VERSION-$LABEL-linux-x86_64.deb"
-          copy_one '*.rpm' "Kumone-$VERSION-$LABEL-linux-x86_64.rpm"
+          copy_one '*.AppImage' "Kumone-$VERSION-$LABEL-linux-x86_64.AppImage" 90
+          copy_one '*.deb' "Kumone-$VERSION-$LABEL-linux-x86_64.deb" 25
+          copy_one '*.rpm' "Kumone-$VERSION-$LABEL-linux-x86_64.rpm" 25
           (cd rc-linux && sha256sum Kumone-* > SHA256SUMS-linux)
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
