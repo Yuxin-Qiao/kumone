@@ -1,0 +1,124 @@
+name: Dependency bot safe automerge
+
+on:
+  workflow_run:
+    workflows:
+      - Core CI
+      - Windows CI
+      - Android CI
+      - Linux Tauri CI
+      - Dependency Review
+      - CodeQL Security Scan
+    types:
+      - completed
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-bot-automerge
+  cancel-in-progress: false
+
+jobs:
+  merge-one-safe-update:
+    name: Merge one fully validated Renovate update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate and merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t PRS < <(
+            gh pr list --repo "$REPO" --state open \
+              --json number,headRefName,baseRefName,isDraft,labels \
+              --jq '.[]
+                | select(.baseRefName == "main")
+                | select(.isDraft == false)
+                | select(.headRefName | startswith("renovate/"))
+                | select(any(.labels[]?; .name == "automerge-safe"))
+                | .number'
+          )
+
+          if [[ ${#PRS[@]} -eq 0 ]]; then
+            echo "No safe Renovate PR is ready for evaluation."
+            exit 0
+          fi
+
+          REQUIRED_WORKFLOWS=(
+            "Core CI"
+            "Windows CI"
+            "Android CI"
+            "Linux Tauri CI"
+            "Dependency Review"
+            "CodeQL Security Scan"
+          )
+
+          for PR in "${PRS[@]}"; do
+            META=$(gh pr view "$PR" --repo "$REPO" \
+              --json headRefName,headRefOid,mergeable,mergeStateStatus,isDraft,reviewDecision)
+            HEAD_REF=$(jq -r '.headRefName' <<<"$META")
+            HEAD_SHA=$(jq -r '.headRefOid' <<<"$META")
+            MERGEABLE=$(jq -r '.mergeable' <<<"$META")
+            MERGE_STATE=$(jq -r '.mergeStateStatus' <<<"$META")
+            IS_DRAFT=$(jq -r '.isDraft' <<<"$META")
+            REVIEW_DECISION=$(jq -r '.reviewDecision // ""' <<<"$META")
+
+            [[ "$HEAD_REF" == renovate/* ]] || continue
+            [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || continue
+            [[ "$IS_DRAFT" == "false" ]] || continue
+            [[ "$MERGEABLE" == "MERGEABLE" ]] || continue
+            [[ "$MERGE_STATE" == "CLEAN" ]] || continue
+            [[ "$REVIEW_DECISION" != "CHANGES_REQUESTED" ]] || continue
+
+            SAFE_FILES=1
+            while IFS= read -r path; do
+              case "$path" in
+                Sources/Kumone/*|Sources/KumoneLauncher/*|Package.swift|Package.resolved|AppIcon.icon/*|ios/*)
+                  SAFE_FILES=0
+                  echo "PR #$PR rejected: protected Apple/iOS path changed: $path"
+                  ;;
+                Cargo.toml|Cargo.lock|*/Cargo.toml|*/Cargo.lock|*/package.json|*/package-lock.json|*/pnpm-lock.yaml|*/yarn.lock|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock|Dockerfile|*/Dockerfile|docker-compose.yml|docker-compose.yaml|*.gradle|*.gradle.kts|*/gradle.properties|*/gradle/libs.versions.toml|.github/workflows/*.yml|.github/workflows/*.yaml)
+                  ;;
+                *)
+                  SAFE_FILES=0
+                  echo "PR #$PR rejected: non-dependency file changed: $path"
+                  ;;
+              esac
+            done < <(gh pr diff "$PR" --repo "$REPO" --name-only)
+            [[ "$SAFE_FILES" == "1" ]] || continue
+
+            RUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100")
+            ALL_GREEN=1
+            for WF in "${REQUIRED_WORKFLOWS[@]}"; do
+              CONCLUSION=$(jq -r --arg wf "$WF" \
+                '[.workflow_runs[] | select(.name == $wf)] | sort_by(.created_at) | last | .conclusion // ""' \
+                <<<"$RUNS")
+              if [[ "$CONCLUSION" != "success" ]]; then
+                echo "PR #$PR waiting: $WF => ${CONCLUSION:-missing}"
+                ALL_GREEN=0
+              fi
+            done
+            [[ "$ALL_GREEN" == "1" ]] || continue
+
+            echo "All deterministic gates passed for Renovate PR #$PR at $HEAD_SHA."
+            RESULT=$(gh api --method PUT "repos/$REPO/pulls/$PR/merge" \
+              -f merge_method=squash \
+              -f sha="$HEAD_SHA")
+            [[ "$(jq -r '.merged' <<<"$RESULT")" == "true" ]] || {
+              echo "::error::GitHub refused the validated merge for PR #$PR"
+              jq . <<<"$RESULT"
+              exit 1
+            }
+
+            echo "Merged Renovate PR #$PR. Remaining dependency PRs will be re-evaluated against the new main."
+            exit 0
+          done
+
+          echo "No open Renovate PR currently satisfies every fail-closed condition."
