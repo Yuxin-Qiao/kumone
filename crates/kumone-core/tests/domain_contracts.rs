@@ -41,7 +41,10 @@ fn session_and_weapi_request_contracts_match() {
         .expect("cookie header expectations")
     {
         let required = required.as_str().expect("cookie substring");
-        assert!(cookie_header.contains(required), "missing cookie contract: {required}");
+        assert!(
+            cookie_header.contains(required),
+            "missing cookie contract: {required}"
+        );
     }
 
     let request_fixture = &fixture["weapi_request"];
@@ -69,7 +72,10 @@ fn session_and_weapi_request_contracts_match() {
         .expect("required headers")
     {
         let header = header.as_str().expect("header name");
-        assert!(request.headers.contains_key(header), "missing header: {header}");
+        assert!(
+            request.headers.contains_key(header),
+            "missing header: {header}"
+        );
     }
     assert!(
         request.body.starts_with(
