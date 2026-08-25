@@ -100,6 +100,10 @@ Phase 2 合并后，后续上游对齐 Release 还会自动生成：
 - `Kumone-<version>-linux-x86_64.rpm`
 - `SHA256SUMS-linux`
 
+#### 应用内自动更新（仅限 TrollStore / 巨魔）
+
+在装有 **[TrollStore](https://github.com/opa334/TrollStore)（巨魔）** 的设备上，Kumone 可自我更新：设置 → 关于 → **检查更新**（启动时也会检查）会带进度圆环下载新 IPA，并通过 `apple-magnifier://install?url=…` 移交给 TrollStore 一键自动安装 —— 与 Dopamine 的机制相同。此功能**仅在 TrollStore 下可用**：普通 AltStore/SideStore 侧载版以个人证书签名，没有在设备上安装 IPA 的权限，因此会降级为打开发布页手动重新侧载。
+
 ## 构建
 
 ### Rust 共享核心与契约
@@ -189,6 +193,10 @@ scripts/ci/                # 可重复执行的 CI 辅助脚本
 - 实机反馈通过结构化 Issues 收集，并自动汇总到 [`docs/compatibility.md`](docs/compatibility.md)。
 - 自动化可分类和汇总反馈，但不会仅凭模型判断自动关闭 Bug。
 - Apple/iOS 实现始终归上游维护，不进入本下游发布自动化。
+
+## 相关项目
+
+想要 **tvOS** 版本？欢迎使用我朋友 Svend 维护的 [Sonimbus](https://github.com/gee1k/sonimbus) —— 一个 Apple TV 上的网易云音乐客户端。
 
 ## Credits
 

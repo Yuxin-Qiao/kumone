@@ -101,6 +101,17 @@ Future upstream-aligned releases built by the Phase 2 pipeline additionally prod
 - `Kumone-<version>-linux-x86_64.rpm`
 - `SHA256SUMS-linux`
 
+#### In-app auto-update (TrollStore only)
+
+On a device with **[TrollStore](https://github.com/opa334/TrollStore)** (巨魔),
+Kumone updates itself: Settings → About → **Check for Updates** (it also checks
+on launch) downloads the new IPA with a progress ring and hands it to TrollStore
+via `apple-magnifier://install?url=…` for a one-tap, fully automatic install —
+the same mechanism Dopamine uses. This works **only under TrollStore**: a plain
+AltStore/SideStore sideload is signed with a personal certificate and has no way
+to install an IPA on-device, so there it degrades to opening the release page
+for a manual re-sideload.
+
 ## Building
 
 ### Shared Rust core and contracts
@@ -192,6 +203,10 @@ See [`docs/architecture/shared-contracts.md`](docs/architecture/shared-contracts
 - Community device feedback is captured through structured Issues and summarized automatically in [`docs/compatibility.md`](docs/compatibility.md).
 - Automation may label/summarize compatibility reports but does not automatically close bugs solely from model judgment.
 - Apple/iOS implementation remains upstream-owned and outside downstream release automation.
+
+## Related projects
+
+Want a **tvOS** build? Check out [Sonimbus](https://github.com/gee1k/sonimbus), a NetEase Cloud Music client for Apple TV maintained by my friend Svend.
 
 ## Credits
 
