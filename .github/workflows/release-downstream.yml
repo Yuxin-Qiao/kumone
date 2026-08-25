@@ -1,4 +1,4 @@
-name: Downstream Windows + Android Release
+name: Downstream Windows + Linux + Android Release
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
         type: string
         default: "main"
       version:
-        description: "Upstream-aligned app version (for example 0.2.3)"
+        description: "Upstream-aligned app version (for example 0.2.5)"
         required: true
         type: string
       tag_suffix:
@@ -49,6 +49,9 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
+
+      - name: Verify synchronized downstream package versions
+        run: python3 scripts/ci/sync-downstream-version.py --check
 
       - id: meta
         name: Validate upstream-aligned version
@@ -111,6 +114,9 @@ jobs:
     name: Build Windows NSIS
     needs: prepare
     runs-on: windows-latest
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -146,6 +152,30 @@ jobs:
           Push-Location apps/windows
           try { tauri build --bundles nsis } finally { Pop-Location }
 
+      - name: Optionally Authenticode-sign Windows installer
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            "- Windows signing: **unsigned (certificate secrets not configured)**" >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          $installer = Get-ChildItem "apps/windows/src-tauri/target/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
+          if ($null -eq $installer) { throw "NSIS installer was not produced" }
+          $pfx = Join-Path $env:RUNNER_TEMP "kumone-windows-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $kits = ${env:ProgramFiles(x86)}
+          $signtool = Get-ChildItem "$kits\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe not found on runner" }
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          & $signtool.FullName verify /pa /v $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
+          Remove-Item $pfx -Force
+          "- Windows signing: **Authenticode verified**" >> $env:GITHUB_STEP_SUMMARY
+
       - name: Prepare Windows asset and enforce budget
         shell: pwsh
         run: |
@@ -170,6 +200,107 @@ jobs:
         with:
           name: downstream-windows
           path: release-windows/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Build Linux AppImage + deb + rpm
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install Tauri Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            rpm \
+            wget
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: |
+            .
+            apps/windows/src-tauri
+
+      - name: Automated shared-core and Web/PWA gates
+        run: |
+          cargo test --workspace --all-targets
+          npm test --prefix web
+          cargo clippy --manifest-path apps/windows/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Install Tauri CLI
+        run: npm install --global @tauri-apps/cli@v2
+
+      - name: Build Linux packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('apps/windows/src-tauri/tauri.conf.json')
+          d = json.loads(p.read_text())
+          d['version'] = '${{ needs.prepare.outputs.version }}'
+          p.write_text(json.dumps(d, indent=2) + '\n')
+          PY
+          (cd apps/windows && tauri build --bundles appimage,deb,rpm)
+
+      - name: Prepare Linux assets and enforce budget
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-linux
+          copy_one() {
+            local pattern="$1" output="$2"
+            local source
+            source=$(find apps/windows/src-tauri/target/release/bundle -type f -name "$pattern" -print -quit)
+            test -n "$source" || { echo "::error::Missing Linux bundle matching $pattern"; exit 1; }
+            local bytes mib
+            bytes=$(stat -c%s "$source")
+            mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')
+            if [ "$bytes" -gt $((25 * 1024 * 1024)) ]; then
+              echo "::error::$pattern exceeds the 25 MiB Linux hard budget (${mib} MiB)"
+              exit 1
+            fi
+            cp "$source" "release-linux/$output"
+            echo "Linux $output: **${mib} MiB**" >> "$GITHUB_STEP_SUMMARY"
+          }
+          copy_one '*.AppImage' "Kumone-$VERSION-linux-x86_64.AppImage"
+          copy_one '*.deb' "Kumone-$VERSION-linux-x86_64.deb"
+          copy_one '*.rpm' "Kumone-$VERSION-linux-x86_64.rpm"
+          (cd release-linux && sha256sum Kumone-* > SHA256SUMS-linux)
+
+      - name: Attest Linux provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release-linux/*.AppImage
+            release-linux/*.deb
+            release-linux/*.rpm
+
+      - name: Store Linux release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: downstream-linux
+          path: release-linux/
           if-no-files-found: error
           retention-days: 30
 
@@ -202,8 +333,7 @@ jobs:
 
       - name: Install Android SDK and NDK
         shell: bash
-        run: |
-          bash scripts/ci/install-android-sdk.sh
+        run: bash scripts/ci/install-android-sdk.sh
 
       - name: Setup Gradle 9.5
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0 (Node 24)
@@ -305,7 +435,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [prepare, windows, android]
+    needs: [prepare, windows, linux, android]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -315,18 +445,19 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
       PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-      # RELEASE_TOKEN is optional but recommended when repository rules prevent
-      # the workflow-scoped GITHUB_TOKEN from creating releases/tags.
       GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
     steps:
       - name: Download Windows assets
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-windows --dir publish-assets/windows
 
+      - name: Download Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-linux --dir publish-assets/linux
+
       - name: Download Android assets
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name downstream-android --dir publish-assets/android
@@ -337,6 +468,7 @@ jobs:
           set -euo pipefail
           mkdir -p publish-assets/final
           cp publish-assets/windows/* publish-assets/final/
+          cp publish-assets/linux/* publish-assets/final/
           cp publish-assets/android/* publish-assets/final/
           (cd publish-assets/final && sha256sum Kumone-* > SHA256SUMS)
           ls -lh publish-assets/final
@@ -349,9 +481,9 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists; replacing assets."
           else
-            FLAGS=(--repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Kumone v$VERSION — Windows + Android")
+            FLAGS=(--repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Kumone v$VERSION — Windows + Linux + Android")
             if [[ "$PRERELEASE" == "true" ]]; then FLAGS+=(--prerelease); fi
-            gh release create "$TAG" "${FLAGS[@]}" --notes "Automated downstream release aligned with upstream Kumone v$VERSION. Windows and Android artifacts passed CI, signing, package-size and provenance gates. Real-device compatibility is validated through user feedback after publication."
+            gh release create "$TAG" "${FLAGS[@]}" --notes "Automated downstream release aligned with upstream Kumone v$VERSION. Windows, Linux and Android artifacts passed automated tests, package-size and provenance gates; Android is signed, and Windows is Authenticode-signed when signing secrets are configured. Real-device compatibility is validated through structured community feedback after publication."
           fi
 
           gh release upload "$TAG" publish-assets/final/* --repo "$GITHUB_REPOSITORY" --clobber
@@ -366,6 +498,6 @@ jobs:
             echo "### Published"
             echo "- Release: **$TAG**"
             echo "- Source: \`$SOURCE_SHA\`"
-            echo "- Windows + Android assets uploaded"
+            echo "- Windows + Linux + Android assets uploaded"
             echo "- No maintainer-side real-device gate"
           } >> "$GITHUB_STEP_SUMMARY"
