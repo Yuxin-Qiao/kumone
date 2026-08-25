@@ -331,12 +331,16 @@ jobs:
             exit 1
           }
 
+          # Checkout intentionally disables persisted credentials.  Use the
+          # already scoped workflow token only for this push operation, then
+          # leave the public remote unchanged for subsequent read-only checks.
+          AUTH_HEADER="AUTHORIZATION: bearer $GH_TOKEN"
           git fetch --no-tags origin "$SYNC_BRANCH" >/dev/null 2>&1 || true
           if git show-ref --verify --quiet "refs/remotes/origin/$SYNC_BRANCH"; then
-            git push --force-with-lease=refs/heads/$SYNC_BRANCH:"$(git rev-parse "refs/remotes/origin/$SYNC_BRANCH")" \
+            git -c http.extraheader="$AUTH_HEADER" push --force-with-lease=refs/heads/$SYNC_BRANCH:"$(git rev-parse "refs/remotes/origin/$SYNC_BRANCH")" \
               origin HEAD:"$SYNC_BRANCH"
           else
-            git push origin HEAD:"$SYNC_BRANCH"
+            git -c http.extraheader="$AUTH_HEADER" push origin HEAD:"$SYNC_BRANCH"
           fi
           REMOTE_SHA=$(git ls-remote origin "refs/heads/$SYNC_BRANCH" | awk '{print $1}')
           [[ "$REMOTE_SHA" == "$CANDIDATE_SHA" ]] || {
@@ -784,7 +788,7 @@ jobs:
     steps:
       - name: Deduplicate automation incident
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
           UPSTREAM_VERSION: ${{ needs.prepare.outputs.version }}
           UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
           BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
