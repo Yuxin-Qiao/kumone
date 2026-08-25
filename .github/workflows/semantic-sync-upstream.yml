@@ -323,11 +323,16 @@ jobs:
             exit 1
           }
           git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
-          APPLE_DIFF=$(git diff --name-only "$CANDIDATE_SHA" "$UPSTREAM_SHA" -- \
+          # The Apple/iOS boundary is immutable for downstream maintenance:
+          # neither an upstream Apple change nor an adapter-side change may be
+          # carried into an automated candidate. Compare with current main,
+          # rather than only comparing with upstream, so an upstream release
+          # cannot silently modify iOS/iPadOS as a side effect of a sync.
+          APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" -- \
             Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
           [[ -z "$APPLE_DIFF" ]] || {
             PROTECTED_APPLE_CHANGES=1
-            echo "::error::Protected Apple/iOS tree contains downstream changes: $APPLE_DIFF"
+            echo "::error::Candidate modifies protected Apple/iOS paths; manual review is required: $APPLE_DIFF"
             exit 1
           }
 

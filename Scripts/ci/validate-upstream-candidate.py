@@ -76,11 +76,14 @@ def main() -> int:
     except subprocess.CalledProcessError as exc:
         raise SystemExit("candidate is not based on the current main SHA") from exc
 
-    apple_diff = changed_paths(candidate_sha, upstream_sha, PROTECTED_APPLE_PATHS)
+    # The downstream Apple/iOS tree is out of scope for automated maintenance.
+    # Compare against the exact main base so an upstream release cannot make a
+    # seemingly harmless sync modify iOS/iPadOS as a side effect.
+    apple_diff = changed_paths(base_sha, candidate_sha, PROTECTED_APPLE_PATHS)
     if apple_diff:
         details = ", ".join(apple_diff[:20])
         raise SystemExit(
-            "protected Apple/iOS paths contain downstream changes relative to upstream: "
+            "candidate modifies protected Apple/iOS paths relative to current main: "
             + details
         )
 
