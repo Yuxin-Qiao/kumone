@@ -6,6 +6,13 @@
 section the English bullets come first, followed by their Simplified Chinese
 counterparts. 段落格式：`## <版本号> - <日期>`，条目必须写成单行。
 
+## 0.2.6 - 2026-08-25
+
+### Fixed / 修复
+
+- SMS login called endpoints that do not exist (`/sms/sendcode`, `/login/cellphone`); now uses the real ones from upstream — `/api/sms/captcha/sent` and `/api/w/login/cellphone` — with the required fields
+- 短信登录调用了不存在的接口（`/sms/sendcode`、`/login/cellphone`）；现改为上游实际使用的 `/api/sms/captcha/sent` 与 `/api/w/login/cellphone`，并带上必需字段
+
 ## 0.2.5 - 2026-08-23
 
 ### Added / 新增
