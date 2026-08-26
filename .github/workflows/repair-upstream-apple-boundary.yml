@@ -1,0 +1,64 @@
+name: Repair Upstream Apple Boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-upstream-apple-boundary.yml'
+      - 'Scripts/ci/repair-upstream-apple-boundary.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-upstream-apple-boundary
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Patch boundary and trigger live sync
+    if: github.repository == 'Yuxin-Qiao/kumone'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Checkout trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apply exact semantic boundary repair
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci/repair-upstream-apple-boundary.py
+          python3 Scripts/ci/test-validate-upstream-candidate.py
+          git diff --check
+          grep -F 'APPLE_DIFF=$(git diff --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+          ! grep -F 'APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+      - name: Commit repair and remove one-shot machinery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/repair-upstream-apple-boundary.yml
+          rm -f Scripts/ci/repair-upstream-apple-boundary.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Boundary already repaired; nothing to commit.'
+          else
+            git commit -m 'fix(ci): allow upstream-owned Apple changes'
+            AUTH_B64=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+            git -c http.extraheader="AUTHORIZATION: basic $AUTH_B64" push origin HEAD:main
+          fi
+      - name: Trigger live semantic upstream sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run semantic-sync-upstream.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=live

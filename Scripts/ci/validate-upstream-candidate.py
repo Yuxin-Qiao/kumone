@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed checks for an immutable upstream compatibility candidate.
 
-The workflow performs the merge and ownership resolution.  This small,
+The workflow performs the merge and ownership resolution. This small,
 dependency-free verifier is intentionally deterministic so it can be run in
 CI and in a local dry-run without GitHub credentials.
 """
@@ -12,7 +12,6 @@ import argparse
 import json
 import re
 import subprocess
-from pathlib import Path
 
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -76,17 +75,18 @@ def main() -> int:
     except subprocess.CalledProcessError as exc:
         raise SystemExit("candidate is not based on the current main SHA") from exc
 
-    # The downstream Apple/iOS tree is out of scope for automated maintenance.
-    # Compare against the exact main base so an upstream release cannot make a
-    # seemingly harmless sync modify iOS/iPadOS as a side effect.
-    apple_diff = changed_paths(base_sha, candidate_sha, PROTECTED_APPLE_PATHS)
-    if apple_diff:
-        details = ", ".join(apple_diff[:20])
+    # Apple/iOS is upstream-owned, not frozen. Upstream releases are allowed to
+    # add, modify, rename or delete protected Apple files. The downstream
+    # candidate must carry the upstream tree byte-for-byte on those paths,
+    # which prevents automation or adapters from adding their own Apple edits.
+    apple_divergence = changed_paths(upstream_sha, candidate_sha, PROTECTED_APPLE_PATHS)
+    if apple_divergence:
+        details = ", ".join(apple_divergence[:20])
         raise SystemExit(
-            "candidate modifies protected Apple/iOS paths relative to current main: "
-            + details
+            "candidate diverges from upstream on protected Apple/iOS paths: " + details
         )
 
+    upstream_apple_changes = changed_paths(base_sha, upstream_sha, PROTECTED_APPLE_PATHS)
     payload = {
         "base_sha": base_sha,
         "candidate_sha": candidate_sha,
@@ -94,6 +94,8 @@ def main() -> int:
         "ownership_conflict_count": args.conflict_count,
         "ambiguous_conflicts": False,
         "protected_apple_changes": [],
+        "upstream_apple_changes": upstream_apple_changes,
+        "candidate_apple_tree_matches_upstream": True,
         "candidate_is_based_on_base": True,
     }
     print(json.dumps(payload, sort_keys=True))

@@ -1,0 +1,51 @@
+name: Upstream Boundary Regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/semantic-sync-upstream.yml'
+      - '.github/workflows/upstream-boundary-regression.yml'
+      - '.github/workflows/repair-upstream-apple-boundary.yml'
+      - 'Scripts/ci/validate-upstream-candidate.py'
+      - 'Scripts/ci/test-validate-upstream-candidate.py'
+      - 'Scripts/ci/repair-upstream-apple-boundary.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/semantic-sync-upstream.yml'
+      - '.github/workflows/upstream-boundary-regression.yml'
+      - 'Scripts/ci/validate-upstream-candidate.py'
+      - 'Scripts/ci/test-validate-upstream-candidate.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-boundary-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Verify upstream-owned Apple boundary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Run semantic boundary regression tests
+        run: python3 Scripts/ci/test-validate-upstream-candidate.py
+      - name: Verify one-shot repair against current workflow
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci/repair-upstream-apple-boundary.py
+          grep -F 'APPLE_DIFF=$(git diff --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+          ! grep -F 'APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+          git diff --check
