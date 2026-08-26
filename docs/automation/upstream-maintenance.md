@@ -29,6 +29,11 @@ metadata publication. A single fixed automation issue is opened or updated
 when a failure persists; it is closed automatically after recovery. User bug
 reports are never closed by maintenance automation.
 
-Apple/macOS/iOS/iPadOS sources remain upstream-owned. Ambiguous merge conflicts,
-protected Apple changes, missing Android signing identity, an existing release
-tag, or repeated CI failures stop the transaction and require a maintainer.
+Apple/macOS/iOS/iPadOS sources remain upstream-owned. The desktop/Android
+semantic-sync transaction still stops on protected Apple changes; private iOS
+distribution is deliberately separate in
+`.github/workflows/ios-testflight.yml`, which checks out the upstream commit
+directly and applies only the Bundle ID, signing-team, and version build patch.
+Ambiguous merge conflicts, missing Android signing identity, an existing
+release tag, or repeated CI failures stop the main transaction and require a
+maintainer.

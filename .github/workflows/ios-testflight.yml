@@ -1,0 +1,285 @@
+name: iOS Internal TestFlight
+
+on:
+  # A scheduled check tracks upstream main commits, including commits that
+  # have not received a release tag yet. The cache makes unchanged commits a
+  # no-op, so this does not upload duplicate builds every time the schedule
+  # wakes up.
+  schedule:
+    - cron: "11 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Upstream ref (main, tag, or full commit SHA)"
+        required: false
+        default: main
+        type: string
+      force:
+        description: "Rebuild even when this upstream commit was uploaded"
+        required: false
+        default: false
+        type: boolean
+  repository_dispatch:
+    types: [upstream-release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kumone-ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  resolve-upstream:
+    name: Resolve upstream iOS source
+    runs-on: macos-15
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      cache_key: ${{ steps.resolve.outputs.cache_key }}
+    steps:
+      - id: resolve
+        name: Resolve immutable upstream commit and version
+        env:
+          REQUESTED_REF: ${{ inputs.ref || github.event.client_payload.ref || 'main' }}
+          BUNDLE_ID: ${{ vars.IOS_BUNDLE_IDENTIFIER || 'com.yuxinqiao.kumone' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream=https://github.com/missuo/kumone.git
+          requested="$REQUESTED_REF"
+          if [[ "$requested" == "main" ]]; then
+            ref_spec=refs/heads/main
+            sha=$(git ls-remote "$upstream" "$ref_spec" | awk 'NR == 1 { print $1; exit }')
+          elif [[ "$requested" =~ ^[0-9a-f]{40}$ ]]; then
+            ref_spec="$requested"
+            sha="$requested"
+          else
+            ref_spec="refs/tags/$requested"
+            sha=$(git ls-remote "$upstream" "$ref_spec" "$ref_spec^{}" | awk '!/\^\{\}$/ { print $1; exit }')
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Could not resolve upstream ref $requested"; exit 1; }
+
+          meta="$RUNNER_TEMP/kumone-upstream-meta"
+          git init -q "$meta"
+          git -C "$meta" remote add origin "$upstream"
+          git -C "$meta" fetch --depth=1 origin "$sha"
+          version=$(git -C "$meta" show "$sha:CHANGELOG.md" | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
+            echo "::error::Could not resolve a semantic version from upstream CHANGELOG.md"
+            exit 1
+          }
+
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ref=$requested" >> "$GITHUB_OUTPUT"
+          echo "cache_key=kumone-ios-testflight-$sha-$BUNDLE_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Upstream iOS source"
+            echo "- Ref requested: `$requested`"
+            echo "- Immutable commit: `$sha`"
+            echo "- Marketing version: **$version**"
+            echo "- Bundle ID patch: `$BUNDLE_ID`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-upload:
+    name: Build and upload Internal TestFlight
+    needs: resolve-upstream
+    runs-on: macos-15
+    env:
+      IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_IDENTIFIER || 'com.yuxinqiao.kumone' }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_DEVELOPMENT_TEAM }}
+      TESTFLIGHT_GROUP: ${{ vars.TESTFLIGHT_INTERNAL_GROUP || 'Internal Testers' }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+    steps:
+      - name: Checkout downstream workflow scripts
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Restore uploaded-commit marker
+        id: restore-marker
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci/ios-testflight-marker
+          key: ${{ needs.resolve-upstream.outputs.cache_key }}
+
+      - id: gate
+        name: Decide whether a new build is needed
+        env:
+          FORCE_BUILD: ${{ inputs.force || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_BUILD" == "true" || "${{ steps.restore-marker.outputs.cache-hit }}" != "true" ]]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "build=false" >> "$GITHUB_OUTPUT"
+          echo "Upstream commit already has a successful TestFlight marker; nothing to upload." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify required Apple configuration
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in IOS_BUNDLE_ID APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} )); then
+            printf '::error::Missing GitHub configuration: %s\n' "${missing[*]}"
+            echo "Create the App Store Connect app and add the documented secrets/variables before dispatching this workflow." >&2
+            exit 1
+          fi
+
+      - name: Checkout immutable upstream source
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: missuo/kumone
+          ref: ${{ needs.resolve-upstream.outputs.sha }}
+          path: upstream
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Allocate a unique TestFlight build number
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Include the attempt so a rerun after a partial upload cannot reuse
+          # an already accepted App Store Connect build number.
+          build_number=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))
+          echo "IOS_BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
+
+      - name: Apply Bundle ID and version patch only
+        if: steps.gate.outputs.build == 'true'
+        run: |
+          python3 Scripts/ci/prepare-ios-testflight.py \
+            --root upstream \
+            --version '${{ needs.resolve-upstream.outputs.version }}' \
+            --build-number "$IOS_BUILD_NUMBER" \
+            --bundle-id "$IOS_BUNDLE_ID" \
+            --team-id "$APPLE_TEAM_ID"
+
+      - name: Import Apple Distribution certificate
+        if: steps.gate.outputs.build == 'true'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Download App Store provisioning profile
+        if: steps.gate.outputs.build == 'true'
+        uses: apple-actions/download-provisioning-profiles@v4
+        with:
+          bundle-id: ${{ env.IOS_BUNDLE_ID }}
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Archive upstream iOS app
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/KumoneIOS.xcarchive"
+          set -o pipefail
+          xcodebuild \
+            -workspace upstream/ios/KumoneIOS.xcworkspace \
+            -scheme KumoneIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$archive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
+            MARKETING_VERSION='${{ needs.resolve-upstream.outputs.version }}' \
+            CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            archive | tee "$RUNNER_TEMP/xcodebuild-archive.log"
+
+      - name: Export App Store package
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_dir="$RUNNER_TEMP/KumoneIOS-export"
+          cat > "$RUNNER_TEMP/export-options.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>destination</key><string>export</string>
+            <key>compileBitcode</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/KumoneIOS.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export-options.plist" \
+            -exportPath "$export_dir" \
+            -allowProvisioningUpdates | tee "$RUNNER_TEMP/xcodebuild-export.log"
+          ipa=$(find "$export_dir" -maxdepth 1 -name '*.ipa' -type f -print -quit)
+          [[ -n "$ipa" ]] || { echo "::error::xcodebuild did not produce an IPA"; exit 1; }
+          echo "IPA_PATH=$ipa" >> "$GITHUB_ENV"
+
+      - name: Upload to TestFlight
+        if: steps.gate.outputs.build == 'true'
+        uses: apple-actions/upload-testflight-build@v2
+        with:
+          app-path: ${{ env.IPA_PATH }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Add build to Internal TestFlight group
+        if: steps.gate.outputs.build == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          python3 Scripts/ci/assign-testflight-internal-group.py \
+            --bundle-id "$IOS_BUNDLE_ID" \
+            --version '${{ needs.resolve-upstream.outputs.version }}' \
+            --build-number "$IOS_BUILD_NUMBER" \
+            --group-name "$TESTFLIGHT_GROUP"
+
+      - name: Save uploaded-commit marker
+        if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/ios-testflight-marker
+          printf '%s\n' '${{ needs.resolve-upstream.outputs.sha }}' > .ci/ios-testflight-marker/upstream-sha
+          printf '%s\n' '${{ needs.resolve-upstream.outputs.version }}' > .ci/ios-testflight-marker/version
+
+      - name: Persist uploaded-commit marker
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: .ci/ios-testflight-marker
+          key: ${{ needs.resolve-upstream.outputs.cache_key }}
+
+      - name: Upload build evidence
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kumone-ios-testflight-${{ needs.resolve-upstream.outputs.version }}-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/xcodebuild-archive.log
+            ${{ runner.temp }}/xcodebuild-export.log
+          if-no-files-found: error
+          retention-days: 7
