@@ -1,0 +1,53 @@
+name: SBOM and dependency snapshot
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '15 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-sbom:
+    name: Generate SPDX SBOM and submit dependency graph
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout trusted main
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Generate repository SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: kumone-source.spdx.json
+          artifact-name: kumone-source-sbom
+          dependency-snapshot: true
+          upload-artifact: true
+          upload-artifact-retention: 30
+          upload-release-assets: false
+
+      - name: Validate generated SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s kumone-source.spdx.json
+          jq -e '.spdxVersion | startswith("SPDX-")' kumone-source.spdx.json >/dev/null
+          jq -e '.packages | type == "array"' kumone-source.spdx.json >/dev/null

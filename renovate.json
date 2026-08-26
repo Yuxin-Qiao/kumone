@@ -1,0 +1,110 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "enabledManagers": [
+    "cargo",
+    "gradle",
+    "npm",
+    "github-actions",
+    "dockerfile",
+    "custom.regex"
+  ],
+  "timezone": "Asia/Shanghai",
+  "branchPrefix": "renovate/",
+  "labels": [
+    "dependencies",
+    "automation"
+  ],
+  "dependencyDashboard": true,
+  "dependencyDashboardAutoclose": true,
+  "prConcurrentLimit": 5,
+  "minimumReleaseAge": "3 days",
+  "pinDigests": true,
+  "platformAutomerge": false,
+  "automerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep the self-hosted Renovate engine pinned and self-maintained",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/renovate\\.yml$/"
+      ],
+      "matchStrings": [
+        "renovate-version:\\s*(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "depNameTemplate": "renovate",
+      "packageNameTemplate": "ghcr.io/renovatebot/renovate",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Mark non-major dependency updates as eligible for the deterministic bot merge gate",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "addLabels": [
+        "automerge-safe"
+      ]
+    },
+    {
+      "description": "Major dependency updates stay fail-closed",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "breaking-change"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group GitHub Actions maintenance",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions dependencies"
+    },
+    {
+      "description": "Group Rust maintenance",
+      "matchManagers": [
+        "cargo"
+      ],
+      "groupName": "rust dependencies"
+    },
+    {
+      "description": "Group Android maintenance",
+      "matchManagers": [
+        "gradle"
+      ],
+      "groupName": "android dependencies"
+    },
+    {
+      "description": "Group Web maintenance",
+      "matchManagers": [
+        "npm"
+      ],
+      "groupName": "web dependencies"
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "addLabels": [
+      "security"
+    ],
+    "minimumReleaseAge": null,
+    "prCreation": "immediate"
+  }
+}
