@@ -6,8 +6,10 @@ on:
     paths:
       - '.github/workflows/semantic-sync-upstream.yml'
       - '.github/workflows/upstream-boundary-regression.yml'
+      - '.github/workflows/repair-upstream-apple-boundary.yml'
       - 'Scripts/ci/validate-upstream-candidate.py'
       - 'Scripts/ci/test-validate-upstream-candidate.py'
+      - 'Scripts/ci/repair-upstream-apple-boundary.py'
   push:
     branches: [main]
     paths:
@@ -40,3 +42,10 @@ jobs:
           fetch-depth: 0
       - name: Run semantic boundary regression tests
         run: python3 Scripts/ci/test-validate-upstream-candidate.py
+      - name: Verify one-shot repair against current workflow
+        run: |
+          set -euo pipefail
+          python3 Scripts/ci/repair-upstream-apple-boundary.py
+          grep -F 'APPLE_DIFF=$(git diff --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+          ! grep -F 'APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
+          git diff --check
