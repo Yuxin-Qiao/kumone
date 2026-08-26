@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -58,15 +59,20 @@ def main() -> int:
         apple = repo / "Sources/Kumone/Core/Models/LyricsParser.swift"
         apple.parent.mkdir(parents=True)
         apple.write_text("let version = 1\n", encoding="utf-8")
+        ios = repo / "ios/UpstreamMarker.txt"
+        ios.parent.mkdir(parents=True)
+        ios.write_text("base\n", encoding="utf-8")
         (repo / "README.md").write_text("base\n", encoding="utf-8")
         base = commit_all(repo, "base")
 
         git(repo, "checkout", "-b", "upstream")
         apple.write_text("let version = 2 // upstream\n", encoding="utf-8")
+        ios.write_text("upstream\n", encoding="utf-8")
         upstream = commit_all(repo, "upstream changes Apple code")
 
         git(repo, "checkout", "-b", "candidate-good", base)
         apple.write_text("let version = 2 // upstream\n", encoding="utf-8")
+        ios.write_text("upstream\n", encoding="utf-8")
         (repo / "downstream.txt").write_text("adapter change\n", encoding="utf-8")
         candidate_good = commit_all(repo, "candidate preserves upstream Apple tree")
         good = validate(repo, base, candidate_good, upstream)
@@ -76,6 +82,17 @@ def main() -> int:
                 + good.stdout
                 + good.stderr
             )
+        payload = json.loads(good.stdout)
+        if payload["merge_base"] != base:
+            raise SystemExit("validator did not report the shared merge base")
+        expected_upstream_delta = {
+            "Sources/Kumone/Core/Models/LyricsParser.swift",
+            "ios/UpstreamMarker.txt",
+        }
+        if set(payload["upstream_apple_delta"]) != expected_upstream_delta:
+            raise SystemExit("upstream Apple delta was not reported separately")
+        if payload["downstream_added_apple_delta"] != []:
+            raise SystemExit("clean candidate reported downstream Apple additions")
 
         git(repo, "checkout", "-b", "candidate-bad", base)
         apple.write_text("let version = 999 // downstream mutation\n", encoding="utf-8")
@@ -85,7 +102,8 @@ def main() -> int:
         if bad.returncode == 0:
             raise SystemExit("downstream Apple mutation was incorrectly accepted")
         combined = bad.stdout + bad.stderr
-        if "diverges from upstream on protected Apple/iOS paths" not in combined:
+        if "diverges from upstream on protected Apple/iOS paths" not in combined or \
+            "downstream-added delta" not in combined:
             raise SystemExit("unexpected validator failure:\n" + combined)
 
     print("upstream Apple pass-through boundary regression tests passed")

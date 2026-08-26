@@ -77,26 +77,40 @@ def main() -> int:
     except subprocess.CalledProcessError as exc:
         raise SystemExit("candidate is not based on the current main SHA") from exc
 
+    try:
+        merge_base = git("merge-base", base_sha, upstream_sha)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit("base and upstream histories do not share a merge base") from exc
+
     # Apple/iOS is upstream-owned, not frozen. Upstream releases are allowed to
     # add, modify, rename or delete protected Apple files. The downstream
     # candidate must carry the upstream tree byte-for-byte on those paths,
     # which prevents automation or adapters from adding their own Apple edits.
-    apple_divergence = changed_paths(upstream_sha, candidate_sha, PROTECTED_APPLE_PATHS)
-    if apple_divergence:
-        details = ", ".join(apple_divergence[:20])
+    upstream_apple_delta = changed_paths(merge_base, upstream_sha, PROTECTED_APPLE_PATHS)
+    downstream_apple_delta = changed_paths(merge_base, base_sha, PROTECTED_APPLE_PATHS)
+    downstream_added_apple_delta = changed_paths(
+        upstream_sha, candidate_sha, PROTECTED_APPLE_PATHS
+    )
+    if downstream_added_apple_delta:
+        details = ", ".join(downstream_added_apple_delta[:20])
         raise SystemExit(
-            "candidate diverges from upstream on protected Apple/iOS paths: " + details
+            "candidate diverges from upstream on protected Apple/iOS paths "
+            "(downstream-added delta): "
+            + details
         )
 
-    upstream_apple_changes = changed_paths(base_sha, upstream_sha, PROTECTED_APPLE_PATHS)
     payload = {
         "base_sha": base_sha,
         "candidate_sha": candidate_sha,
         "upstream_sha": upstream_sha,
+        "merge_base": merge_base,
         "ownership_conflict_count": args.conflict_count,
         "ambiguous_conflicts": False,
         "protected_apple_changes": [],
-        "upstream_apple_changes": upstream_apple_changes,
+        "upstream_apple_delta": upstream_apple_delta,
+        "upstream_apple_changes": upstream_apple_delta,
+        "downstream_apple_delta": downstream_apple_delta,
+        "downstream_added_apple_delta": downstream_added_apple_delta,
         "candidate_apple_tree_matches_upstream": True,
         "candidate_is_based_on_base": True,
     }
