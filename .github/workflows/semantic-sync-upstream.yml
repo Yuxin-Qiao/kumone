@@ -200,8 +200,8 @@ jobs:
           if [[ "$UPSTREAM_SHA" == "$MERGE_BASE" ]]; then
             {
               echo "### Semantic upstream maintenance"
-              echo "- Upstream: **v$UPSTREAM_VERSION** (`$UPSTREAM_SHORT`)"
-              echo "- Current main: `$BASE_SHA`"
+              echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
+              echo "- Current main: \`$BASE_SHA\`"
               echo "- Result: already up to date; stale automation candidates were retired"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -225,10 +225,10 @@ jobs:
               echo "reused=true" >> "$GITHUB_OUTPUT"
               {
                 echo "### Reused immutable candidate"
-                echo "- Branch: `$SYNC_BRANCH`"
-                echo "- Candidate SHA: `$EXISTING_HEAD`"
-                echo "- Base SHA: `$BASE_SHA`"
-                echo "- Upstream SHA: `$UPSTREAM_SHA`"
+                echo "- Branch: \`$SYNC_BRANCH\`"
+                echo "- Candidate SHA: \`$EXISTING_HEAD\`"
+                echo "- Base SHA: \`$BASE_SHA\`"
+                echo "- Upstream SHA: \`$UPSTREAM_SHA\`"
               } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
@@ -366,10 +366,10 @@ jobs:
           CHANGED_FILES=$(git diff --name-only "$BASE_SHA...HEAD" | wc -l | tr -d ' ')
           {
             echo "### Fresh semantic upstream candidate"
-            echo "- Candidate: `$SYNC_BRANCH`"
-            echo "- Candidate SHA: `$CANDIDATE_SHA`"
-            echo "- Candidate base main: `$BASE_SHA`"
-            echo "- Upstream: **v$UPSTREAM_VERSION** (`$UPSTREAM_SHORT`)"
+            echo "- Candidate: \`$SYNC_BRANCH\`"
+            echo "- Candidate SHA: \`$CANDIDATE_SHA\`"
+            echo "- Candidate base main: \`$BASE_SHA\`"
+            echo "- Upstream: **v$UPSTREAM_VERSION** (\`$UPSTREAM_SHORT\`)"
             echo "- Changed files: **$CHANGED_FILES**"
             echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
             echo "- Ambiguous conflicts: **none**"
@@ -415,9 +415,9 @@ jobs:
 
           This PR is generated and refreshed by the serialized semantic maintenance transaction.
 
-          - Upstream commit: `$UPSTREAM_SHA`
-          - Candidate SHA: `$CANDIDATE_SHA`
-          - Candidate base main: `$BASE_SHA`
+          - Upstream commit: \`$UPSTREAM_SHA\`
+          - Candidate SHA: \`$CANDIDATE_SHA\`
+          - Candidate base main: \`$BASE_SHA\`
           - Ownership-resolved conflicts: **$CONFLICT_COUNT**
           - Ambiguous conflicts: **none**
           - Protected Apple/iOS downstream modifications: **none**
@@ -678,6 +678,7 @@ jobs:
         name: Revalidate every merge condition and dispatch release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          ACTIONS_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.open_candidate.outputs.pr_number }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
           BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
@@ -767,15 +768,15 @@ jobs:
           MERGED_SHA=$(jq -r '.sha' <<< "$MERGE_JSON")
           [[ "$MERGED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::merge response did not contain an immutable SHA"; exit 1; }
           gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/${{ needs.prepare.outputs.sync_branch }}" >/dev/null 2>&1 || true
-          gh workflow run release-downstream.yml --repo "$GITHUB_REPOSITORY" --ref main \
+          GH_TOKEN="$ACTIONS_TOKEN" gh workflow run release-downstream.yml --repo "$GITHUB_REPOSITORY" --ref main \
             -f source_ref="$MERGED_SHA" -f version="$VERSION" \
             -f tag_suffix="$UPSTREAM_TAG_SUFFIX" -f prerelease="$UPSTREAM_PRERELEASE"
           echo "merged=true" >> "$GITHUB_OUTPUT"
           echo "merged_sha=$MERGED_SHA" >> "$GITHUB_OUTPUT"
           {
             echo "### Auto-merged upstream candidate"
-            echo "- Squash merge SHA: `$MERGED_SHA`"
-            echo "- Upstream: `$UPSTREAM_SHA` (v$VERSION)"
+            echo "- Squash merge SHA: \`$MERGED_SHA\`"
+            echo "- Upstream: \`$UPSTREAM_SHA\` (v$VERSION)"
             echo "- Required local gates: **passed**"
             echo "- CodeQL matrix + Dependency Review: **passed**"
             echo "- Release workflow: **dispatched automatically**"
