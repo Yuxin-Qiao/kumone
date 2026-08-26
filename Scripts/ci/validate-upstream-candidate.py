@@ -3,7 +3,9 @@
 
 The workflow performs the merge and ownership resolution. This small,
 dependency-free verifier is intentionally deterministic so it can be run in
-CI and in a local dry-run without GitHub credentials.
+CI and in a local dry-run without GitHub credentials. Apple/iOS is
+upstream-owned: upstream changes pass through exactly, while any downstream
+candidate divergence on protected Apple paths is rejected.
 """
 
 from __future__ import annotations
