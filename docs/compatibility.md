@@ -2,7 +2,7 @@
 
 This report is generated automatically from structured GitHub bug reports. It is a community feedback signal, **not a certification matrix** and not a manual release gate.
 
-Current upstream-aligned downstream version: **0.3.1**.
+Current upstream-aligned downstream version: **0.3.6**.
 
 | Platform | Runtime | Open bug reports | Closed bug reports | Signal |
 | --- | --- | ---: | ---: | --- |
