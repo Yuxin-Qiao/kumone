@@ -42,7 +42,7 @@ jobs:
           ! grep -F 'APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"' .github/workflows/semantic-sync-upstream.yml
       - name: Commit repair and remove one-shot machinery
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -60,5 +60,5 @@ jobs:
           fi
       - name: Trigger live semantic upstream sync
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: gh workflow run semantic-sync-upstream.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=live
