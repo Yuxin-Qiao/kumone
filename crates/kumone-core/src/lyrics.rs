@@ -187,17 +187,33 @@ fn parse_timestamp(tag: &str) -> Option<u64> {
             (seconds, Some(fraction))
         });
     let seconds = seconds.parse::<u64>().ok()?;
-    let fraction_ms = fraction.map_or(0, |digits| {
-        let value = digits.parse::<u64>().unwrap_or(0);
-        match digits.len() {
+    let fraction_ms = fraction.map_or(Some(0), |digits| {
+        // LRC fractions are milliseconds at most. Read only the first three
+        // ASCII digits so hostile input cannot make `u64::pow` overflow or
+        // cause a panic before the decoder can reject it.
+        let mut value = 0u64;
+        let mut width = 0usize;
+        for byte in digits.bytes() {
+            if !byte.is_ascii_digit() {
+                return None;
+            }
+            if width < 3 {
+                value = value * 10 + u64::from(byte - b'0');
+                width += 1;
+            }
+        }
+        Some(match width {
             0 => 0,
             1 => value * 100,
             2 => value * 10,
-            3 => value,
-            width => value / 10u64.pow((width - 3) as u32),
-        }
-    });
-    Some((minutes * 60 + seconds) * 1000 + fraction_ms)
+            _ => value,
+        })
+    })?;
+    minutes
+        .checked_mul(60)
+        .and_then(|value| value.checked_add(seconds))
+        .and_then(|value| value.checked_mul(1000))
+        .and_then(|value| value.checked_add(fraction_ms))
 }
 
 fn merge_secondary(
@@ -251,6 +267,16 @@ mod tests {
                 (63_000, "World".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn lrc_rejects_overflowing_timestamps_without_panicking() {
+        let fraction = "9".repeat(128);
+        assert_eq!(
+            parse_lrc(&format!("[00:00.{fraction}]ignored")),
+            vec![(999, "ignored".to_owned())]
+        );
+        assert!(parse_lrc("[18446744073709551615:59]ignored").is_empty());
     }
 
     #[test]
