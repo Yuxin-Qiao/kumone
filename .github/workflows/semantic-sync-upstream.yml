@@ -196,6 +196,9 @@ jobs:
             --jq '.[] | select(.name | startswith("automation/upstream-")) | [.name, .commit.sha] | @tsv')
           echo "superseded_count=$superseded" >> "$GITHUB_OUTPUT"
 
+          # Keep the common ancestor so ownership checks can distinguish an
+          # upstream Apple delta (allowed) from content added by downstream
+          # automation (forbidden).
           MERGE_BASE=$(git merge-base "$BASE_SHA" "$UPSTREAM_SHA")
           if [[ "$UPSTREAM_SHA" == "$MERGE_BASE" ]]; then
             {
@@ -220,6 +223,11 @@ jobs:
               "$EXISTING_BODY" == *"Candidate base main: \`$BASE_SHA\`"* ]]; then
               git fetch --no-tags origin "$EXISTING_HEAD"
               git merge-base --is-ancestor "$BASE_SHA" "$EXISTING_HEAD"
+              python3 Scripts/ci/validate-upstream-candidate.py \
+                --base-sha "$BASE_SHA" \
+                --candidate-sha "$EXISTING_HEAD" \
+                --upstream-sha "$UPSTREAM_SHA" \
+                --conflict-count 0
               echo "candidate_sha=$EXISTING_HEAD" >> "$GITHUB_OUTPUT"
               echo "updated=true" >> "$GITHUB_OUTPUT"
               echo "reused=true" >> "$GITHUB_OUTPUT"
@@ -252,11 +260,16 @@ jobs:
             }
             for path in "${conflicts[@]}"; do
               case "$path" in
+                # Downstream-owned adapters stay on ours when upstream touches
+                # the same file; this keeps the cross-platform ports intact.
                 Cargo.toml|Cargo.lock|rust-toolchain.toml|.github/*|crates/*|tools/uniffi-bindgen/*|apps/windows/*|apps/android/*|contracts/*|docs/*|scripts/*|web/*|README.md|README_CN.md|MAINTAINERS.md)
                   echo "downstream owns conflict: $path"
                   git checkout --ours -- "$path"
                   git add -- "$path"
                   ;;
+                # Apple/macOS/iOS/iPadOS files are upstream-owned.  Their side
+                # is copied verbatim, then the tree-equality check below
+                # rejects any downstream additions made after resolution.
                 CHANGELOG.md|Package.swift|Package.resolved|.gitignore|Sources/Kumone/*|Sources/KumoneLauncher/*|AppIcon.icon/*|ios/*|Scripts/*)
                   echo "upstream owns conflict: $path"
                   git checkout --theirs -- "$path"
@@ -276,6 +289,24 @@ jobs:
             git diff --name-only --diff-filter=U
             exit 1
           fi
+
+          # The merge result must carry the protected Apple/iOS tree exactly
+          # as it exists in upstream.  This allows upstream Swift/iOS releases
+          # to pass through while rejecting any pre-existing downstream-only
+          # Apple content that the merge would otherwise preserve.
+          MERGED_TREE=$(git write-tree)
+          UPSTREAM_APPLE_DELTA=$(git diff --no-renames --name-only "$MERGE_BASE" "$UPSTREAM_SHA" -- \
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
+          MERGED_APPLE_DRIFT=$(git diff --no-renames --name-only "$UPSTREAM_SHA" "$MERGED_TREE" -- \
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
+          echo "Upstream protected Apple/iOS delta (allowed and copied verbatim): ${UPSTREAM_APPLE_DELTA:-none}"
+          echo "Downstream-added protected Apple/iOS delta after merge (forbidden): ${MERGED_APPLE_DRIFT:-none}"
+          [[ -z "$MERGED_APPLE_DRIFT" ]] || {
+            PROTECTED_APPLE_CHANGES=1
+            echo "protected_apple_changes=1" >> "$GITHUB_OUTPUT"
+            echo "::error::Merge result differs from upstream in protected Apple/iOS paths: $MERGED_APPLE_DRIFT"
+            exit 1
+          }
 
           rm -rf -- windows
           rm -f .github/workflows/release.yml .github/workflows/build-windows.yml
@@ -323,16 +354,15 @@ jobs:
             exit 1
           }
           git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
-          # The Apple/iOS boundary is immutable for downstream maintenance:
-          # neither an upstream Apple change nor an adapter-side change may be
-          # carried into an automated candidate. Compare with current main,
-          # rather than only comparing with upstream, so an upstream release
-          # cannot silently modify iOS/iPadOS as a side effect of a sync.
-          APPLE_DIFF=$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" -- \
+          # Do not compare BASE_SHA..CANDIDATE_SHA here: upstream itself is
+          # allowed to modify Apple paths.  Only final candidate drift from
+          # upstream represents downstream-added protected content.
+          APPLE_DIFF=$(git diff --no-renames --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA" -- \
             Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
           [[ -z "$APPLE_DIFF" ]] || {
             PROTECTED_APPLE_CHANGES=1
-            echo "::error::Candidate modifies protected Apple/iOS paths; manual review is required: $APPLE_DIFF"
+            echo "protected_apple_changes=1" >> "$GITHUB_OUTPUT"
+            echo "::error::Downstream automation modified protected Apple/iOS paths after upstream merge: $APPLE_DIFF"
             exit 1
           }
 
@@ -370,7 +400,8 @@ jobs:
             echo "- Changed files: **$CHANGED_FILES**"
             echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
             echo "- Ambiguous conflicts: **none**"
-            echo "- Protected Apple/iOS downstream modifications: **none**"
+            echo "- Upstream protected Apple/iOS delta: **allowed and copied verbatim**"
+            echo "- Downstream-added protected Apple/iOS delta: **none**"
             echo "- Legacy Electron desktop layout: **removed automatically**"
             echo "- Candidate validation caches: **disabled**"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -417,7 +448,8 @@ jobs:
           - Candidate base main: `$BASE_SHA`
           - Ownership-resolved conflicts: **$CONFLICT_COUNT**
           - Ambiguous conflicts: **none**
-          - Protected Apple/iOS downstream modifications: **none**
+          - Upstream protected Apple/iOS delta: **allowed and copied verbatim**
+          - Downstream-added protected Apple/iOS delta: **none**
           - Core + Web, Android, Windows and Linux gates: **running on this immutable SHA**
           - CodeQL and Dependency Review: **required before merge**
           - Windows Authenticode: **release-time optional; unsigned fallback is explicit**
@@ -475,6 +507,7 @@ jobs:
             --candidate-sha "${{ needs.prepare.outputs.candidate_sha }}" \
             --upstream-sha "${{ needs.prepare.outputs.upstream_sha }}" \
             --conflict-count "${{ needs.prepare.outputs.conflict_count }}"
+          python3 Scripts/ci/tests/test_validate_upstream_candidate.py
       - name: Rust format
         run: cargo fmt --all -- --check
       - name: Rust clippy

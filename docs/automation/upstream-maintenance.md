@@ -29,6 +29,11 @@ metadata publication. A single fixed automation issue is opened or updated
 when a failure persists; it is closed automatically after recovery. User bug
 reports are never closed by maintenance automation.
 
-Apple/macOS/iOS/iPadOS sources remain upstream-owned. Ambiguous merge conflicts,
-protected Apple changes, missing Android signing identity, an existing release
-tag, or repeated CI failures stop the transaction and require a maintainer.
+Apple/macOS/iOS/iPadOS sources remain upstream-owned. An upstream change in a
+protected Apple path is copied verbatim into the candidate; the candidate is
+rejected only when its protected tree differs from the upstream tree (for
+example, because downstream automation added an adapter or preserved
+downstream-only content). Apple conflicts resolve to upstream (`theirs`), while
+downstream adapter conflicts continue to resolve to downstream (`ours`).
+Ambiguous conflicts, missing Android signing identity, an existing release tag,
+or repeated CI failures stop the transaction and require a maintainer.
