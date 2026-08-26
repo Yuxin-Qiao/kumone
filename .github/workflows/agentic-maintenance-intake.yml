@@ -12,6 +12,7 @@ on:
       - Coverage
       - Rust nightly fuzz
       - Documentation CI
+      - Semantic Upstream Sync
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -101,6 +102,13 @@ jobs:
             CATEGORY="windows-or-tauri"
           elif grep -Eqi 'documentation|mkdocs' <<<"$FAILURE_STEPS"; then
             CATEGORY="documentation"
+          fi
+          if [[ "$WORKFLOW" == "Semantic Upstream Sync" ]]; then
+            # Upstream candidates can be rejected by the immutable Apple/iOS
+            # boundary before a normal CI category is available. Keep this
+            # explicit so the intake remains actionable without executing the
+            # candidate or attempting an automated repair.
+            CATEGORY="upstream-sync-boundary"
           fi
           SIGNATURE=$(printf '%s\n%s\n%s' "$WORKFLOW" "$CATEGORY" "$FAILURE_STEPS" | sha256sum | cut -d' ' -f1)
 
