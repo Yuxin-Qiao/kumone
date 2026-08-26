@@ -49,6 +49,8 @@ jobs:
       conflict_count: ${{ steps.sync.outputs.conflict_count }}
       ambiguous_conflicts: ${{ steps.sync.outputs.ambiguous_conflicts }}
       protected_apple_changes: ${{ steps.sync.outputs.protected_apple_changes }}
+      upstream_apple_delta_count: ${{ steps.sync.outputs.upstream_apple_delta_count }}
+      downstream_added_apple_delta_count: ${{ steps.sync.outputs.downstream_added_apple_delta_count }}
       superseded_count: ${{ steps.sync.outputs.superseded_count }}
     steps:
       - uses: actions/checkout@v7
@@ -78,7 +80,8 @@ jobs:
 
           for key in updated reused sync_branch candidate_sha base_sha version upstream_sha \
             upstream_prerelease upstream_tag_suffix conflict_count ambiguous_conflicts \
-            protected_apple_changes superseded_count; do
+            protected_apple_changes upstream_apple_delta_count downstream_added_apple_delta_count \
+            superseded_count; do
             echo "$key=" >> "$GITHUB_OUTPUT"
           done
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
@@ -87,6 +90,8 @@ jobs:
           echo "conflict_count=0" >> "$GITHUB_OUTPUT"
           echo "ambiguous_conflicts=false" >> "$GITHUB_OUTPUT"
           echo "protected_apple_changes=0" >> "$GITHUB_OUTPUT"
+          echo "upstream_apple_delta_count=0" >> "$GITHUB_OUTPUT"
+          echo "downstream_added_apple_delta_count=0" >> "$GITHUB_OUTPUT"
           echo "superseded_count=0" >> "$GITHUB_OUTPUT"
 
           git config user.name "github-actions[bot]"
@@ -307,16 +312,25 @@ jobs:
               path.write_text(text, encoding="utf-8")
           PY
           mkdir -p .github/maintenance
+          UPSTREAM_APPLE_DELTA=$(git diff --name-only "$MERGE_BASE" "$UPSTREAM_SHA" -- \
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
+          UPSTREAM_APPLE_DELTA_COUNT=$(grep -c . <<< "$UPSTREAM_APPLE_DELTA" || true)
+          # The candidate is rejected if this is anything but zero. Keep the
+          # metadata value deterministic while the commit is being assembled.
+          DOWNSTREAM_ADDED_APPLE_DELTA_COUNT=0
           jq -n \
             --arg upstream_version "$UPSTREAM_VERSION" \
             --arg upstream_sha "$UPSTREAM_SHA" \
             --arg base_sha "$BASE_SHA" \
+            --arg merge_base "$MERGE_BASE" \
             --arg branch "$SYNC_BRANCH" \
             --arg mode "$RUN_MODE" \
             --argjson prerelease "$UPSTREAM_PRERELEASE" \
             --arg tag_suffix "$UPSTREAM_TAG_SUFFIX" \
             --argjson conflict_count "$CONFLICT_COUNT" \
-            '{schema:1,workflow:"Semantic Upstream Sync",status:"candidate",upstream_version:$upstream_version,upstream_sha:$upstream_sha,base_sha:$base_sha,branch:$branch,upstream_prerelease:$prerelease,upstream_tag_suffix:$tag_suffix,ownership_conflict_count:$conflict_count,ambiguous_conflicts:false,protected_apple_changes:0,mode:$mode,updated_at:(now | todateiso8601)}' \
+            --argjson upstream_apple_delta_count "$UPSTREAM_APPLE_DELTA_COUNT" \
+            --argjson downstream_added_apple_delta_count "$DOWNSTREAM_ADDED_APPLE_DELTA_COUNT" \
+            '{schema:1,workflow:"Semantic Upstream Sync",status:"candidate",upstream_version:$upstream_version,upstream_sha:$upstream_sha,base_sha:$base_sha,merge_base:$merge_base,branch:$branch,upstream_prerelease:$prerelease,upstream_tag_suffix:$tag_suffix,ownership_conflict_count:$conflict_count,ambiguous_conflicts:false,protected_apple_changes:0,upstream_apple_delta_count:$upstream_apple_delta_count,downstream_added_apple_delta_count:$downstream_added_apple_delta_count,mode:$mode,updated_at:(now | todateiso8601)}' \
             > .github/maintenance/upstream.json
 
           git add -A
@@ -331,11 +345,15 @@ jobs:
           # change protected Apple paths, but the downstream candidate must
           # reproduce the upstream tree exactly there. Any adapter-side or
           # automation-added Apple mutation therefore fails closed.
-          APPLE_DIFF=$(git diff --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA" -- \
+          UPSTREAM_APPLE_DELTA=$(git diff --name-only "$MERGE_BASE" "$UPSTREAM_SHA" -- \
             Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
-          [[ -z "$APPLE_DIFF" ]] || {
+          DOWNSTREAM_ADDED_APPLE_DELTA=$(git diff --name-only "$UPSTREAM_SHA" "$CANDIDATE_SHA" -- \
+            Sources/Kumone Sources/KumoneLauncher Package.swift Package.resolved AppIcon.icon ios)
+          UPSTREAM_APPLE_DELTA_COUNT=$(grep -c . <<< "$UPSTREAM_APPLE_DELTA" || true)
+          DOWNSTREAM_ADDED_APPLE_DELTA_COUNT=$(grep -c . <<< "$DOWNSTREAM_ADDED_APPLE_DELTA" || true)
+          [[ -z "$DOWNSTREAM_ADDED_APPLE_DELTA" ]] || {
             PROTECTED_APPLE_CHANGES=1
-            echo "::error::Candidate diverges from upstream on protected Apple/iOS paths: $APPLE_DIFF"
+            echo "::error::Candidate diverges from upstream on protected Apple/iOS paths (downstream-added delta): $DOWNSTREAM_ADDED_APPLE_DELTA"
             exit 1
           }
 
@@ -363,6 +381,8 @@ jobs:
           echo "conflict_count=$CONFLICT_COUNT" >> "$GITHUB_OUTPUT"
           echo "ambiguous_conflicts=$AMBIGUOUS_CONFLICTS" >> "$GITHUB_OUTPUT"
           echo "protected_apple_changes=$PROTECTED_APPLE_CHANGES" >> "$GITHUB_OUTPUT"
+          echo "upstream_apple_delta_count=$UPSTREAM_APPLE_DELTA_COUNT" >> "$GITHUB_OUTPUT"
+          echo "downstream_added_apple_delta_count=$DOWNSTREAM_ADDED_APPLE_DELTA_COUNT" >> "$GITHUB_OUTPUT"
           CHANGED_FILES=$(git diff --name-only "$BASE_SHA...HEAD" | wc -l | tr -d ' ')
           {
             echo "### Fresh semantic upstream candidate"
@@ -373,7 +393,8 @@ jobs:
             echo "- Changed files: **$CHANGED_FILES**"
             echo "- Ownership-resolved conflicts: **$CONFLICT_COUNT**"
             echo "- Ambiguous conflicts: **none**"
-            echo "- Protected Apple/iOS downstream modifications: **none**"
+            echo "- Upstream-owned Apple/iOS delta: **$UPSTREAM_APPLE_DELTA_COUNT paths**"
+            echo "- Downstream-added Apple/iOS delta: **$DOWNSTREAM_ADDED_APPLE_DELTA_COUNT paths**"
             echo "- Legacy Electron desktop layout: **removed automatically**"
             echo "- Candidate validation caches: **disabled**"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -401,6 +422,8 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
           CONFLICT_COUNT: ${{ needs.prepare.outputs.conflict_count }}
+          UPSTREAM_APPLE_DELTA_COUNT: ${{ needs.prepare.outputs.upstream_apple_delta_count }}
+          DOWNSTREAM_ADDED_APPLE_DELTA_COUNT: ${{ needs.prepare.outputs.downstream_added_apple_delta_count }}
         shell: bash
         run: |
           set -euo pipefail
@@ -420,7 +443,8 @@ jobs:
           - Candidate base main: \`$BASE_SHA\`
           - Ownership-resolved conflicts: **$CONFLICT_COUNT**
           - Ambiguous conflicts: **none**
-          - Protected Apple/iOS downstream modifications: **none**
+          - Upstream-owned Apple/iOS delta: **$UPSTREAM_APPLE_DELTA_COUNT paths**
+          - Downstream-added Apple/iOS delta: **$DOWNSTREAM_ADDED_APPLE_DELTA_COUNT paths**
           - Core + Web, Android, Windows and Linux gates: **running on this immutable SHA**
           - CodeQL and Dependency Review: **required before merge**
           - Windows Authenticode: **release-time optional; unsigned fallback is explicit**
