@@ -1,0 +1,147 @@
+name: Agentic maintenance intake
+
+on:
+  workflow_run:
+    workflows:
+      - Core CI
+      - Windows CI
+      - Android CI
+      - Linux Tauri CI
+      - CodeQL Security Scan
+      - Dependency Review
+      - Coverage
+      - Rust nightly fuzz
+      - Documentation CI
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Completed GitHub Actions run to classify"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: agentic-maintenance-intake
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Classify trusted CI failure without executing candidate code
+    # workflow_run executes from the default branch. Only inspect failures from
+    # this repository's main branch; forks, PR merge refs and Apple changes are
+    # never promoted into an automated repair proposal.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'failure' &&
+           github.event.workflow_run.head_repository.full_name == github.repository &&
+           github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Create redacted repair intake
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::run_id must be numeric"
+            exit 1
+          }
+
+          RUN_JSON=$(gh run view "$EVENT_RUN_ID" --repo "$REPO" \
+            --json databaseId,name,workflowName,headBranch,headSha,conclusion,event,url,jobs)
+          CONCLUSION=$(jq -r '.conclusion // ""' <<<"$RUN_JSON")
+          [[ "$CONCLUSION" == "failure" ]] || {
+            echo "Run $EVENT_RUN_ID is not a failure; no repair intake created."
+            exit 0
+          }
+          HEAD_BRANCH=$(jq -r '.headBranch // ""' <<<"$RUN_JSON")
+          HEAD_SHA=$(jq -r '.headSha // ""' <<<"$RUN_JSON")
+          [[ "$HEAD_BRANCH" == "main" && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::warning::Only failures on main are eligible for intake."
+            exit 0
+          }
+
+          FAILURE_STEPS=$(jq -r '
+            .jobs[]?
+            | select(.conclusion == "failure")
+            | .name as $job
+            | ([.steps[]? | select(.conclusion == "failure") | .name] | join(", ")) as $steps
+            | "\($job): \($steps)"
+          ' <<<"$RUN_JSON" | head -c 4000)
+          FAILURE_STEPS=${FAILURE_STEPS:-"The run failed without a step-level failure summary."}
+          WORKFLOW=$(jq -r '.workflowName // .name // "unknown workflow"' <<<"$RUN_JSON")
+          RUN_URL=$(jq -r '.url' <<<"$RUN_JSON")
+
+          # This is intentionally a classifier, not an agent executor. Logs
+          # and candidate source are never checked out, eval'd, uploaded, or
+          # sent to a model. A stable signature de-duplicates repeated alarms.
+          CATEGORY="unknown"
+          if grep -Eqi 'cargo|rust|clippy|test' <<<"$FAILURE_STEPS"; then
+            CATEGORY="rust-or-core"
+          elif grep -Eqi 'codeql|dependency|scorecard|sbom' <<<"$FAILURE_STEPS"; then
+            CATEGORY="security-or-supply-chain"
+          elif grep -Eqi 'android|gradle' <<<"$FAILURE_STEPS"; then
+            CATEGORY="android"
+          elif grep -Eqi 'windows|tauri' <<<"$FAILURE_STEPS"; then
+            CATEGORY="windows-or-tauri"
+          elif grep -Eqi 'documentation|mkdocs' <<<"$FAILURE_STEPS"; then
+            CATEGORY="documentation"
+          fi
+          SIGNATURE=$(printf '%s\n%s\n%s' "$WORKFLOW" "$CATEGORY" "$FAILURE_STEPS" | sha256sum | cut -d' ' -f1)
+
+          # Check changed paths through the API only. This never executes the
+          # failed commit and permanently excludes protected Apple/iOS scope.
+          APPLE_CHANGE=$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/files?per_page=100" \
+            --jq '.[]?.filename' \
+            | grep -E '(^|/)(ios|iPadOS|Sources/Kumone|Sources/KumoneLauncher|.*\\.xcodeproj|.*\\.xcworkspace)(/|$)' \
+            | head -n 1 || true)
+          if [[ -n "$APPLE_CHANGE" ]]; then
+            CATEGORY="protected-apple-scope"
+          fi
+
+          TITLE="[automation] agentic repair intake: $WORKFLOW ($CATEGORY)"
+          BODY=$(cat <<EOF
+          ## Deterministic CI repair intake
+
+          The fail-closed maintenance monitor classified a trusted main failure. No candidate source was checked out or executed by this workflow.
+
+          - Workflow: **$WORKFLOW**
+          - Run: [$EVENT_RUN_ID]($RUN_URL)
+          - Commit: $HEAD_SHA
+          - Category: **$CATEGORY**
+          - Signature: $SIGNATURE
+          - Failed steps: $FAILURE_STEPS
+
+          ### Safety boundary
+
+          This repository currently has no account-authorized agent-coding provider. The intake is therefore deliberately issue-only: a maintainer or an explicitly installed provider must create any repair branch/PR. Any repair PR must pass the normal deterministic gates, must not change Apple/iOS/iPadOS paths, and cannot receive release/signing secrets. This issue is not a merge approval.
+          EOF
+          )
+
+          gh label create "automation/agent-repair" --repo "$REPO" \
+            --color "5319E7" --description "Fail-closed CI repair intake" --force >/dev/null 2>&1 || true
+          EXISTING=$(gh issue list --repo "$REPO" --state open \
+            --search "in:title $TITLE" --json number --jq '.[0].number // empty')
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null
+            echo "Updated repair intake issue #$EXISTING."
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" \
+              --label "automation/agent-repair" --body "$BODY" >/dev/null
+            echo "Created repair intake issue."
+          fi

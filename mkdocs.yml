@@ -12,6 +12,7 @@ nav:
   - Automation:
       - Upstream maintenance: automation/upstream-maintenance.md
       - Free OSS infrastructure: automation/free-oss-infrastructure.md
+      - Agentic repair boundary: automation/agentic-repair.md
   - Compatibility: compatibility.md
   - Release:
       - Android signing: release/android-signing.md
