@@ -22,7 +22,7 @@ jobs:
       version: ${{ steps.request.outputs.version }}
       label: ${{ steps.request.outputs.label }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           fetch-depth: 0
@@ -103,7 +103,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           persist-credentials: false
@@ -117,7 +117,7 @@ jobs:
           git fetch --no-tags origin "$SOURCE_SHA"
           git checkout --detach "$SOURCE_SHA"
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
       - name: Verify shared gates
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: rc-windows/*.exe
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-windows
           path: rc-windows/
@@ -174,11 +174,11 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       # No checkout and no repository scripts execute in this secret-bearing job.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android-build
           path: unsigned-input
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: temurin
           java-version: "17"
@@ -229,7 +229,7 @@ jobs:
           subject-path: |
             rc-android/*.apk
             rc-android/*.aab
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android
           path: rc-android/
@@ -245,7 +245,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           persist-credentials: false
@@ -259,7 +259,7 @@ jobs:
           git fetch --no-tags origin "$SOURCE_SHA"
           git checkout --detach "$SOURCE_SHA"
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
       - name: Install Tauri Linux dependencies
@@ -327,7 +327,7 @@ jobs:
             rc-linux/*.AppImage
             rc-linux/*.deb
             rc-linux/*.rpm
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-linux
           path: rc-linux/
@@ -344,7 +344,7 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       LABEL: ${{ needs.prepare.outputs.label }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           persist-credentials: false
@@ -358,7 +358,7 @@ jobs:
           git fetch --no-tags origin "$SOURCE_SHA"
           git checkout --detach "$SOURCE_SHA"
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6
         with:
           distribution: temurin
           java-version: "17"
@@ -421,7 +421,7 @@ jobs:
           mkdir -p rc-android-build
           cp "$APK" "rc-android-build/Kumone-$VERSION-$LABEL-android-unsigned.apk"
           cp "$AAB" "rc-android-build/Kumone-$VERSION-$LABEL-android-unsigned.aab"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Kumone-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.label }}-android-build
           path: rc-android-build/
