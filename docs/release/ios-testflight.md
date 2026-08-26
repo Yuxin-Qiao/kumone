@@ -9,6 +9,13 @@ the downstream desktop/Android tree. The only build-time patch is:
 - a monotonically increasing GitHub Actions run/attempt build number; and
 - the Apple Developer team used for signing.
 
+The workflow has a deliberate two-stage boundary: `build-unsigned` checks out
+the immutable upstream commit and creates a temporary unsigned archive without
+Apple credentials; `sign-upload` verifies that archive's Bundle ID and version,
+then imports the certificate, signs, uploads, and assigns the build to the
+internal group. The temporary archive expires after one day and the signed IPA
+is never retained as a GitHub artifact.
+
 The scheduled workflow checks upstream `main` every three hours. A commit that
 was already uploaded is skipped using an Actions cache marker. `workflow_dispatch`
 can build a tag or full commit SHA, and `force=true` can rebuild an existing

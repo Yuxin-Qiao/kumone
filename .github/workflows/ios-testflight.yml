@@ -57,7 +57,10 @@ jobs:
             sha="$requested"
           else
             ref_spec="refs/tags/$requested"
-            sha=$(git ls-remote "$upstream" "$ref_spec" "$ref_spec^{}" | awk '!/\^\{\}$/ { print $1; exit }')
+            tag_refs=$(git ls-remote "$upstream" "$ref_spec" "$ref_spec^{}")
+            peeled_sha=$(awk '$2 ~ /\^\{\}$/ { print $1; exit }' <<< "$tag_refs")
+            direct_sha=$(awk '$2 !~ /\^\{\}$/ { print $1; exit }' <<< "$tag_refs")
+            sha="${peeled_sha:-$direct_sha}"
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Could not resolve upstream ref $requested"; exit 1; }
 
@@ -77,25 +80,23 @@ jobs:
           echo "cache_key=kumone-ios-testflight-$sha-$BUNDLE_ID" >> "$GITHUB_OUTPUT"
           {
             echo "### Upstream iOS source"
-            echo "- Ref requested: `$requested`"
-            echo "- Immutable commit: `$sha`"
-            echo "- Marketing version: **$version**"
-            echo "- Bundle ID patch: `$BUNDLE_ID`"
+            printf '%s\n' "- Ref requested: \`$requested\`"
+            printf '%s\n' "- Immutable commit: \`$sha\`"
+            printf '%s\n' "- Marketing version: **$version**"
+            printf '%s\n' "- Bundle ID patch: \`$BUNDLE_ID\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  build-upload:
-    name: Build and upload Internal TestFlight
+  build-unsigned:
+    name: Build immutable unsigned iOS archive
     needs: resolve-upstream
     runs-on: macos-15
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+      build_number: ${{ steps.allocate.outputs.build_number }}
+      archive_artifact: ${{ steps.archive.outputs.artifact_name }}
     env:
       IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_IDENTIFIER || 'com.yuxinqiao.kumone' }}
       APPLE_TEAM_ID: ${{ vars.APPLE_DEVELOPMENT_TEAM }}
-      TESTFLIGHT_GROUP: ${{ vars.TESTFLIGHT_INTERNAL_GROUP || 'Internal Testers' }}
-      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
     steps:
       - name: Checkout downstream workflow scripts
         uses: actions/checkout@v7
@@ -123,20 +124,15 @@ jobs:
           echo "build=false" >> "$GITHUB_OUTPUT"
           echo "Upstream commit already has a successful TestFlight marker; nothing to upload." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify required Apple configuration
+      - id: allocate
+        name: Allocate a unique TestFlight build number
         if: steps.gate.outputs.build == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          missing=()
-          for name in IOS_BUNDLE_ID APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD; do
-            [[ -n "${!name:-}" ]] || missing+=("$name")
-          done
-          if (( ${#missing[@]} )); then
-            printf '::error::Missing GitHub configuration: %s\n' "${missing[*]}"
-            echo "Create the App Store Connect app and add the documented secrets/variables before dispatching this workflow." >&2
-            exit 1
-          fi
+          build_number=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "IOS_BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
 
       - name: Checkout immutable upstream source
         if: steps.gate.outputs.build == 'true'
@@ -148,16 +144,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Allocate a unique TestFlight build number
-        if: steps.gate.outputs.build == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Include the attempt so a rerun after a partial upload cannot reuse
-          # an already accepted App Store Connect build number.
-          build_number=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))
-          echo "IOS_BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
-
       - name: Apply Bundle ID and version patch only
         if: steps.gate.outputs.build == 'true'
         run: |
@@ -167,23 +153,6 @@ jobs:
             --build-number "$IOS_BUILD_NUMBER" \
             --bundle-id "$IOS_BUNDLE_ID" \
             --team-id "$APPLE_TEAM_ID"
-
-      - name: Import Apple Distribution certificate
-        if: steps.gate.outputs.build == 'true'
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
-      - name: Download App Store provisioning profile
-        if: steps.gate.outputs.build == 'true'
-        uses: apple-actions/download-provisioning-profiles@v4
-        with:
-          bundle-id: ${{ env.IOS_BUNDLE_ID }}
-          profile-type: IOS_APP_STORE
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
 
       - name: Archive upstream iOS app
         if: steps.gate.outputs.build == 'true'
@@ -199,16 +168,105 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath "$archive" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
             MARKETING_VERSION='${{ needs.resolve-upstream.outputs.version }}' \
             CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER" \
-            CODE_SIGN_STYLE=Automatic \
-            -allowProvisioningUpdates \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
             archive | tee "$RUNNER_TEMP/xcodebuild-archive.log"
 
-      - name: Export App Store package
+      - id: archive
+        name: Promote unsigned archive as an immutable artifact
         if: steps.gate.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_name="kumone-ios-unsigned-${{ needs.resolve-upstream.outputs.version }}-${GITHUB_RUN_ID}"
+          test -d "$RUNNER_TEMP/KumoneIOS.xcarchive"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned archive for signing job
+        if: steps.gate.outputs.build == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.archive.outputs.artifact_name }}
+          path: ${{ runner.temp }}/KumoneIOS.xcarchive
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-upload:
+    name: Sign and upload Internal TestFlight
+    needs: [resolve-upstream, build-unsigned]
+    if: needs.build-unsigned.outputs.build == 'true'
+    runs-on: macos-15
+    env:
+      IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_IDENTIFIER || 'com.yuxinqiao.kumone' }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_DEVELOPMENT_TEAM }}
+      TESTFLIGHT_GROUP: ${{ vars.TESTFLIGHT_INTERNAL_GROUP || 'Internal Testers' }}
+      IOS_BUILD_NUMBER: ${{ needs.build-unsigned.outputs.build_number }}
+      ARCHIVE_ARTIFACT: ${{ needs.build-unsigned.outputs.archive_artifact }}
+    steps:
+      - name: Checkout reviewed signing scripts
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download promoted unsigned archive
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.ARCHIVE_ARTIFACT }}
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Verify promoted archive metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/unsigned/KumoneIOS.xcarchive/Products/Applications/KumoneIOS.app"
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist")
+          [[ "$bundle" == "$IOS_BUNDLE_ID" ]] || { echo "::error::Promoted archive Bundle ID mismatch"; exit 1; }
+          [[ "$version" == '${{ needs.resolve-upstream.outputs.version }}' ]] || { echo "::error::Promoted archive version mismatch"; exit 1; }
+          [[ "$build" == "$IOS_BUILD_NUMBER" ]] || { echo "::error::Promoted archive build number mismatch"; exit 1; }
+
+      - name: Verify required Apple configuration
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in IOS_BUNDLE_ID APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} )); then
+            printf '::error::Missing GitHub configuration: %s\n' "${missing[*]}"
+            echo "Create the App Store Connect app and add the documented secrets/variables before dispatching this workflow." >&2
+            exit 1
+          fi
+
+      - name: Import Apple Distribution certificate
+        uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Download App Store provisioning profile
+        uses: apple-actions/download-provisioning-profiles@7fa56f793274ba880be33b875dae5fe62519bc11 # v4
+        with:
+          bundle-id: ${{ env.IOS_BUNDLE_ID }}
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - id: export
+        name: Export signed App Store package
         shell: bash
         run: |
           set -euo pipefail
@@ -226,25 +284,23 @@ jobs:
           </dict></plist>
           PLIST
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/KumoneIOS.xcarchive" \
+            -archivePath "$RUNNER_TEMP/unsigned/KumoneIOS.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/export-options.plist" \
             -exportPath "$export_dir" \
             -allowProvisioningUpdates | tee "$RUNNER_TEMP/xcodebuild-export.log"
           ipa=$(find "$export_dir" -maxdepth 1 -name '*.ipa' -type f -print -quit)
           [[ -n "$ipa" ]] || { echo "::error::xcodebuild did not produce an IPA"; exit 1; }
-          echo "IPA_PATH=$ipa" >> "$GITHUB_ENV"
+          echo "ipa=$ipa" >> "$GITHUB_OUTPUT"
 
       - name: Upload to TestFlight
-        if: steps.gate.outputs.build == 'true'
-        uses: apple-actions/upload-testflight-build@v2
+        uses: apple-actions/upload-testflight-build@9fe2647a2deb0277d2909a036ee4584fe3226e73 # v2
         with:
-          app-path: ${{ env.IPA_PATH }}
+          app-path: ${{ steps.export.outputs.ipa }}
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
 
       - name: Add build to Internal TestFlight group
-        if: steps.gate.outputs.build == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -257,7 +313,6 @@ jobs:
             --group-name "$TESTFLIGHT_GROUP"
 
       - name: Save uploaded-commit marker
-        if: steps.gate.outputs.build == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -266,20 +321,16 @@ jobs:
           printf '%s\n' '${{ needs.resolve-upstream.outputs.version }}' > .ci/ios-testflight-marker/version
 
       - name: Persist uploaded-commit marker
-        if: steps.gate.outputs.build == 'true'
         uses: actions/cache/save@v4
         continue-on-error: true
         with:
           path: .ci/ios-testflight-marker
           key: ${{ needs.resolve-upstream.outputs.cache_key }}
 
-      - name: Upload build evidence
-        if: steps.gate.outputs.build == 'true'
-        uses: actions/upload-artifact@v7
+      - name: Upload build evidence without IPA
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kumone-ios-testflight-${{ needs.resolve-upstream.outputs.version }}-${{ github.run_number }}
-          path: |
-            ${{ runner.temp }}/xcodebuild-archive.log
-            ${{ runner.temp }}/xcodebuild-export.log
+          path: ${{ runner.temp }}/xcodebuild-export.log
           if-no-files-found: error
           retention-days: 7
