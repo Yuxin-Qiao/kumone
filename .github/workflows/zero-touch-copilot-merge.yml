@@ -79,14 +79,15 @@ jobs:
             MARKER='<!-- zero-touch-protected-scope -->'
             COMMENTS=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)
             if ! grep -Fq "$MARKER" <<<"$COMMENTS"; then
-              gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$MARKER
-Autonomous merge is blocked because this PR touches protected upstream/automation scope:
-
-\`\`\`
-$BLOCKED
-\`\`\`
-
-@copilot Please revise the solution so it stays within downstream-owned application paths. Do not weaken CI, signing, release, or ownership boundaries." >/dev/null || true
+              {
+                printf '%s\n' "$MARKER"
+                printf '%s\n\n' 'Autonomous merge is blocked because this PR touches protected upstream/automation scope:'
+                printf '%s\n' '```'
+                printf '%s\n' "$BLOCKED"
+                printf '%s\n\n' '```'
+                printf '%s\n' '@copilot Please revise the solution so it stays within downstream-owned application paths. Do not weaken CI, signing, release, or ownership boundaries.'
+              } > "$RUNNER_TEMP/blocked-pr-comment.md"
+              gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/blocked-pr-comment.md" >/dev/null || true
             fi
             echo "Protected scope prevents autonomous merge."
             exit 0
