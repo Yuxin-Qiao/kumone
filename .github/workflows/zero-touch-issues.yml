@@ -1,0 +1,170 @@
+name: Zero-touch issue repair
+
+on:
+  issues:
+    types: [opened, reopened]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: zero-touch-issue-repair
+  cancel-in-progress: false
+
+jobs:
+  delegate:
+    name: Delegate eligible issues to Copilot cloud agent
+    runs-on: ubuntu-latest
+    env:
+      # Copilot assignment requires a user token. Prefer a dedicated token,
+      # but reuse the repository's existing release PAT when it has the
+      # required Actions/Contents/Issues/PR write permissions.
+      GH_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN || secrets.RELEASE_TOKEN || github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Verify Copilot assignment capability
+        id: capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER=${REPO%%/*}
+          NAME=${REPO#*/}
+          QUERY='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){suggestedActors(capabilities:[CAN_BE_ASSIGNED],first:100){nodes{login}}}}'
+          set +e
+          RESPONSE=$(gh api graphql \
+            -H 'GraphQL-Features: issues_copilot_assignment_api_support,coding_agent_model_selection' \
+            -f query="$QUERY" -F owner="$OWNER" -F name="$NAME" 2>"$RUNNER_TEMP/copilot-capability.err")
+          STATUS=$?
+          set -e
+          if [[ "$STATUS" -eq 0 ]] && jq -e '.data.repository.suggestedActors.nodes[]? | select(.login == "copilot-swe-agent")' <<<"$RESPONSE" >/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          gh label create "automation/copilot-token" --repo "$REPO" --color D4C5F9 \
+            --description "Copilot delegation token or policy needs attention" --force >/dev/null 2>&1 || true
+          TITLE="[automation] Copilot issue delegation unavailable"
+          BODY=$(cat <<'EOF'
+          Zero-touch issue repair could not authenticate a user-token Copilot assignment.
+
+          The workflow first tries `COPILOT_AGENT_TOKEN`, then the existing `RELEASE_TOKEN`. GitHub's Copilot assignment API requires a user token with read/write Actions, Contents, Issues and Pull Requests permissions; the normal `GITHUB_TOKEN` is not sufficient.
+
+          This is a single configuration incident. New user issues remain open and the hourly sweep will retry automatically after token/policy access becomes valid.
+          EOF
+          )
+          EXISTING=$(gh issue list --repo "$REPO" --state open --search "in:title $TITLE" --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null 2>&1 || true
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --label "automation/copilot-token" --body "$BODY" >/dev/null 2>&1 || true
+          fi
+
+      - name: Delegate new and backlog issues
+        if: steps.capability.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh label create "automation/copilot" --repo "$REPO" --color 5319E7 \
+            --description "Delegated to GitHub Copilot cloud agent" --force >/dev/null 2>&1 || true
+          gh label create "automation/hold" --repo "$REPO" --color B60205 \
+            --description "Do not delegate or auto-merge" --force >/dev/null 2>&1 || true
+          gh label create "upstream/apple" --repo "$REPO" --color FBCA04 \
+            --description "Apple/iOS/macOS implementation is upstream-owned" --force >/dev/null 2>&1 || true
+          gh label create "security" --repo "$REPO" --color B60205 \
+            --description "Security-sensitive report; excluded from autonomous coding" --force >/dev/null 2>&1 || true
+
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            printf '%s\n' '${{ github.event.issue.number }}' > "$RUNNER_TEMP/issues.txt"
+          else
+            gh issue list --repo "$REPO" --state open --limit 100 --json number \
+              --jq '.[].number' > "$RUNNER_TEMP/issues.txt"
+          fi
+
+          while read -r NUMBER; do
+            [[ "$NUMBER" =~ ^[0-9]+$ ]] || continue
+            ISSUE=$(gh issue view "$NUMBER" --repo "$REPO" --json number,title,body,labels,assignees,state)
+            [[ "$(jq -r '.state' <<<"$ISSUE")" == "OPEN" ]] || continue
+            LABELS=$(jq -r '[.labels[].name] | join("\n")' <<<"$ISSUE")
+            ASSIGNEES=$(jq -r '[.assignees[].login] | join("\n")' <<<"$ISSUE")
+            grep -qx 'copilot-swe-agent' <<<"$ASSIGNEES" && continue
+            grep -Eq '^(automation/hold|security|upstream/apple)$' <<<"$LABELS" && continue
+
+            TITLE=$(jq -r '.title' <<<"$ISSUE")
+            BODY=$(jq -r '.body // ""' <<<"$ISSUE")
+            TEXT="$TITLE
+$BODY"
+
+            # Public security reports should never be handed to an autonomous
+            # coding agent with normal repository context.
+            if grep -Eqi '(security vulnerability|credential leak|private key|secret leak|remote code execution|\bRCE\b)' <<<"$TEXT"; then
+              gh issue edit "$NUMBER" --repo "$REPO" --add-label security >/dev/null
+              continue
+            fi
+
+            # This fork deliberately treats the Swift Apple implementation as
+            # upstream-owned. Do not create downstream divergence automatically.
+            if grep -Eqi '(^|[^A-Za-z])(iOS|iPhone|iPad|macOS|Mac App|SwiftUI|TestFlight|TrollStore)([^A-Za-z]|$)' <<<"$TEXT"; then
+              gh issue edit "$NUMBER" --repo "$REPO" --add-label upstream/apple >/dev/null
+              MARKER='<!-- zero-touch-upstream-apple -->'
+              COMMENTS=$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)
+              if ! grep -Fq "$MARKER" <<<"$COMMENTS"; then
+                gh issue comment "$NUMBER" --repo "$REPO" --body "$MARKER
+This fork keeps the Apple/iOS/macOS implementation byte-aligned with upstream. The downstream bot will not create a divergent Apple patch; upstream releases are synchronized automatically, while Windows/Android/Linux/Web/downstream-core issues are handled here." >/dev/null
+              fi
+              continue
+            fi
+
+            INSTRUCTIONS=$(cat <<EOF
+          Fix issue #$NUMBER autonomously in $REPO.
+
+          Requirements:
+          - Reproduce or validate the problem before changing code when practical.
+          - Make the smallest maintainable fix and add/update tests.
+          - Run the relevant deterministic CI commands locally in the agent environment.
+          - The PR body must include "Fixes #$NUMBER" and summarize tests performed.
+          - Do not add secrets, binary build outputs, generated release artifacts, or weaken tests/security gates.
+          - Do NOT modify upstream-owned Apple paths: Sources/Kumone/**, Sources/KumoneLauncher/**, ios/**, Package.swift, Package.resolved, AppIcon.icon/**.
+          - Do NOT modify release/signing or autonomous-maintenance policy: .github/workflows/release-downstream.yml, .github/workflows/semantic-sync-upstream.yml, .github/workflows/zero-touch-*.yml, signing keys, certificate fingerprints, or secret handling.
+          - Preserve the downstream Rust/Tauri/Compose/Web architecture and compatibility contracts.
+          - If the issue cannot be fixed without a protected path, explain that clearly on the issue/PR rather than creating a workaround that violates ownership.
+          EOF
+          )
+
+            PAYLOAD=$(jq -n --arg repo "$REPO" --arg instructions "$INSTRUCTIONS" '{
+              assignees:["copilot-swe-agent"],
+              agent_assignment:{
+                target_repo:$repo,
+                base_branch:"main",
+                custom_instructions:$instructions,
+                custom_agent:"",
+                model:""
+              }
+            }')
+
+            set +e
+            RESULT=$(gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "repos/$REPO/issues/$NUMBER/assignees" --input - <<<"$PAYLOAD" 2>&1)
+            STATUS=$?
+            set -e
+            if [[ "$STATUS" -eq 0 ]]; then
+              gh issue edit "$NUMBER" --repo "$REPO" --add-label "automation/copilot" >/dev/null
+              echo "Delegated issue #$NUMBER to Copilot."
+            else
+              echo "::warning::Could not delegate issue #$NUMBER: $RESULT"
+            fi
+          done < "$RUNNER_TEMP/issues.txt"
