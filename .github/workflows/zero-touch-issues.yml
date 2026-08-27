@@ -3,6 +3,10 @@ name: Zero-touch issue repair
 on:
   issues:
     types: [opened, reopened]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/zero-touch-issues.yml"
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
@@ -100,7 +104,7 @@ jobs:
             LABELS=$(jq -r '[.labels[].name] | join("\n")' <<<"$ISSUE")
             ASSIGNEES=$(jq -r '[.assignees[].login] | join("\n")' <<<"$ISSUE")
             grep -qx 'copilot-swe-agent' <<<"$ASSIGNEES" && continue
-            grep -Eq '^(automation/hold|security|upstream/apple)$' <<<"$LABELS" && continue
+            grep -Eq '^(automation/hold|automation/copilot-token|security|upstream/apple)$' <<<"$LABELS" && continue
 
             TITLE=$(jq -r '.title' <<<"$ISSUE")
             BODY=$(jq -r '.body // ""' <<<"$ISSUE")
