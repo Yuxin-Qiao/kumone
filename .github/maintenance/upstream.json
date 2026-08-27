@@ -4,9 +4,9 @@
   "status": "candidate",
   "upstream_version": "0.3.8",
   "upstream_sha": "e8bbb2c389fc893dcfa01251728efe7bd563b437",
-  "base_sha": "a719c5e36f10c19388842cea31fe15d86fa32c82",
+  "base_sha": "41b4c36cff813914f611e05e0391f422b1834149",
   "merge_base": "8e11d1a991e038b009b3f7cebfefbbe681c1d8c0",
-  "branch": "automation/upstream-v0.3.8-e8bbb2c389fc-a719c5e36f10",
+  "branch": "automation/upstream-v0.3.8-e8bbb2c389fc-41b4c36cff81",
   "upstream_prerelease": false,
   "upstream_tag_suffix": "",
   "ownership_conflict_count": 0,
@@ -15,5 +15,5 @@
   "upstream_apple_delta_count": 24,
   "downstream_added_apple_delta_count": 0,
   "mode": "live",
-  "updated_at": "2026-08-26T19:46:57Z"
+  "updated_at": "2026-08-27T00:29:32Z"
 }
