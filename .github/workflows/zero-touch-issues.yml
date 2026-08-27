@@ -26,9 +26,6 @@ jobs:
     name: Delegate eligible issues to Copilot cloud agent
     runs-on: ubuntu-latest
     env:
-      # Copilot assignment requires a user token. Prefer a dedicated token,
-      # but reuse the repository's existing release PAT when it has the
-      # required Actions/Contents/Issues/PR write permissions.
       GH_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN || secrets.RELEASE_TOKEN || github.token }}
       REPO: ${{ github.repository }}
     steps:
@@ -65,7 +62,7 @@ jobs:
 
           The workflow first tries `COPILOT_AGENT_TOKEN`, then the existing `RELEASE_TOKEN`. GitHub's Copilot assignment API requires a user token with read/write Actions, Contents, Issues and Pull Requests permissions; the normal `GITHUB_TOKEN` is not sufficient.
 
-          This is a single configuration incident. New user issues remain open and the hourly sweep will retry automatically after token/policy access becomes valid.
+          This is one configuration incident. New user issues remain open and the hourly sweep retries automatically after token/policy access becomes valid.
           EOF
           )
           EXISTING=$(gh issue list --repo "$REPO" --state open --search "in:title $TITLE" --json number --jq '.[0].number // empty' 2>/dev/null || true)
@@ -93,8 +90,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "issues" ]]; then
             printf '%s\n' '${{ github.event.issue.number }}' > "$RUNNER_TEMP/issues.txt"
           else
-            gh issue list --repo "$REPO" --state open --limit 100 --json number \
-              --jq '.[].number' > "$RUNNER_TEMP/issues.txt"
+            gh issue list --repo "$REPO" --state open --limit 100 --json number --jq '.[].number' > "$RUNNER_TEMP/issues.txt"
           fi
 
           while read -r NUMBER; do
@@ -103,23 +99,22 @@ jobs:
             [[ "$(jq -r '.state' <<<"$ISSUE")" == "OPEN" ]] || continue
             LABELS=$(jq -r '[.labels[].name] | join("\n")' <<<"$ISSUE")
             ASSIGNEES=$(jq -r '[.assignees[].login] | join("\n")' <<<"$ISSUE")
-            grep -qx 'copilot-swe-agent' <<<"$ASSIGNEES" && continue
-            grep -Eq '^(automation/hold|automation/copilot-token|security|upstream/apple)$' <<<"$LABELS" && continue
+
+            # Never steal or duplicate work. A human/bot assignee means someone
+            # already owns the issue; automation/copilot means it was delegated.
+            [[ -z "$ASSIGNEES" ]] || continue
+            grep -Eq '^(automation/hold|automation/copilot|automation/copilot-token|security|upstream/apple)$' <<<"$LABELS" && continue
 
             TITLE=$(jq -r '.title' <<<"$ISSUE")
             BODY=$(jq -r '.body // ""' <<<"$ISSUE")
             TEXT="$TITLE
 $BODY"
 
-            # Public security reports should never be handed to an autonomous
-            # coding agent with normal repository context.
             if grep -Eqi '(security vulnerability|credential leak|private key|secret leak|remote code execution|\bRCE\b)' <<<"$TEXT"; then
               gh issue edit "$NUMBER" --repo "$REPO" --add-label security >/dev/null
               continue
             fi
 
-            # This fork deliberately treats the Swift Apple implementation as
-            # upstream-owned. Do not create downstream divergence automatically.
             if grep -Eqi '(^|[^A-Za-z])(iOS|iPhone|iPad|macOS|Mac App|SwiftUI|TestFlight|TrollStore)([^A-Za-z]|$)' <<<"$TEXT"; then
               gh issue edit "$NUMBER" --repo "$REPO" --add-label upstream/apple >/dev/null
               MARKER='<!-- zero-touch-upstream-apple -->'
@@ -148,7 +143,7 @@ This fork keeps the Apple/iOS/macOS implementation byte-aligned with upstream. T
           )
 
             PAYLOAD=$(jq -n --arg repo "$REPO" --arg instructions "$INSTRUCTIONS" '{
-              assignees:["copilot-swe-agent"],
+              assignees:["copilot-swe-agent[bot]"],
               agent_assignment:{
                 target_repo:$repo,
                 base_branch:"main",
