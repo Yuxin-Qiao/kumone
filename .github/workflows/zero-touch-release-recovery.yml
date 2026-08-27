@@ -12,12 +12,7 @@ on:
         required: true
         type: string
 
-permissions:
-  actions: write
-  contents: write
-  issues: write
-  id-token: write
-  attestations: write
+permissions: {}
 
 concurrency:
   group: zero-touch-release-recovery
@@ -25,10 +20,14 @@ concurrency:
 
 jobs:
   inspect:
-    name: Retry transient builds or select artifact recovery
+    name: Verify failed release and choose recovery path
     if: >-
       ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
     outputs:
       recover: ${{ steps.inspect.outputs.recover }}
       original_run_id: ${{ steps.inspect.outputs.original_run_id }}
@@ -44,34 +43,59 @@ jobs:
           egress-policy: audit
 
       - id: inspect
-        name: Inspect immutable failed run and artifacts
+        name: Inspect run metadata and immutable artifacts through API only
         shell: bash
         run: |
           set -euo pipefail
           echo "recover=false" >> "$GITHUB_OUTPUT"
           [[ "$EVENT_RUN_ID" =~ ^[0-9]+$ ]]
+
           RUN=$(gh api "repos/$REPO/actions/runs/$EVENT_RUN_ID")
           NAME=$(jq -r '.name // ""' <<<"$RUN")
           CONCLUSION=$(jq -r '.conclusion // ""' <<<"$RUN")
+          EVENT=$(jq -r '.event // ""' <<<"$RUN")
+          HEAD_BRANCH=$(jq -r '.head_branch // ""' <<<"$RUN")
+          HEAD_REPO=$(jq -r '.head_repository.full_name // ""' <<<"$RUN")
           ATTEMPT=$(jq -r '.run_attempt // 1' <<<"$RUN")
           SOURCE_SHA=$(jq -r '.head_sha // ""' <<<"$RUN")
+
           [[ "$NAME" == "Downstream Windows + Linux + Android Release" ]]
           [[ "$CONCLUSION" == "failure" ]]
+          # Automatic stable releases are dispatched from this repository's
+          # main branch. Tag/manual historical builds are deliberately outside
+          # this recovery path because workflow_run.head_sha would not be a
+          # sufficient source-of-truth for them.
+          [[ "$EVENT" == "workflow_dispatch" ]]
+          [[ "$HEAD_BRANCH" == "main" ]]
+          [[ "$HEAD_REPO" == "$REPO" ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          MAIN_SHA=$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')
+          COMPARE=$(gh api "repos/$REPO/compare/$SOURCE_SHA...$MAIN_SHA")
+          RELATION=$(jq -r '.status // ""' <<<"$COMPARE")
+          [[ "$RELATION" == "ahead" || "$RELATION" == "identical" ]] || {
+            echo "::error::Failed release source is not an ancestor of current main"
+            exit 1
+          }
+
           echo "original_run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
           ARTIFACTS=$(gh api "repos/$REPO/actions/runs/$EVENT_RUN_ID/artifacts?per_page=100" --jq '.artifacts')
-          have() { jq -e --arg name "$1" '.[] | select(.name == $name and .expired == false)' <<<"$ARTIFACTS" >/dev/null; }
+          have() {
+            jq -e --arg name "$1" --arg sha "$SOURCE_SHA" '
+              .[] | select(.name == $name and .expired == false and .workflow_run.head_sha == $sha)
+            ' <<<"$ARTIFACTS" >/dev/null
+          }
 
           if have downstream-windows && have downstream-linux && have downstream-android-build; then
-            echo "All build artifacts exist; recover signing/publish without rebuilding."
+            echo "Trusted platform build artifacts are complete; recover signing and publish without rebuilding."
             echo "recover=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if [[ "$ATTEMPT" -lt 3 ]]; then
-            echo "Build artifacts are incomplete; retrying only failed jobs (attempt $ATTEMPT)."
+            echo "Build artifacts incomplete; retrying failed jobs only (attempt $ATTEMPT)."
             gh api --method POST "repos/$REPO/actions/runs/$EVENT_RUN_ID/rerun-failed-jobs" >/dev/null
             exit 0
           fi
@@ -79,7 +103,7 @@ jobs:
           gh label create "automation/agent-repair" --repo "$REPO" --color 5319E7 \
             --description "Fail-closed CI repair intake" --force >/dev/null 2>&1 || true
           TITLE="[automation] downstream release build failed after retries"
-          BODY="Release run $EVENT_RUN_ID failed after $ATTEMPT attempts and did not produce all trusted build artifacts. Source: $SOURCE_SHA. The zero-touch issue sweep may delegate downstream-owned code failures to Copilot; release/signing policy itself remains protected from autonomous edits."
+          BODY="Release run $EVENT_RUN_ID failed after $ATTEMPT attempts and did not produce every trusted build artifact. Source: $SOURCE_SHA. Downstream code failures may be delegated to the issue-repair agent; release/signing policy stays protected."
           EXISTING=$(gh issue list --repo "$REPO" --state open --search "in:title $TITLE" --json number --jq '.[0].number // empty')
           if [[ -n "$EXISTING" ]]; then
             gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" >/dev/null
@@ -92,13 +116,13 @@ jobs:
     needs: inspect
     if: needs.inspect.outputs.recover == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.sign.outputs.version }}
     permissions:
       actions: read
       contents: read
       id-token: write
       attestations: write
+    outputs:
+      version: ${{ steps.sign.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -108,9 +132,8 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      # Deliberately no repository checkout: secret-bearing signing job executes
-      # only fixed workflow commands and Android/JDK tooling.
-      - name: Download unsigned Android build from failed release
+      # No checkout: this secret-bearing job executes no repository source.
+      - name: Download unsigned Android build from verified failed release
         shell: bash
         run: gh run download "$ORIGINAL_RUN_ID" --repo "$REPO" --name downstream-android-build --dir unsigned-input
 
@@ -127,7 +150,7 @@ jobs:
           packages: "build-tools;36.0.0"
 
       - id: sign
-        name: Normalize keystore encoding, discover pinned identity and sign
+        name: Normalize keystore, discover pinned identity and sign
         shell: bash
         run: |
           set -euo pipefail
@@ -137,10 +160,14 @@ jobs:
           KEYSTORE="$RUNNER_TEMP/kumone-release.jks"
 
           python3 - <<'PY'
-          import base64, os, re
+          import base64
+          import os
+          import re
           from pathlib import Path
 
           raw = os.environ["ANDROID_KEYSTORE_BASE64"].strip()
+          if raw.startswith("ANDROID_KEYSTORE_BASE64="):
+              raw = raw.split("=", 1)[1]
           if raw.startswith("data:") and "," in raw:
               raw = raw.split(",", 1)[1]
           raw = raw.strip().strip("\"'")
@@ -152,26 +179,22 @@ jobs:
               raise SystemExit(f"Could not decode Android keystore: {exc}")
           if not data:
               raise SystemExit("Decoded Android keystore is empty")
-          Path(os.environ["RUNNER_TEMP"]).joinpath("kumone-release.jks").write_bytes(data)
+          Path(os.environ["RUNNER_TEMP"], "kumone-release.jks").write_bytes(data)
           PY
 
-          # The stable security identity is the signing certificate, not the
-          # byte serialization of the JKS container. Re-exports and base64
-          # formatting changes therefore self-heal while key substitution fails.
           export LC_ALL=C
-          KEY_ALIAS="${ANDROID_KEY_ALIAS:-}"
           fingerprint_for() {
             local alias="$1"
-            keytool -list -v -storetype JKS -keystore "$KEYSTORE" \
+            keytool -list -v -keystore "$KEYSTORE" \
               -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$alias" 2>/dev/null \
               | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1 \
               | tr -d ':' | tr '[:lower:]' '[:upper:]'
           }
 
           MATCHED_ALIAS=""
-          if [[ -n "$KEY_ALIAS" ]]; then
-            fp=$(fingerprint_for "$KEY_ALIAS" || true)
-            [[ "$fp" == "$EXPECTED_CERT_SHA256" ]] && MATCHED_ALIAS="$KEY_ALIAS"
+          if [[ -n "${ANDROID_KEY_ALIAS:-}" ]]; then
+            fp=$(fingerprint_for "$ANDROID_KEY_ALIAS" || true)
+            [[ "$fp" == "$EXPECTED_CERT_SHA256" ]] && MATCHED_ALIAS="$ANDROID_KEY_ALIAS"
           fi
           if [[ -z "$MATCHED_ALIAS" ]]; then
             while IFS= read -r alias; do
@@ -181,7 +204,7 @@ jobs:
                 MATCHED_ALIAS="$alias"
                 break
               fi
-            done < <(keytool -list -v -storetype JKS -keystore "$KEYSTORE" \
+            done < <(keytool -list -v -keystore "$KEYSTORE" \
               -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null | sed -n 's/^Alias name: //p')
           fi
           [[ -n "$MATCHED_ALIAS" ]] || {
@@ -202,17 +225,22 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
             --ks-key-alias "$MATCHED_ALIAS" --key-pass "pass:$KEY_PASSWORD" --out "$APK_OUT" "$APK_IN"
+
           cp "$AAB_IN" "$RUNNER_TEMP/kumone-unsigned.aab"
           zip -q -d "$RUNNER_TEMP/kumone-unsigned.aab" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.DSA' >/dev/null 2>&1 || true
           jarsigner -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
             -signedjar "$AAB_OUT" "$RUNNER_TEMP/kumone-unsigned.aab" "$MATCHED_ALIAS" >/dev/null
+
           "$APKSIGNER" verify --verbose --print-certs "$APK_OUT" >/dev/null
           jarsigner -verify "$AAB_OUT" >/dev/null
-          actual=$($APKSIGNER verify --print-certs "$APK_OUT" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')
-          [[ "$actual" == "$EXPECTED_CERT_SHA256" ]]
+          ACTUAL_CERT=$($APKSIGNER verify --print-certs "$APK_OUT" 2>/dev/null \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 \
+            | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          [[ "$ACTUAL_CERT" == "$EXPECTED_CERT_SHA256" ]]
           unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libkumone_ffi.so"
           BYTES=$(stat -c%s "$APK_OUT")
           [[ "$BYTES" -le $((15 * 1024 * 1024)) ]]
+          printf 'Android signing identity: %s\n' "$ACTUAL_CERT" > release-android/ANDROID-SIGNING-STATUS.txt
           (cd release-android && sha256sum *.apk *.aab > SHA256SUMS-android)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -232,7 +260,7 @@ jobs:
           retention-days: 30
 
   publish:
-    name: Publish recovered stable release
+    name: Publish recovered stable release without source execution
     needs: [inspect, android-sign]
     if: needs.inspect.outputs.recover == 'true' && needs.android-sign.result == 'success'
     runs-on: ubuntu-latest
@@ -250,23 +278,24 @@ jobs:
       TAURI_UPDATER_SIGNATURE_LINUX_X86_64: ${{ secrets.TAURI_UPDATER_SIGNATURE_LINUX_X86_64 }}
       TAURI_UPDATER_SIGNATURE_ANDROID: ${{ secrets.TAURI_UPDATER_SIGNATURE_ANDROID }}
     steps:
-      - name: Checkout immutable release source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.inspect.outputs.source_sha }}
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Revalidate stable version and source
+      - name: Revalidate source ancestry and version through GitHub API only
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          SOURCE_VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' CHANGELOG.md | head -n 1)
-          [[ "$SOURCE_VERSION" == "$VERSION" ]]
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+
+          MAIN_SHA=$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')
+          RELATION=$(gh api "repos/$REPO/compare/$SOURCE_SHA...$MAIN_SHA" --jq '.status')
+          [[ "$RELATION" == "ahead" || "$RELATION" == "identical" ]]
+
+          CHANGELOG_JSON=$(gh api "repos/$REPO/contents/CHANGELOG.md?ref=$SOURCE_SHA")
+          printf '%s' "$CHANGELOG_JSON" | jq -r '.content' | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/CHANGELOG.md"
+          SOURCE_VERSION=$(sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' "$RUNNER_TEMP/CHANGELOG.md" | head -n 1)
+          [[ "$SOURCE_VERSION" == "$VERSION" ]] || {
+            echo "::error::Recovered artifact version $VERSION != source $SOURCE_VERSION"
+            exit 1
+          }
 
       - name: Download trusted original Windows and Linux assets
         shell: bash
@@ -281,73 +310,133 @@ jobs:
           name: downstream-android-recovered
           path: publish-assets/android
 
-      - name: Assemble and validate payload
+      - name: Assemble and validate fixed-schema release payload
         shell: bash
         run: |
           set -euo pipefail
           TAG="downstream-v$VERSION"
-          mkdir -p publish-assets/final
-          cp publish-assets/windows/* publish-assets/final/
-          cp publish-assets/linux/* publish-assets/final/
-          cp publish-assets/android/* publish-assets/final/
-          (cd publish-assets/final && sha256sum Kumone-* > SHA256SUMS)
-          UPDATE_ARGS=(
-            --version "$VERSION"
-            --channel stable
-            --base-url "https://github.com/$REPO/releases/download/$TAG"
-            --output publish-assets/final/latest.json
-            --asset "windows-x64=publish-assets/final/Kumone-$VERSION-windows-x64-setup.exe"
-            --asset "linux-x86_64=publish-assets/final/Kumone-$VERSION-linux-x86_64.AppImage"
-            --asset "android=publish-assets/final/Kumone-$VERSION-android.apk"
-          )
-          [[ -n "${TAURI_UPDATER_PUBLIC_KEY_ID:-}" ]] && UPDATE_ARGS+=(--public-key-id "$TAURI_UPDATER_PUBLIC_KEY_ID")
-          [[ -n "${TAURI_UPDATER_SIGNATURE_WINDOWS_X64:-}" ]] && UPDATE_ARGS+=(--signature "windows-x64=$TAURI_UPDATER_SIGNATURE_WINDOWS_X64")
-          [[ -n "${TAURI_UPDATER_SIGNATURE_LINUX_X86_64:-}" ]] && UPDATE_ARGS+=(--signature "linux-x86_64=$TAURI_UPDATER_SIGNATURE_LINUX_X86_64")
-          [[ -n "${TAURI_UPDATER_SIGNATURE_ANDROID:-}" ]] && UPDATE_ARGS+=(--signature "android=$TAURI_UPDATER_SIGNATURE_ANDROID")
-          python3 scripts/ci/generate-update-manifest.py "${UPDATE_ARGS[@]}"
-          python3 scripts/ci/validate-update-manifest.py publish-assets/final/latest.json publish-assets/final
-          python3 scripts/ci/validate-contracts.py
+          FINAL=publish-assets/final
+          mkdir -p "$FINAL"
+          cp publish-assets/windows/* "$FINAL/"
+          cp publish-assets/linux/* "$FINAL/"
+          cp publish-assets/android/* "$FINAL/"
 
-      - name: Publish once, never overwrite another source
+          WIN="$FINAL/Kumone-$VERSION-windows-x64-setup.exe"
+          LIN="$FINAL/Kumone-$VERSION-linux-x86_64.AppImage"
+          APK="$FINAL/Kumone-$VERSION-android.apk"
+          AAB="$FINAL/Kumone-$VERSION-android.aab"
+          DEB="$FINAL/Kumone-$VERSION-linux-x86_64.deb"
+          RPM="$FINAL/Kumone-$VERSION-linux-x86_64.rpm"
+          for path in "$WIN" "$LIN" "$APK" "$AAB" "$DEB" "$RPM"; do
+            [[ -s "$path" ]] || { echo "::error::Missing release asset $path"; exit 1; }
+          done
+          [[ $(stat -c%s "$APK") -le $((15 * 1024 * 1024)) ]]
+          [[ $(stat -c%s "$LIN") -le $((80 * 1024 * 1024)) ]]
+          [[ $(stat -c%s "$DEB") -le $((25 * 1024 * 1024)) ]]
+          [[ $(stat -c%s "$RPM") -le $((25 * 1024 * 1024)) ]]
+
+          EXPECTED_CERT_SHA256="BCAF88ACDB9F176CEE66C5350BB75107365EB65C40CED83A6BAAA930C4473A88"
+          grep -Fx "Android signing identity: $EXPECTED_CERT_SHA256" "$FINAL/ANDROID-SIGNING-STATUS.txt"
+          (cd "$FINAL" && sha256sum Kumone-* > SHA256SUMS)
+
+          export TAG FINAL WIN LIN APK
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          repo = os.environ["REPO"]
+          tag = os.environ["TAG"]
+          final = Path(os.environ["FINAL"])
+          specs = [
+              ("windows-x64", Path(os.environ["WIN"]), os.environ.get("TAURI_UPDATER_SIGNATURE_WINDOWS_X64", "")),
+              ("linux-x86_64", Path(os.environ["LIN"]), os.environ.get("TAURI_UPDATER_SIGNATURE_LINUX_X86_64", "")),
+              ("android", Path(os.environ["APK"]), os.environ.get("TAURI_UPDATER_SIGNATURE_ANDROID", "")),
+          ]
+          assets = []
+          for platform, path, signature in specs:
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              assets.append({
+                  "platform": platform,
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{path.name}",
+                  "sha256": digest,
+                  "signature": signature or None,
+              })
+          key_id = os.environ.get("TAURI_UPDATER_PUBLIC_KEY_ID", "")
+          signed = bool(key_id and all(a["signature"] for a in assets))
+          payload = {
+              "schema_version": 1,
+              "product": "kumone",
+              "version": version,
+              "channel": "stable",
+              "signed": signed,
+              "public_key_id": key_id if signed else None,
+              "assets": assets,
+          }
+          (final / "latest.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+          # Self-validate the fixed manifest contract and local checksums.
+          loaded = json.loads((final / "latest.json").read_text(encoding="utf-8"))
+          assert loaded["schema_version"] == 1 and loaded["product"] == "kumone"
+          assert loaded["version"] == version and loaded["channel"] == "stable"
+          assert len(loaded["assets"]) == 3
+          if loaded["signed"]:
+              assert loaded["public_key_id"] and all(a["signature"] for a in loaded["assets"])
+          for asset in loaded["assets"]:
+              name = asset["url"].rsplit("/", 1)[-1]
+              path = final / name
+              assert path.is_file()
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == asset["sha256"]
+          PY
+
+      - name: Publish once and never overwrite another source
         shell: bash
         run: |
           set -euo pipefail
           TAG="downstream-v$VERSION"
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            EXISTING=$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')
-            [[ "$EXISTING" == "$SOURCE_SHA" ]] || {
-              echo "::error::Existing release $TAG belongs to another source"
+          TAG_SHA=$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
+          RELEASE_EXISTS=false
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 && RELEASE_EXISTS=true
+
+          if [[ "$RELEASE_EXISTS" == "true" ]]; then
+            [[ "$TAG_SHA" == "$SOURCE_SHA" ]] || {
+              echo "::error::Existing release $TAG points to $TAG_SHA, expected $SOURCE_SHA"
               exit 1
             }
-            echo "Release $TAG already recovered successfully; no-op."
+            echo "Release $TAG already exists for the verified source; recovery is a no-op."
             exit 0
           fi
-          TAG_SHA=$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
-          [[ -z "$TAG_SHA" || "$TAG_SHA" == "$SOURCE_SHA" ]] || {
-            echo "::error::Existing tag $TAG points to another source"
+          [[ -z "$TAG_SHA" ]] || {
+            echo "::error::Tag $TAG exists without a release; refusing to mutate it"
             exit 1
           }
-          [[ -z "$TAG_SHA" ]] || { echo "::error::Tag exists without release; fail closed"; exit 1; }
 
           WINDOWS_STATUS=$(find publish-assets/windows -name 'WINDOWS-SIGNING-STATUS.md' -type f -print -quit)
           WINDOWS_STATUS_TEXT="Windows signing status not emitted"
           [[ -z "$WINDOWS_STATUS" ]] || WINDOWS_STATUS_TEXT=$(cat "$WINDOWS_STATUS")
+
           gh release create "$TAG" --repo "$REPO" --target "$SOURCE_SHA" \
             --title "Kumone v$VERSION — Windows + Linux + Android" \
-            --notes "Automated zero-touch recovery for the upstream-aligned Kumone v$VERSION release. Trusted Windows/Linux build artifacts were reused from failed run $ORIGINAL_RUN_ID; Android was re-signed after robust keystore normalization and pinned certificate verification.\n\n$WINDOWS_STATUS_TEXT"
+            --notes "Automated zero-touch recovery for upstream-aligned Kumone v$VERSION. Trusted Windows/Linux artifacts were reused from failed run $ORIGINAL_RUN_ID; Android was re-signed only after matching the pinned certificate identity. No code from the failed source was executed by the privileged recovery workflow.\n\n$WINDOWS_STATUS_TEXT"
           gh release upload "$TAG" publish-assets/final/* --repo "$REPO"
 
           mkdir -p "$RUNNER_TEMP/release-status"
-          jq -n --arg workflow "Zero-touch release recovery" \
-            --argjson original_run_id "$ORIGINAL_RUN_ID" --arg status completed --arg conclusion success \
+          jq -n \
+            --arg workflow "Zero-touch release recovery" \
+            --argjson original_run_id "$ORIGINAL_RUN_ID" \
+            --arg status completed --arg conclusion success \
             --arg source_ref "$SOURCE_SHA" --arg version "$VERSION" --arg tag "$TAG" \
             --arg url "$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" \
             --arg updated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{workflow:$workflow,original_run_id:$original_run_id,status:$status,conclusion:$conclusion,source_ref:$source_ref,version:$version,tag:$tag,prerelease:false,url:$url,updated_at:$updated_at}' \
             > "$RUNNER_TEMP/release-status/release.json"
+
           for path in .github/release-status/release.json .github/release-status/active.json; do
             sha=$(gh api "repos/$REPO/contents/$path?ref=main" --jq '.sha' 2>/dev/null || true)
-            args=(--method PUT "repos/$REPO/contents/$path" -f message="ci(status): record recovered release $TAG" \
+            args=(--method PUT "repos/$REPO/contents/$path" \
+              -f message="ci(status): record recovered release $TAG" \
               -f content="$(base64 < "$RUNNER_TEMP/release-status/release.json")" -f branch=main)
             [[ -z "$sha" ]] || args+=( -f sha="$sha" )
             gh api "${args[@]}" >/dev/null
