@@ -1,0 +1,171 @@
+name: Zero-touch Copilot PR merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Copilot PR number to re-evaluate"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: zero-touch-copilot-merge-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: Validate immutable Copilot PR and merge after green CI
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+      REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Validate agent identity, scope and immutable head
+        id: policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "eligible=false" >> "$GITHUB_OUTPUT"
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 0
+
+          PR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json author,baseRefName,headRefOid,isDraft,state,title,body)
+          AUTHOR=$(jq -r '.author.login // ""' <<<"$PR")
+          BASE=$(jq -r '.baseRefName // ""' <<<"$PR")
+          HEAD=$(jq -r '.headRefOid // ""' <<<"$PR")
+          DRAFT=$(jq -r '.isDraft' <<<"$PR")
+          STATE=$(jq -r '.state' <<<"$PR")
+
+          [[ "$AUTHOR" == "copilot-swe-agent" || "$AUTHOR" == "copilot-swe-agent[bot]" ]] || {
+            echo "Not a Copilot coding-agent PR; ignoring."
+            exit 0
+          }
+          [[ "$BASE" == "main" && "$STATE" == "OPEN" && "$HEAD" =~ ^[0-9a-f]{40}$ ]] || exit 0
+          [[ "$DRAFT" == "false" ]] || {
+            echo "Copilot PR is still draft; ready_for_review will retry."
+            exit 0
+          }
+
+          gh label create "automation/copilot" --repo "$REPO" --color 5319E7 \
+            --description "Delegated to GitHub Copilot cloud agent" --force >/dev/null 2>&1 || true
+          gh label create "automation/automerge" --repo "$REPO" --color 0E8A16 \
+            --description "Safe agent repair eligible for deterministic auto-merge" --force >/dev/null 2>&1 || true
+          gh label create "automation/blocked" --repo "$REPO" --color B60205 \
+            --description "Autonomous merge blocked by protected scope" --force >/dev/null 2>&1 || true
+
+          FILES=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')
+          [[ -n "$FILES" ]] || {
+            echo "::warning::Copilot PR has no changed files."
+            exit 0
+          }
+
+          BLOCKED=$(grep -E '^(Sources/Kumone/|Sources/KumoneLauncher/|ios/|Package\.swift$|Package\.resolved$|AppIcon\.icon/|\.github/workflows/|\.github/CODEOWNERS$)' <<<"$FILES" || true)
+          if [[ -n "$BLOCKED" ]]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "automation/blocked" >/dev/null
+            MARKER='<!-- zero-touch-protected-scope -->'
+            COMMENTS=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)
+            if ! grep -Fq "$MARKER" <<<"$COMMENTS"; then
+              gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$MARKER
+Autonomous merge is blocked because this PR touches protected upstream/automation scope:
+
+\`\`\`
+$BLOCKED
+\`\`\`
+
+@copilot Please revise the solution so it stays within downstream-owned application paths. Do not weaken CI, signing, release, or ownership boundaries." >/dev/null || true
+            fi
+            echo "Protected scope prevents autonomous merge."
+            exit 0
+          fi
+
+          # Require the agent to connect the repair to an issue. This lets the
+          # default-branch merge close the issue automatically via Fixes/Closes.
+          BODY=$(jq -r '.body // ""' <<<"$PR")
+          if ! grep -Eqi '(^|[[:space:]])(fixes|closes|resolves)[[:space:]]+#[0-9]+' <<<"$BODY"; then
+            echo "::warning::Copilot PR does not close an issue; refusing autonomous merge."
+            exit 0
+          fi
+
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "automation/copilot" --add-label "automation/automerge" >/dev/null
+          echo "head_sha=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for all PR checks to settle green
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          EXPECTED_HEAD: ${{ steps.policy.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Give pull_request workflows time to register their check suites.
+          sleep 30
+          deadline=$((SECONDS + 3600))
+          seen_checks=false
+          while :; do
+            CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+            [[ "$CURRENT_HEAD" == "$EXPECTED_HEAD" ]] || {
+              echo "::error::PR head moved while checks were running; a fresh synchronize event will restart policy."
+              exit 1
+            }
+
+            CHECKS=$(gh api "repos/$REPO/commits/$EXPECTED_HEAD/check-runs?per_page=100" --jq '.check_runs')
+            count=$(jq 'length' <<<"$CHECKS")
+            [[ "$count" -gt 0 ]] && seen_checks=true
+            failed=$(jq -r '[.[] | select(.status == "completed" and (.conclusion | IN("success","neutral","skipped") | not))] | length' <<<"$CHECKS")
+            pending=$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$CHECKS")
+
+            [[ "$failed" -eq 0 ]] || {
+              echo "::error::$failed PR checks failed; Copilot can iterate on the PR instead of merging broken code."
+              exit 1
+            }
+            if [[ "$seen_checks" == "true" && "$pending" -eq 0 ]]; then
+              # A short settling window catches workflows registered slightly
+              # after the first suite reaches green.
+              sleep 20
+              CHECKS2=$(gh api "repos/$REPO/commits/$EXPECTED_HEAD/check-runs?per_page=100" --jq '.check_runs')
+              failed2=$(jq -r '[.[] | select(.status == "completed" and (.conclusion | IN("success","neutral","skipped") | not))] | length' <<<"$CHECKS2")
+              pending2=$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$CHECKS2")
+              [[ "$failed2" -eq 0 && "$pending2" -eq 0 ]] && break
+            fi
+            [[ "$SECONDS" -lt "$deadline" ]] || {
+              echo "::error::PR checks did not settle green within the policy window."
+              exit 1
+            }
+            sleep 30
+          done
+
+      - name: Revalidate and squash merge
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          EXPECTED_HEAD: ${{ steps.policy.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid,baseRefName,isDraft,mergeable,mergeStateStatus,state)
+          [[ "$(jq -r '.headRefOid' <<<"$PR")" == "$EXPECTED_HEAD" ]]
+          [[ "$(jq -r '.baseRefName' <<<"$PR")" == "main" ]]
+          [[ "$(jq -r '.isDraft' <<<"$PR")" == "false" ]]
+          [[ "$(jq -r '.state' <<<"$PR")" == "OPEN" ]]
+          [[ "$(jq -r '.mergeable' <<<"$PR")" == "MERGEABLE" ]]
+          [[ "$(jq -r '.mergeStateStatus' <<<"$PR")" == "CLEAN" ]]
+
+          FILES=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')
+          ! grep -Eq '^(Sources/Kumone/|Sources/KumoneLauncher/|ios/|Package\.swift$|Package\.resolved$|AppIcon\.icon/|\.github/workflows/|\.github/CODEOWNERS$)' <<<"$FILES"
+
+          gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch --match-head-commit "$EXPECTED_HEAD"
+          echo "Copilot PR #$PR_NUMBER merged after immutable-head and green-check revalidation."
