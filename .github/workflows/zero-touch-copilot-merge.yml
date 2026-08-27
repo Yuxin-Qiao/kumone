@@ -35,7 +35,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Validate agent identity, scope and immutable head
+      - name: Validate agent identity, delegated issue and allowlisted scope
         id: policy
         shell: bash
         run: |
@@ -43,117 +43,132 @@ jobs:
           echo "eligible=false" >> "$GITHUB_OUTPUT"
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 0
 
-          PR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json author,baseRefName,headRefOid,isDraft,state,title,body)
+          PR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json author,baseRefName,headRefOid,isDraft,state,body)
           AUTHOR=$(jq -r '.author.login // ""' <<<"$PR")
           BASE=$(jq -r '.baseRefName // ""' <<<"$PR")
           HEAD=$(jq -r '.headRefOid // ""' <<<"$PR")
           DRAFT=$(jq -r '.isDraft' <<<"$PR")
           STATE=$(jq -r '.state' <<<"$PR")
-
-          [[ "$AUTHOR" == "copilot-swe-agent" || "$AUTHOR" == "copilot-swe-agent[bot]" ]] || {
-            echo "Not a Copilot coding-agent PR; ignoring."
-            exit 0
-          }
+          [[ "$AUTHOR" == "copilot-swe-agent" || "$AUTHOR" == "copilot-swe-agent[bot]" ]] || exit 0
           [[ "$BASE" == "main" && "$STATE" == "OPEN" && "$HEAD" =~ ^[0-9a-f]{40}$ ]] || exit 0
-          [[ "$DRAFT" == "false" ]] || {
-            echo "Copilot PR is still draft; ready_for_review will retry."
-            exit 0
-          }
+          [[ "$DRAFT" == "false" ]] || exit 0
 
           gh label create "automation/copilot" --repo "$REPO" --color 5319E7 \
             --description "Delegated to GitHub Copilot cloud agent" --force >/dev/null 2>&1 || true
           gh label create "automation/automerge" --repo "$REPO" --color 0E8A16 \
             --description "Safe agent repair eligible for deterministic auto-merge" --force >/dev/null 2>&1 || true
           gh label create "automation/blocked" --repo "$REPO" --color B60205 \
-            --description "Autonomous merge blocked by protected scope" --force >/dev/null 2>&1 || true
+            --description "Autonomous merge blocked by policy" --force >/dev/null 2>&1 || true
 
-          FILES=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')
-          [[ -n "$FILES" ]] || {
-            echo "::warning::Copilot PR has no changed files."
-            exit 0
+          allowed_path() {
+            case "$1" in
+              crates/*|apps/windows/*|apps/android/*|web/*|contracts/*|tools/uniffi-bindgen/*|docs/*|Cargo.lock|README.md|README_CN.md)
+                return 0 ;;
+              *)
+                return 1 ;;
+            esac
           }
 
-          BLOCKED=$(grep -E '^(Sources/Kumone/|Sources/KumoneLauncher/|ios/|Package\.swift$|Package\.resolved$|AppIcon\.icon/|\.github/workflows/|\.github/CODEOWNERS$)' <<<"$FILES" || true)
-          if [[ -n "$BLOCKED" ]]; then
+          FILES=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')
+          [[ -n "$FILES" ]] || exit 0
+          DISALLOWED=""
+          while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            allowed_path "$path" || DISALLOWED+="$path"$'\n'
+          done <<< "$FILES"
+          if [[ -n "$DISALLOWED" ]]; then
             gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "automation/blocked" >/dev/null
             MARKER='<!-- zero-touch-protected-scope -->'
             COMMENTS=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" --jq '.[].body' 2>/dev/null || true)
             if ! grep -Fq "$MARKER" <<<"$COMMENTS"; then
               {
                 printf '%s\n' "$MARKER"
-                printf '%s\n\n' 'Autonomous merge is blocked because this PR touches protected upstream/automation scope:'
+                printf '%s\n\n' 'Autonomous merge is blocked because these paths are outside the downstream auto-merge allowlist:'
                 printf '%s\n' '```'
-                printf '%s\n' "$BLOCKED"
+                printf '%s' "$DISALLOWED"
                 printf '%s\n\n' '```'
-                printf '%s\n' '@copilot Please revise the solution so it stays within downstream-owned application paths. Do not weaken CI, signing, release, or ownership boundaries.'
+                printf '%s\n' '@copilot Please revise the solution so it stays inside downstream-owned Rust/Tauri/Android/Web/contracts/docs paths. Release, signing, workflow, Apple, root build-policy, and secret-handling files are intentionally not autonomous.'
               } > "$RUNNER_TEMP/blocked-pr-comment.md"
               gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$RUNNER_TEMP/blocked-pr-comment.md" >/dev/null || true
             fi
-            echo "Protected scope prevents autonomous merge."
             exit 0
           fi
 
-          # Require the agent to connect the repair to an issue. This lets the
-          # default-branch merge close the issue automatically via Fixes/Closes.
           BODY=$(jq -r '.body // ""' <<<"$PR")
-          if ! grep -Eqi '(^|[[:space:]])(fixes|closes|resolves)[[:space:]]+#[0-9]+' <<<"$BODY"; then
-            echo "::warning::Copilot PR does not close an issue; refusing autonomous merge."
+          mapfile -t ISSUE_NUMBERS < <(
+            grep -Eio '(fixes|closes|resolves)[[:space:]]+#[0-9]+' <<<"$BODY" \
+              | grep -Eo '#[0-9]+' | tr -d '#' | sort -u
+          )
+          [[ "${#ISSUE_NUMBERS[@]}" -eq 1 ]] || {
+            echo "::warning::Autonomous PR must close exactly one delegated issue."
             exit 0
-          fi
+          }
+          ISSUE_NUMBER=${ISSUE_NUMBERS[0]}
+          ISSUE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state,labels,assignees)
+          [[ "$(jq -r '.state' <<<"$ISSUE")" == "OPEN" ]] || exit 0
+          ISSUE_LABELS=$(jq -r '[.labels[].name] | join("\n")' <<<"$ISSUE")
+          ISSUE_ASSIGNEES=$(jq -r '[.assignees[].login] | join("\n")' <<<"$ISSUE")
+          grep -qx 'automation/copilot' <<<"$ISSUE_LABELS" || {
+            echo "::warning::Linked issue was not delegated by zero-touch issue repair."
+            exit 0
+          }
+          ! grep -Eq '^(automation/hold|automation/copilot-token|security|upstream/apple)$' <<<"$ISSUE_LABELS" || exit 0
+          grep -Eq '^(copilot-swe-agent|copilot-swe-agent\[bot\])$' <<<"$ISSUE_ASSIGNEES" || {
+            echo "::warning::Linked issue is no longer assigned to Copilot."
+            exit 0
+          }
 
           gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "automation/copilot" --add-label "automation/automerge" >/dev/null
           echo "head_sha=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           echo "eligible=true" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for all PR checks to settle green
+      - name: Wait for all head checks to settle green
         if: steps.policy.outputs.eligible == 'true'
         env:
           EXPECTED_HEAD: ${{ steps.policy.outputs.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
+          fetch_checks() {
+            gh api --paginate "repos/$REPO/commits/$EXPECTED_HEAD/check-runs?per_page=100" \
+              --jq '.check_runs[]' | jq -s '.'
+          }
 
-          # Give pull_request workflows time to register their check suites.
           sleep 30
           deadline=$((SECONDS + 3600))
           seen_checks=false
           while :; do
             CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
-            [[ "$CURRENT_HEAD" == "$EXPECTED_HEAD" ]] || {
-              echo "::error::PR head moved while checks were running; a fresh synchronize event will restart policy."
-              exit 1
-            }
-
-            CHECKS=$(gh api "repos/$REPO/commits/$EXPECTED_HEAD/check-runs?per_page=100" --jq '.check_runs')
+            [[ "$CURRENT_HEAD" == "$EXPECTED_HEAD" ]] || exit 1
+            CHECKS=$(fetch_checks)
             count=$(jq 'length' <<<"$CHECKS")
             [[ "$count" -gt 0 ]] && seen_checks=true
             failed=$(jq -r '[.[] | select(.status == "completed" and (.conclusion | IN("success","neutral","skipped") | not))] | length' <<<"$CHECKS")
             pending=$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$CHECKS")
-
             [[ "$failed" -eq 0 ]] || {
-              echo "::error::$failed PR checks failed; Copilot can iterate on the PR instead of merging broken code."
+              echo "::error::$failed head checks failed; Copilot must iterate before merge."
               exit 1
             }
             if [[ "$seen_checks" == "true" && "$pending" -eq 0 ]]; then
-              # A short settling window catches workflows registered slightly
-              # after the first suite reaches green.
               sleep 20
-              CHECKS2=$(gh api "repos/$REPO/commits/$EXPECTED_HEAD/check-runs?per_page=100" --jq '.check_runs')
+              CHECKS2=$(fetch_checks)
               failed2=$(jq -r '[.[] | select(.status == "completed" and (.conclusion | IN("success","neutral","skipped") | not))] | length' <<<"$CHECKS2")
               pending2=$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$CHECKS2")
               [[ "$failed2" -eq 0 && "$pending2" -eq 0 ]] && break
             fi
             [[ "$SECONDS" -lt "$deadline" ]] || {
-              echo "::error::PR checks did not settle green within the policy window."
+              echo "::error::Head checks did not settle green within the policy window."
               exit 1
             }
             sleep 30
           done
 
-      - name: Revalidate and squash merge
+      - name: Revalidate delegated issue, scope and exact head then squash merge
         if: steps.policy.outputs.eligible == 'true'
         env:
           EXPECTED_HEAD: ${{ steps.policy.outputs.head_sha }}
+          ISSUE_NUMBER: ${{ steps.policy.outputs.issue_number }}
         shell: bash
         run: |
           set -euo pipefail
@@ -165,8 +180,29 @@ jobs:
           [[ "$(jq -r '.mergeable' <<<"$PR")" == "MERGEABLE" ]]
           [[ "$(jq -r '.mergeStateStatus' <<<"$PR")" == "CLEAN" ]]
 
+          ISSUE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state,labels,assignees)
+          [[ "$(jq -r '.state' <<<"$ISSUE")" == "OPEN" ]]
+          ISSUE_LABELS=$(jq -r '[.labels[].name] | join("\n")' <<<"$ISSUE")
+          ISSUE_ASSIGNEES=$(jq -r '[.assignees[].login] | join("\n")' <<<"$ISSUE")
+          grep -qx 'automation/copilot' <<<"$ISSUE_LABELS"
+          ! grep -Eq '^(automation/hold|automation/copilot-token|security|upstream/apple)$' <<<"$ISSUE_LABELS"
+          grep -Eq '^(copilot-swe-agent|copilot-swe-agent\[bot\])$' <<<"$ISSUE_ASSIGNEES"
+
+          allowed_path() {
+            case "$1" in
+              crates/*|apps/windows/*|apps/android/*|web/*|contracts/*|tools/uniffi-bindgen/*|docs/*|Cargo.lock|README.md|README_CN.md)
+                return 0 ;;
+              *) return 1 ;;
+            esac
+          }
           FILES=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')
-          ! grep -Eq '^(Sources/Kumone/|Sources/KumoneLauncher/|ios/|Package\.swift$|Package\.resolved$|AppIcon\.icon/|\.github/workflows/|\.github/CODEOWNERS$)' <<<"$FILES"
+          while IFS= read -r path; do
+            [[ -n "$path" ]] || continue
+            allowed_path "$path" || {
+              echo "::error::Path left allowlist before merge: $path"
+              exit 1
+            }
+          done <<< "$FILES"
 
           gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch --match-head-commit "$EXPECTED_HEAD"
-          echo "Copilot PR #$PR_NUMBER merged after immutable-head and green-check revalidation."
+          echo "Copilot PR #$PR_NUMBER merged after delegated-issue, allowlist, exact-head and green-check revalidation."
