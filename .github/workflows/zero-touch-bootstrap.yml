@@ -1,0 +1,50 @@
+name: Zero-touch maintenance bootstrap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/zero-touch-bootstrap.yml"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  recover-current-release:
+    name: Dispatch recovery for latest failed stable release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Find latest unreleased failed downstream run and recover it
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNS=$(gh api --paginate "repos/$REPO/actions/runs?event=workflow_dispatch&status=failure&per_page=100" --jq '.workflow_runs')
+          RUN_ID=$(jq -r '[.[] | select(.name == "Downstream Windows + Linux + Android Release" and .head_branch == "main")][0].id // empty' <<<"$RUNS")
+          [[ -n "$RUN_ID" ]] || {
+            echo "No failed stable downstream release needs bootstrap recovery."
+            exit 0
+          }
+
+          SOURCE_SHA=$(jq -r --argjson id "$RUN_ID" '.[] | select(.id == $id) | .head_sha' <<<"$RUNS")
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          VERSION_JSON=$(gh api "repos/$REPO/contents/CHANGELOG.md?ref=$SOURCE_SHA")
+          VERSION=$(printf '%s' "$VERSION_JSON" | jq -r '.content' | tr -d '\n' | base64 --decode \
+            | sed -nE 's/^## ([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?) - .*/\1/p' | head -n 1)
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+
+          if gh release view "downstream-v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
+            echo "downstream-v$VERSION is already published; bootstrap recovery is a no-op."
+            exit 0
+          fi
+
+          gh workflow run zero-touch-release-recovery.yml --repo "$REPO" --ref main -f run_id="$RUN_ID"
+          echo "Dispatched zero-touch recovery for failed run $RUN_ID (v$VERSION)."
